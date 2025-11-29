@@ -1,15 +1,7 @@
 // src/components/DocEditor.tsx
 
 import React, { useEffect, useState } from "react";
-import {
-  Box,
-  Tabs,
-  Tab,
-  Paper,
-  TextField,
-  Typography,
-  Button,
-} from "@mui/material";
+import { Box, Tabs, Tab, Paper, Button } from "@mui/material";
 import ReactMarkdown from "react-markdown";
 import * as Y from "yjs";
 import { fetchLatestFileEvent } from "../nostr/fetchFile";
@@ -24,12 +16,12 @@ interface DocEditorProps {
 
 export default function DocEditor({ docId, relays = [] }: DocEditorProps) {
   const [md, setMd] = useState("");
-  const [tab, setTab] = useState(0); // 0 = Editor, 1 = Preview
+  const [tab, setTab] = useState(0);
 
-  // --- Yjs document and text ---
   const ydocRef = React.useRef<Y.Doc | null>(null);
   const ytextRef = React.useRef<Y.Text | null>(null);
 
+  // Initialize Yjs
   useEffect(() => {
     const ydoc = new Y.Doc();
     const ytext = ydoc.getText("document");
@@ -38,30 +30,27 @@ export default function DocEditor({ docId, relays = [] }: DocEditorProps) {
 
     setMd(ytext.toString());
 
-    ytext.observe(() => {
-      setMd(ytext.toString());
-    });
+    const observer = () => setMd(ytext.toString());
+    ytext.observe(observer);
 
     return () => {
-      ytext.unobserve(() => {});
+      ytext.unobserve(observer);
       ydoc.destroy();
     };
   }, []);
 
-  // --- Load latest snapshot ---
+  // Load latest snapshot
   useEffect(() => {
-    console.log("Fetch file use effectr,", relays);
     if (!relays || relays.length === 0) return;
-    const ytext = ytextRef.current;
-    if (!ytext) return;
+    const ydoc = ydocRef.current;
+    if (!ydoc) return;
 
     (async () => {
       try {
-        console.log("Calling fetchLatest file event");
         const event = await fetchLatestFileEvent(docId, relays);
         if (event) {
           const uint8 = base64ToUint8(event.content);
-          Y.applyUpdate(ydocRef.current!, uint8);
+          Y.applyUpdate(ydoc, uint8);
         }
       } catch (err) {
         console.error("Failed to load snapshot:", err);
@@ -69,13 +58,13 @@ export default function DocEditor({ docId, relays = [] }: DocEditorProps) {
     })();
   }, [docId, relays]);
 
-  // --- Subscribe to ephemeral CRDT ops ---
+  // Subscribe to CRDT ops
   useEffect(() => {
     if (!relays || !ydocRef.current) return;
     subscribeCRDTOps(docId, relays, ydocRef.current);
   }, [docId, relays]);
 
-  // --- Emit local updates as ephemeral CRDT ops ---
+  // Emit CRDT ops
   useEffect(() => {
     const ydoc = ydocRef.current;
     if (!ydoc || !relays || !window.nostr) return;
@@ -93,7 +82,7 @@ export default function DocEditor({ docId, relays = [] }: DocEditorProps) {
             sig: "",
           };
 
-          const signed = await window.nostr!.signEvent!(event);
+          const signed = await window.nostr!.signEvent(event);
           await publishEvent(signed, relays);
         } catch (err) {
           console.error("Failed to publish CRDT op:", err);
@@ -105,20 +94,22 @@ export default function DocEditor({ docId, relays = [] }: DocEditorProps) {
     return () => ydoc.off("update", onUpdate);
   }, [docId, relays]);
 
-  // --- Handle local text changes ---
+  // Local edits
   const onLocalChange = (value: string) => {
     const ytext = ytextRef.current;
     if (!ytext) return;
+
     ytext.doc?.transact(() => {
       ytext.delete(0, ytext.length);
       ytext.insert(0, value);
     });
   };
 
-  // --- Publish full snapshot ---
+  // Save snapshot
   const saveSnapshot = async () => {
     const ydoc = ydocRef.current;
     if (!ydoc || !relays || !window.nostr) return;
+
     try {
       const update = Y.encodeStateAsUpdate(ydoc);
       const event = {
@@ -130,7 +121,8 @@ export default function DocEditor({ docId, relays = [] }: DocEditorProps) {
         id: "",
         sig: "",
       };
-      const signed = await window.nostr!.signEvent!(event);
+
+      const signed = await window.nostr.signEvent(event);
       await publishEvent(signed, relays);
       alert("Snapshot saved!");
     } catch (err) {
@@ -140,40 +132,86 @@ export default function DocEditor({ docId, relays = [] }: DocEditorProps) {
   };
 
   return (
-    <Paper
-      sx={{ p: 2, height: "100%", display: "flex", flexDirection: "column" }}
+    <Box
+      sx={{
+        height: "100%",
+        width: "100%",
+        display: "flex",
+        flexDirection: "column",
+        alignItems: "center", // <-- center everything
+        background: "#f0f0f0",
+        overflowY: "auto",
+        p: 2,
+      }}
     >
-      <Tabs value={tab} onChange={(_, newVal) => setTab(newVal)}>
-        <Tab label="Editor" />
-        <Tab label="Preview" />
-      </Tabs>
+      {/* Toolbar */}
+      <Paper
+        elevation={1}
+        sx={{
+          mb: 2,
+          p: 1.5,
+          background: "white",
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          borderRadius: 2,
+          position: "sticky",
+          top: 0,
+          zIndex: 10,
+          width: "100%",
+          maxWidth: "900px", // <-- matches sheet width
+        }}
+      >
+        <Tabs value={tab} onChange={(_, v) => setTab(v)}>
+          <Tab label="Editor" />
+          <Tab label="Preview" />
+        </Tabs>
 
-      <Box sx={{ mt: 2, flex: 1, overflowY: "auto" }}>
+        <Button variant="contained" onClick={saveSnapshot}>
+          Save
+        </Button>
+      </Paper>
+
+      {/* Paper sheet */}
+      <Paper
+        elevation={2}
+        sx={{
+          margin: "0 auto",
+          background: "white",
+          maxWidth: "800px",
+          width: "100%",
+          minHeight: "calc(100% - 60px)",
+          p: 4,
+          borderRadius: 2,
+        }}
+      >
         {tab === 0 && (
-          <TextField
-            multiline
-            minRows={20}
-            maxRows={40}
-            fullWidth
+          <Box
+            component="textarea"
             value={md}
             onChange={(e) => onLocalChange(e.target.value)}
-            variant="outlined"
-            placeholder="Start writing your markdown..."
-            sx={{ height: "100%" }}
+            placeholder="Start writing..."
+            style={{
+              width: "100%",
+              height: "80vh",
+              border: "none",
+              outline: "none",
+              resize: "none",
+              fontSize: "16px",
+              lineHeight: 1.6,
+              fontFamily: "Georgia, serif",
+              background: "transparent",
+              color: "#222", // <-- FIXED TEXT COLOR
+            }}
           />
         )}
+
         {tab === 1 && (
-          <Box sx={{ overflowY: "auto", height: "100%", p: 1 }}>
+          <Box sx={{ "& *": { fontFamily: "Georgia, serif", color: "#222" } }}>
             <ReactMarkdown>{md}</ReactMarkdown>
           </Box>
         )}
-      </Box>
-
-      <Box sx={{ mt: 2, textAlign: "right" }}>
-        <Button variant="contained" onClick={saveSnapshot}>
-          Save Snapshot
-        </Button>
-      </Box>
-    </Paper>
+      </Paper>
+    </Box>
   );
 }

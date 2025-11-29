@@ -1,7 +1,6 @@
 // src/App.tsx
-import React from "react";
 import DocEditor from "./components/DocEditor";
-import { CssBaseline, Container, Typography } from "@mui/material";
+import { CssBaseline, Typography, Box } from "@mui/material";
 import { DEFAULT_RELAYS } from "./nostr/relayPool";
 
 function App() {
@@ -12,12 +11,13 @@ function App() {
   return (
     <>
       <CssBaseline />
-      <Container maxWidth="lg" sx={{ height: "100vh", py: 4 }}>
+      <Box sx={{ height: "100vh", p: 4, maxWidth: "100%" }}>
         <Typography variant="h4" gutterBottom>
           Nostr Collaborative Markdown Editor
         </Typography>
+
         <DocEditor docId={docId} relays={DEFAULT_RELAYS} />
-      </Container>
+      </Box>
     </>
   );
 }
