@@ -55,35 +55,37 @@ export default function DocumentList({
           No documents found. Create one using the editor!
         </Typography>
       ) : (
-        <Paper elevation={2} sx={{ p: 2 }}>
+        <Paper
+          elevation={0}
+          sx={{
+            p: 1,
+            bgcolor: "transparent",
+          }}
+        >
           <List>
-            {Array.from(documents.entries()).map((entry) => {
-              const [id, doc] = entry;
+            {Array.from(documents.entries()).map(([id, doc]) => {
               const content = doc.decryptedContent;
               return (
-                <ListItem
+                <ListItemButton
                   key={id}
-                  component={ListItemButton}
-                  onClick={() => {
-                    console.log("Open Dtag", id);
-                    setSelectedDocumentId(id);
-                    onEdit(id);
+                  onClick={() => handleDocumentSelect(id)}
+                  sx={{
+                    borderRadius: 2,
+                    mb: 1,
+                    bgcolor: "rgba(255,255,255,0.03)",
+                    "&:hover": { bgcolor: "rgba(255,255,255,0.08)" },
                   }}
-                  sx={{ display: "flex", justifyContent: "space-between" }}
                 >
                   <ListItemText
                     primary={
                       content.substring(0, 40) +
                       (content.length > 40 ? "..." : "")
                     }
-                    secondary={`Created: ${new Date(
+                    secondary={new Date(
                       doc.event.created_at * 1000
-                    ).toLocaleString()}`}
+                    ).toLocaleString()}
                   />
-                  <Button variant="contained" size="small">
-                    Edit
-                  </Button>
-                </ListItem>
+                </ListItemButton>
               );
             })}
           </List>

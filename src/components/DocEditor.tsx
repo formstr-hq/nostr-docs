@@ -1,41 +1,41 @@
-// src/components/DocEditor.tsx
-
 import { useEffect, useState } from "react";
-import { Box, Tabs, Tab, Paper, Button } from "@mui/material";
+import {
+  Box,
+  Paper,
+  Button,
+  ToggleButton,
+  ToggleButtonGroup,
+  Typography,
+  useTheme,
+} from "@mui/material";
 import ReactMarkdown from "react-markdown";
 import { publishEvent } from "../nostr/publish";
-import { useDocumentContext } from "../contexts/DocumentContext.tsx";
-import { DEFAULT_RELAYS } from "../nostr/relayPool.ts";
+import { useDocumentContext } from "../contexts/DocumentContext";
+import { DEFAULT_RELAYS } from "../nostr/relayPool";
 
-interface DocEditorProps {
-  onTitleChange?: (title: string) => void;
-}
-
-export default function DocEditor({ onTitleChange }: DocEditorProps) {
+export default function DocEditor() {
   const { documents, selectedDocumentId } = useDocumentContext();
-  const document =
-    documents.get(selectedDocumentId || "")?.decryptedContent || "";
-  const [tab, setTab] = useState(0);
-  const [md, setMd] = useState(document);
-  const [docId, setDocId] = useState(selectedDocumentId || "");
+  const doc = documents.get(selectedDocumentId || "");
+  const initial = doc?.decryptedContent || "";
+
+  const [md, setMd] = useState(initial);
+  const [mode, setMode] = useState<"edit" | "preview">("edit");
+
+  const theme = useTheme(); // <-- MUI theme hook
+
+  useEffect(() => {
+    setMd(initial);
+  }, [selectedDocumentId]);
+
   const encryptContent = async (content: string) => {
-    return await window.nostr?.nip44?.encrypt(
+    return window.nostr?.nip44?.encrypt(
       await window.nostr?.getPublicKey(),
       content
     );
   };
 
-  // // Local edits
-  const onLocalChange = (value: string) => {
-    setMd(value);
-    const lines = value.split("\n");
-    const title = lines.length > 0 ? lines[0] : "";
-    if (onTitleChange && !selectedDocumentId) onTitleChange(title);
-  };
-
-  // Save snapshot
   const saveSnapshot = async () => {
-    if (!window.nostr) return;
+    if (!window.nostr || !selectedDocumentId) return;
 
     try {
       const encryptedContent = await encryptContent(md);
@@ -43,20 +43,18 @@ export default function DocEditor({ onTitleChange }: DocEditorProps) {
 
       const event = {
         kind: 33457,
-        tags: [["d", docId]],
+        tags: [["d", selectedDocumentId]],
         content: encryptedContent,
         created_at: Math.floor(Date.now() / 1000),
         pubkey: await window.nostr!.getPublicKey!(),
-        id: "",
-        sig: "",
       };
 
       const signed = await window.nostr.signEvent(event);
       await publishEvent(signed, DEFAULT_RELAYS);
-      alert("Snapshot saved!");
+      alert("Saved!");
     } catch (err) {
       console.error("Failed to save snapshot:", err);
-      alert("Failed to save snapshot");
+      alert("Failed to save");
     }
   };
 
@@ -64,80 +62,122 @@ export default function DocEditor({ onTitleChange }: DocEditorProps) {
     <Box
       sx={{
         height: "100%",
-        width: "100%",
         display: "flex",
         flexDirection: "column",
-        alignItems: "center",
-        background: "#f0f0f0",
-        overflowY: "auto",
-        p: 2,
+        gap: 2,
       }}
     >
       {/* Toolbar */}
       <Paper
-        elevation={1}
-        sx={{
-          mb: 2,
-          p: 1.5,
-          background: "white",
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "center",
-          borderRadius: 2,
-          position: "sticky",
-          top: 0,
-          zIndex: 10,
-          width: "100%",
-          maxWidth: "900px",
-        }}
-      >
-        <Tabs value={tab} onChange={(_, v) => setTab(v)}>
-          <Tab label="Editor" />
-          <Tab label="Preview" />
-        </Tabs>
-
-        <Button variant="contained" onClick={saveSnapshot}>
-          Save
-        </Button>
-      </Paper>
-
-      {/* Paper sheet */}
-      <Paper
         elevation={2}
         sx={{
-          margin: "0 auto",
-          background: "white",
-          maxWidth: "800px",
-          width: "100%",
-          minHeight: "calc(100% - 60px)",
-          p: 4,
+          p: 1.5,
+          px: 2,
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          bgcolor: "background.paper",
           borderRadius: 2,
+          border: "1px solid rgba(0,0,0,0.08)",
+          position: "sticky",
+          top: 0,
+          zIndex: 20,
         }}
       >
-        {tab === 0 && (
+        <Typography sx={{ fontWeight: 700 }}>
+          {doc ? "Editing Document" : "New Document"}
+        </Typography>
+
+        <Box sx={{ display: "flex", gap: 2 }}>
+          <ToggleButtonGroup
+            size="small"
+            exclusive
+            value={mode}
+            onChange={(_, v) => v && setMode(v)}
+            sx={{
+              "& .MuiToggleButton-root": {
+                color: theme.palette.text.secondary,
+                borderColor:
+                  theme.palette.mode === "dark"
+                    ? "rgba(255,255,255,0.1)"
+                    : "rgba(0,0,0,0.1)",
+              },
+              "& .Mui-selected": {
+                color: theme.palette.secondary.main,
+                borderColor: theme.palette.secondary.main,
+                background:
+                  theme.palette.mode === "dark"
+                    ? "rgba(255,183,3,0.08)"
+                    : "rgba(255,183,3,0.2)",
+              },
+            }}
+          >
+            <ToggleButton value="edit">Editor</ToggleButton>
+            <ToggleButton value="preview">Preview</ToggleButton>
+          </ToggleButtonGroup>
+
+          <Button
+            variant="contained"
+            color="secondary"
+            onClick={saveSnapshot}
+            sx={{ fontWeight: 700 }}
+          >
+            Save
+          </Button>
+        </Box>
+      </Paper>
+
+      {/* Editor Surface */}
+      <Paper
+        elevation={1}
+        sx={{
+          flexGrow: 1,
+          p: 3,
+          borderRadius: 3,
+          bgcolor: "background.paper",
+          border: "1px solid rgba(0,0,0,0.08)",
+          overflowY: "auto",
+        }}
+      >
+        {mode === "edit" && (
           <Box
             component="textarea"
             value={md}
-            onChange={(e) => onLocalChange(e.target.value)}
-            placeholder="Start writing..."
+            onChange={(e) => setMd(e.target.value)}
+            placeholder="Start writing your page..."
             style={{
               width: "100%",
-              height: "80vh",
+              height: "100%",
               border: "none",
               outline: "none",
               resize: "none",
-              fontSize: "16px",
-              lineHeight: 1.6,
-              fontFamily: "Georgia, serif",
               background: "transparent",
-              color: "#222",
+              color: theme.palette.text.primary, // <-- dynamic text color
+              fontSize: "17px",
+              lineHeight: 1.7,
+              fontFamily:
+                '"Inter", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
             }}
           />
         )}
 
-        {tab === 1 && (
-          <Box sx={{ "& *": { fontFamily: "Georgia, serif", color: "#222" } }}>
-            <ReactMarkdown>{md}</ReactMarkdown>
+        {mode === "preview" && (
+          <Box
+            sx={{
+              "& h1,h2,h3,h4": {
+                color: theme.palette.text.primary,
+                fontWeight: 800,
+              },
+              "& p": { color: theme.palette.text.secondary },
+            }}
+          >
+            {md.trim() ? (
+              <ReactMarkdown>{md}</ReactMarkdown>
+            ) : (
+              <Typography color="text.secondary">
+                Nothing to preview yet…
+              </Typography>
+            )}
           </Box>
         )}
       </Paper>
