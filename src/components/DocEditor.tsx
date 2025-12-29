@@ -131,7 +131,10 @@ export default function DocEditor() {
       <Paper
         elevation={1}
         sx={{
-          flexGrow: 1,
+          flex: 1, // fill remaining vertical space
+          display: "flex",
+          flexDirection: "column", // textarea grows correctly
+          minHeight: 0, // crucial for Chrome flexbox
           p: 3,
           borderRadius: 3,
           bgcolor: "background.paper",
@@ -144,15 +147,14 @@ export default function DocEditor() {
             component="textarea"
             value={md}
             onChange={(e) => setMd(e.target.value)}
-            placeholder="Start writing your page..."
             style={{
+              flex: 1, // use flex instead of height: 100%
               width: "100%",
-              height: "100%",
               border: "none",
               outline: "none",
               resize: "none",
               background: "transparent",
-              color: theme.palette.text.primary, // <-- dynamic text color
+              color: theme.palette.text.primary,
               fontSize: "17px",
               lineHeight: 1.7,
               fontFamily:
