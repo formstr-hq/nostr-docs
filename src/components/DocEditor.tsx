@@ -13,6 +13,8 @@ import { publishEvent } from "../nostr/publish";
 import { useDocumentContext } from "../contexts/DocumentContext";
 import { signerManager } from "../signer";
 import { useRelays } from "../contexts/RelayContext";
+import EditIcon from "@mui/icons-material/Edit";
+import VisibilityIcon from "@mui/icons-material/Visibility";
 
 export default function DocEditor() {
   const { documents, selectedDocumentId } = useDocumentContext();
@@ -91,32 +93,29 @@ export default function DocEditor() {
         }}
       >
         <Box sx={{ display: "flex", gap: 2 }}>
-          <ToggleButtonGroup
-            size="small"
-            exclusive
-            value={mode}
-            onChange={(_, v) => v && setMode(v)}
-            sx={{
-              "& .MuiToggleButton-root": {
-                color: theme.palette.text.secondary,
-                borderColor:
-                  theme.palette.mode === "dark"
-                    ? "rgba(255,255,255,0.1)"
-                    : "rgba(0,0,0,0.1)",
-              },
-              "& .Mui-selected": {
-                color: theme.palette.secondary.main,
-                borderColor: theme.palette.secondary.main,
-                background:
-                  theme.palette.mode === "dark"
-                    ? "rgba(255,183,3,0.08)"
-                    : "rgba(255,183,3,0.2)",
-              },
-            }}
-          >
-            <ToggleButton value="edit">Editor</ToggleButton>
-            <ToggleButton value="preview">Preview</ToggleButton>
-          </ToggleButtonGroup>
+          <Box sx={{ display: "flex", gap: 2 }}>
+            {mode === "preview" ? (
+              <Button
+                variant="outlined"
+                color="secondary"
+                onClick={() => setMode("edit")}
+                startIcon={<EditIcon />}
+                sx={{ fontWeight: 700 }}
+              >
+                Edit
+              </Button>
+            ) : (
+              <Button
+                variant="outlined"
+                color="secondary"
+                onClick={() => setMode("preview")}
+                startIcon={<VisibilityIcon />}
+                sx={{ fontWeight: 700 }}
+              >
+                Preview
+              </Button>
+            )}
+          </Box>
 
           <Button
             variant="contained"
