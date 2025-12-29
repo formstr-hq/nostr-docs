@@ -15,6 +15,7 @@ export const fetchProfile = async (pubkey: string) => {
             const profile = JSON.parse(event.content);
             resolve(profile);
           } catch (e) {
+            console.log("couldn't get profile");
             reject();
           }
         },

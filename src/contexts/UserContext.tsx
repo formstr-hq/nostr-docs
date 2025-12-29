@@ -2,6 +2,7 @@
 import { createContext, useContext, useEffect, useState } from "react";
 import { signerManager } from "../signer";
 import { fetchProfile } from "../nostr/fetchProfile"; // function to fetch kind-0 metadata
+import { withTimeout } from "../utils/timeout";
 
 export type UserProfile = {
   pubkey?: string;
@@ -41,9 +42,11 @@ export const UserProvider: React.FC<{ children: React.ReactNode }> = ({
   // Listen to signerManager changes
   useEffect(() => {
     signerManager.onChange(async () => {
+      console.log("On change truggered");
       if (signerManager["signer"]) {
         const signer = await signerManager.getSigner();
         const pubkey = await signer.getPublicKey();
+        console.log("calling fetch and set");
         await fetchAndSetProfile(pubkey);
       } else {
         setUser(null);
@@ -57,8 +60,13 @@ export const UserProvider: React.FC<{ children: React.ReactNode }> = ({
 
   // Fetch kind-0 metadata and update state + localStorage
   const fetchAndSetProfile = async (pubkey: string) => {
+    console.log("called fetch and set");
     try {
-      const profile = (await fetchProfile(pubkey)) as UserProfile;
+      const profile = (await withTimeout(
+        fetchProfile(pubkey),
+        8000
+      )) as UserProfile;
+      console.log("Found profile", profile);
       const userProfile: UserProfile = { pubkey, ...profile };
       console.log("Setting user profile", userProfile);
       setUser(userProfile);
