@@ -6,12 +6,9 @@ import {
   Typography,
   Paper,
   List,
-  ListItem,
   ListItemText,
-  Button,
   ListItemButton,
 } from "@mui/material";
-import { DEFAULT_RELAYS } from "../nostr/relayPool";
 import { useDocumentContext } from "../contexts/DocumentContext.tsx";
 import { signerManager } from "../signer/index.ts";
 import { useRelays } from "../contexts/RelayContext.tsx";

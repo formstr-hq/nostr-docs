@@ -15,7 +15,7 @@ export async function fetchAllDocuments(
 
     pool.subscribeMany(
       relays,
-      { kinds: [KIND_FILE] },
+      { kinds: [KIND_FILE], authors: [pubkey] },
       {
         onevent: (event: NostrEvent) => {
           console.log("Received document event", event);

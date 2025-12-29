@@ -19,6 +19,7 @@ import { darkTheme, lightTheme } from "./theme";
 import { ThemeProvider } from "@mui/material/styles";
 import UserMenu from "./components/UserMenu";
 import { UserProvider } from "./contexts/UserContext";
+import Logo from "./assets/formstr-pages-logo.png";
 
 const drawerWidth = 320;
 
@@ -40,6 +41,7 @@ export default function App() {
             position="fixed"
             elevation={3}
             sx={{
+              zIndex: (theme) => theme.zIndex.drawer + 1, // <-- add this
               bgcolor: "background.paper",
               color: "text.primary",
               borderBottom: "1px solid rgba(0,0,0,0.08)",
@@ -47,6 +49,7 @@ export default function App() {
           >
             <Toolbar sx={{ display: "flex", justifyContent: "space-between" }}>
               <Box sx={{ display: "flex", alignItems: "center", gap: 2 }}>
+                {/* Only show hamburger on mobile */}
                 {!isDesktop && (
                   <IconButton
                     color="inherit"
@@ -56,17 +59,19 @@ export default function App() {
                     <MenuIcon />
                   </IconButton>
                 )}
-                <Typography
-                  variant="h6"
-                  sx={{
-                    fontWeight: 800,
-                    display: "block", // always show on desktop
-                  }}
-                >
-                  formstr pages
-                </Typography>
-              </Box>
 
+                {/* Logo + title — ALWAYS visible */}
+                <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+                  <img
+                    src={Logo}
+                    alt="Formstr Pages"
+                    style={{ height: 32, width: "auto", borderRadius: 8 }}
+                  />
+                  <Typography variant="h6" sx={{ fontWeight: 800 }}>
+                    formstr pages
+                  </Typography>
+                </Box>
+              </Box>
               {/* Light/Dark Toggle */}
               <Box sx={{ display: "flex", alignItems: "center", gap: 2 }}>
                 <Switch
@@ -86,7 +91,7 @@ export default function App() {
               <Drawer
                 open={mobileOpen}
                 onClose={() => setMobileOpen(false)}
-                ModalProps={{ keepMounted: true }}
+                // ModalProps={{ keepMounted: true }}
                 sx={{
                   "& .MuiDrawer-paper": {
                     width: drawerWidth,

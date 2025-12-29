@@ -5,7 +5,7 @@ import { useUser } from "../contexts/UserContext";
 import LoginModal from "./LoginModal";
 
 export default function UserMenu() {
-  const { user, loginModal, logout } = useUser();
+  const { user, logout } = useUser();
   const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
   const [loginOpen, setLoginOpen] = useState(false);
 

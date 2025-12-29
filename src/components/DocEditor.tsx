@@ -20,7 +20,7 @@ export default function DocEditor() {
   const initial = doc?.decryptedContent || "";
 
   const [md, setMd] = useState(initial);
-  const [mode, setMode] = useState<"edit" | "preview">("edit");
+  const [mode, setMode] = useState<"edit" | "preview">("preview");
 
   const theme = useTheme(); // <-- MUI theme hook
   const { relays } = useRelays();
@@ -90,10 +90,6 @@ export default function DocEditor() {
           zIndex: 20,
         }}
       >
-        <Typography sx={{ fontWeight: 700 }}>
-          {doc ? "Editing Document" : "New Document"}
-        </Typography>
-
         <Box sx={{ display: "flex", gap: 2 }}>
           <ToggleButtonGroup
             size="small"

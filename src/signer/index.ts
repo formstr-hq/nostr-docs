@@ -48,12 +48,7 @@ class Signer {
     this.signer = createLocalSigner(privkey);
   }
 
-  async createGuestAccount(
-    privkey: Uint8Array,
-    userMetadata?: {
-      [key: string]: string;
-    }
-  ) {
+  async createGuestAccount(privkey: Uint8Array) {
     this.signer = createLocalSigner(privkey);
 
     const pubkey = await this.signer.getPublicKey();

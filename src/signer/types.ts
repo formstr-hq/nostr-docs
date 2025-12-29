@@ -1,4 +1,4 @@
-import type { Event, EventTemplate, UnsignedEvent } from "nostr-tools";
+import type { Event, EventTemplate } from "nostr-tools";
 
 export interface NostrSigner {
   getPublicKey: () => Promise<string>;

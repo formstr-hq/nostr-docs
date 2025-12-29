@@ -1,5 +1,4 @@
 // src/components/LoginModal.tsx
-import React from "react";
 import {
   Dialog,
   DialogTitle,
