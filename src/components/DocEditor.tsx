@@ -5,8 +5,6 @@ import { Box, Tabs, Tab, Paper, Button } from "@mui/material";
 import ReactMarkdown from "react-markdown";
 import * as Y from "yjs";
 import { fetchLatestFileEvent } from "../nostr/fetchFile";
-import { base64ToUint8 } from "../utils/base64";
-import { KIND_CRDT_OP, subscribeCRDTOps } from "../nostr/crdt";
 import { publishEvent } from "../nostr/publish";
 
 interface DocEditorProps {
@@ -21,41 +19,36 @@ export default function DocEditor({
   onTitleChange,
 }: DocEditorProps) {
   const [tab, setTab] = useState(0);
+  const [md, setMd] = useState("");
 
-  const ydocRef = React.useRef<Y.Doc | null>(null);
-  const ytextRef = React.useRef<Y.Text | null>(null);
-  const [md, setMd] = useState(""); // for preview only
+  const encryptContent = async (content: string) => {
+    return await window.nostr?.nip44?.encrypt(
+      await window.nostr?.getPublicKey(),
+      content
+    );
+  };
 
-  // Initialize Yjs
-  useEffect(() => {
-    const ydoc = new Y.Doc();
-    const ytext = ydoc.getText("document");
-    ydocRef.current = ydoc;
-    ytextRef.current = ytext;
-
-    // Observe for preview rendering
-    const observer = () => setMd(ytext.toString());
-    ytext.observe(observer);
-
-    return () => {
-      ytext.unobserve(observer);
-      ydoc.destroy();
-    };
-  }, []);
+  const decryptEventContent = async (content: string) => {
+    return await window.nostr?.nip44?.decrypt(
+      await window.nostr?.getPublicKey(),
+      content
+    );
+  };
 
   // Load latest snapshot
   useEffect(() => {
     if (!relays || relays.length === 0) return;
-    const ydoc = ydocRef.current;
-    if (!ydoc) return;
-
+    if (!docId) return;
+    console.log("GOt md as ", md);
+    if (md) return;
     (async () => {
       try {
         const event = await fetchLatestFileEvent(docId, relays);
+        console.log("Got latest event as", event);
         if (event) {
-          const uint8 = base64ToUint8(event.content);
-          // Mark as remote to avoid rebroadcast
-          Y.applyUpdate(ydoc, uint8, "remote");
+          const mdText = await decryptEventContent(event.content);
+          if (!mdText) return;
+          setMd(mdText);
         }
       } catch (err) {
         console.error("Failed to load snapshot:", err);
@@ -63,85 +56,9 @@ export default function DocEditor({
     })();
   }, [docId, relays]);
 
-  // Subscribe to CRDT ops
-  useEffect(() => {
-    if (!relays || !ydocRef.current) return;
-    subscribeCRDTOps(docId, relays, ydocRef.current);
-  }, [docId, relays]);
-
-  // Emit CRDT ops
-  useEffect(() => {
-    const ydoc = ydocRef.current;
-    if (!ydoc || !relays || !window.nostr) return;
-
-    const onUpdate = (update: Uint8Array, origin: any) => {
-      if (origin === "remote") return; // prevent loops
-      (async () => {
-        try {
-          const event = {
-            kind: KIND_CRDT_OP,
-            tags: [["d", docId]],
-            content: btoa(String.fromCharCode(...update)),
-            created_at: Math.floor(Date.now() / 1000),
-            pubkey: await window.nostr!.getPublicKey!(),
-            id: "",
-            sig: "",
-          };
-
-          const signed = await window.nostr!.signEvent(event);
-          await publishEvent(signed, relays);
-        } catch (err) {
-          console.error("Failed to publish CRDT op:", err);
-        }
-      })();
-    };
-
-    ydoc.on("update", onUpdate);
-    return () => ydoc.off("update", onUpdate);
-  }, [docId, relays]);
-
-  // Local edits
+  // // Local edits
   const onLocalChange = (value: string) => {
-    const ytext = ytextRef.current;
-    if (!ytext) return;
-
-    // Incremental changes instead of replacing entire document
-    const oldValue = ytext.toString();
-    const commonPrefixLength = (() => {
-      let i = 0;
-      while (
-        i < oldValue.length &&
-        i < value.length &&
-        oldValue[i] === value[i]
-      )
-        i++;
-      return i;
-    })();
-    const commonSuffixLength = (() => {
-      let i = 0;
-      while (
-        i + commonPrefixLength < oldValue.length &&
-        i + commonPrefixLength < value.length &&
-        oldValue[oldValue.length - 1 - i] === value[value.length - 1 - i]
-      )
-        i++;
-      return i;
-    })();
-
-    const deleteStart = commonPrefixLength;
-    const deleteLength =
-      oldValue.length - commonPrefixLength - commonSuffixLength;
-    const insertText = value.slice(
-      commonPrefixLength,
-      value.length - commonSuffixLength
-    );
-
-    ytext.doc?.transact(() => {
-      if (deleteLength > 0) ytext.delete(deleteStart, deleteLength);
-      if (insertText.length > 0) ytext.insert(deleteStart, insertText);
-    });
-
-    // Extract and send title to parent
+    setMd(value);
     const lines = value.split("\n");
     const title = lines.length > 0 ? lines[0] : "";
     if (onTitleChange) onTitleChange(title);
@@ -149,15 +66,16 @@ export default function DocEditor({
 
   // Save snapshot
   const saveSnapshot = async () => {
-    const ydoc = ydocRef.current;
-    if (!ydoc || !relays || !window.nostr) return;
+    if (!relays || !window.nostr) return;
 
     try {
-      const update = Y.encodeStateAsUpdate(ydoc);
+      const encryptedContent = await encryptContent(md);
+      if (!encryptedContent) return;
+
       const event = {
         kind: 33457,
         tags: [["d", docId]],
-        content: btoa(String.fromCharCode(...update)),
+        content: encryptedContent,
         created_at: Math.floor(Date.now() / 1000),
         pubkey: await window.nostr!.getPublicKey!(),
         id: "",
@@ -230,7 +148,7 @@ export default function DocEditor({
         {tab === 0 && (
           <Box
             component="textarea"
-            value={ytextRef.current?.toString() || ""}
+            value={md}
             onChange={(e) => onLocalChange(e.target.value)}
             placeholder="Start writing..."
             style={{

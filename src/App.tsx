@@ -1,14 +1,12 @@
 // src/App.tsx
 import DocEditor from "./components/DocEditor";
 import DocumentList from "./components/DocumentList";
-import { CssBaseline, Typography, Box, Button, Tabs, Tab } from "@mui/material";
+import { CssBaseline, Typography, Box, Tabs, Tab } from "@mui/material";
 import { DEFAULT_RELAYS } from "./nostr/relayPool";
 import React from "react";
 
 function App() {
   const [docId, setDocId] = React.useState<string | null>(null);
-  const [title, setTitle] = React.useState("");
-
   const [view, setView] = React.useState<"editor" | "list">("editor");
 
   const onTitleChange = (title: string) => {
@@ -63,7 +61,7 @@ function App() {
             <DocEditor
               docId={docId || ""}
               relays={DEFAULT_RELAYS}
-              onTitleChange={onTitleChange}
+              onTitleChange={docId ? onTitleChange : undefined}
             />
           </>
         )}
