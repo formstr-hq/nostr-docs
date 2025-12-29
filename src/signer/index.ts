@@ -37,14 +37,14 @@ class Signer {
         await this.loginWithNip07();
       } else if (keys?.pubkey && keys?.secret) {
         console.log("Restoring guest");
-        await this.loginWithGuestKey(keys.pubkey, hexToBytes(keys.secret));
+        await this.loginWithGuestKey(hexToBytes(keys.secret));
       }
     } catch (e) {
       console.error("Signer restore failed:", e);
     }
     this.notify();
   }
-  private async loginWithGuestKey(pubkey: string, privkey: Uint8Array) {
+  private async loginWithGuestKey(privkey: Uint8Array) {
     this.signer = createLocalSigner(privkey);
   }
 

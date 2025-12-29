@@ -1,5 +1,5 @@
 // src/components/DocumentList.tsx
-import React, { useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { fetchAllDocuments } from "../nostr/fetchFile.ts";
 import {
   Box,
@@ -33,7 +33,7 @@ export default function DocumentList({
     (async () => {
       const signer = await signerManager.getSigner();
       try {
-        const docs = await fetchAllDocuments(
+        await fetchAllDocuments(
           relays,
           addDocument,
           await signer.getPublicKey()
