@@ -1,13 +1,5 @@
 import { useEffect, useState } from "react";
-import {
-  Box,
-  Paper,
-  Button,
-  ToggleButton,
-  ToggleButtonGroup,
-  Typography,
-  useTheme,
-} from "@mui/material";
+import { Box, Paper, Button, Typography, useTheme } from "@mui/material";
 import ReactMarkdown from "react-markdown";
 import { publishEvent } from "../nostr/publish";
 import { useDocumentContext } from "../contexts/DocumentContext";
