@@ -40,7 +40,7 @@ export default function DocEditor() {
     if (!signer) return;
     let dTag = selectedDocumentId;
     if (!dTag) {
-      dTag = md.split("\n")[0].split(" ").join("-").substring(0, 15);
+      dTag = makeTag(6);
     }
 
     try {
@@ -187,4 +187,12 @@ export default function DocEditor() {
       </Paper>
     </Box>
   );
+}
+function makeTag(length: number): string {
+  const chars =
+    "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+  const arr = new Uint32Array(length);
+  crypto.getRandomValues(arr);
+
+  return Array.from(arr, (x) => chars[x % chars.length]).join("");
 }
