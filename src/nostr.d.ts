@@ -1,22 +1,23 @@
 // src/nostr/nostr.d.ts
 
-interface NostrEvent {
-  id: string;
-  pubkey: string;
-  created_at: number;
-  kind: number;
-  tags: string[][];
-  content: string;
-  sig: string;
+import type { UnsignedEvent } from "nostr-tools";
+import type { WindowNostr } from "nostr-tools/nip07";
+
+declare global {
+  interface NostrEvent {
+    id: string;
+    pubkey: string;
+    created_at: number;
+    kind: number;
+    tags: string[][];
+    content: string;
+    sig: string;
+  }
+
+  interface Window {
+    nostr?: WindowNostr;
+  }
 }
 
-interface NostrExtension {
-  getPublicKey?: () => Promise<string>;
-  signEvent: (event: NostrEvent) => Promise<NostrEvent>;
-  signMessage?: (message: string) => Promise<string>;
-  getRelays?: () => Promise<Record<string, { read: boolean; write: boolean }>>;
-}
-
-interface Window {
-  nostr?: NostrExtension;
-}
+// This ensures the file is a module (so TS picks it up)
+export {};

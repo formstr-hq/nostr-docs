@@ -12,14 +12,19 @@ import { publishEvent } from "../nostr/publish";
 interface DocEditorProps {
   docId: string;
   relays?: string[];
+  onTitleChange?: (title: string) => void;
 }
 
-export default function DocEditor({ docId, relays = [] }: DocEditorProps) {
-  const [md, setMd] = useState("");
+export default function DocEditor({
+  docId,
+  relays = [],
+  onTitleChange,
+}: DocEditorProps) {
   const [tab, setTab] = useState(0);
 
   const ydocRef = React.useRef<Y.Doc | null>(null);
   const ytextRef = React.useRef<Y.Text | null>(null);
+  const [md, setMd] = useState(""); // for preview only
 
   // Initialize Yjs
   useEffect(() => {
@@ -28,8 +33,7 @@ export default function DocEditor({ docId, relays = [] }: DocEditorProps) {
     ydocRef.current = ydoc;
     ytextRef.current = ytext;
 
-    setMd(ytext.toString());
-
+    // Observe for preview rendering
     const observer = () => setMd(ytext.toString());
     ytext.observe(observer);
 
@@ -50,7 +54,8 @@ export default function DocEditor({ docId, relays = [] }: DocEditorProps) {
         const event = await fetchLatestFileEvent(docId, relays);
         if (event) {
           const uint8 = base64ToUint8(event.content);
-          Y.applyUpdate(ydoc, uint8);
+          // Mark as remote to avoid rebroadcast
+          Y.applyUpdate(ydoc, uint8, "remote");
         }
       } catch (err) {
         console.error("Failed to load snapshot:", err);
@@ -69,7 +74,8 @@ export default function DocEditor({ docId, relays = [] }: DocEditorProps) {
     const ydoc = ydocRef.current;
     if (!ydoc || !relays || !window.nostr) return;
 
-    const onUpdate = (update: Uint8Array) => {
+    const onUpdate = (update: Uint8Array, origin: any) => {
+      if (origin === "remote") return; // prevent loops
       (async () => {
         try {
           const event = {
@@ -99,10 +105,46 @@ export default function DocEditor({ docId, relays = [] }: DocEditorProps) {
     const ytext = ytextRef.current;
     if (!ytext) return;
 
+    // Incremental changes instead of replacing entire document
+    const oldValue = ytext.toString();
+    const commonPrefixLength = (() => {
+      let i = 0;
+      while (
+        i < oldValue.length &&
+        i < value.length &&
+        oldValue[i] === value[i]
+      )
+        i++;
+      return i;
+    })();
+    const commonSuffixLength = (() => {
+      let i = 0;
+      while (
+        i + commonPrefixLength < oldValue.length &&
+        i + commonPrefixLength < value.length &&
+        oldValue[oldValue.length - 1 - i] === value[value.length - 1 - i]
+      )
+        i++;
+      return i;
+    })();
+
+    const deleteStart = commonPrefixLength;
+    const deleteLength =
+      oldValue.length - commonPrefixLength - commonSuffixLength;
+    const insertText = value.slice(
+      commonPrefixLength,
+      value.length - commonSuffixLength
+    );
+
     ytext.doc?.transact(() => {
-      ytext.delete(0, ytext.length);
-      ytext.insert(0, value);
+      if (deleteLength > 0) ytext.delete(deleteStart, deleteLength);
+      if (insertText.length > 0) ytext.insert(deleteStart, insertText);
     });
+
+    // Extract and send title to parent
+    const lines = value.split("\n");
+    const title = lines.length > 0 ? lines[0] : "";
+    if (onTitleChange) onTitleChange(title);
   };
 
   // Save snapshot
@@ -138,7 +180,7 @@ export default function DocEditor({ docId, relays = [] }: DocEditorProps) {
         width: "100%",
         display: "flex",
         flexDirection: "column",
-        alignItems: "center", // <-- center everything
+        alignItems: "center",
         background: "#f0f0f0",
         overflowY: "auto",
         p: 2,
@@ -159,7 +201,7 @@ export default function DocEditor({ docId, relays = [] }: DocEditorProps) {
           top: 0,
           zIndex: 10,
           width: "100%",
-          maxWidth: "900px", // <-- matches sheet width
+          maxWidth: "900px",
         }}
       >
         <Tabs value={tab} onChange={(_, v) => setTab(v)}>
@@ -188,7 +230,7 @@ export default function DocEditor({ docId, relays = [] }: DocEditorProps) {
         {tab === 0 && (
           <Box
             component="textarea"
-            value={md}
+            value={ytextRef.current?.toString() || ""}
             onChange={(e) => onLocalChange(e.target.value)}
             placeholder="Start writing..."
             style={{
@@ -201,7 +243,7 @@ export default function DocEditor({ docId, relays = [] }: DocEditorProps) {
               lineHeight: 1.6,
               fontFamily: "Georgia, serif",
               background: "transparent",
-              color: "#222", // <-- FIXED TEXT COLOR
+              color: "#222",
             }}
           />
         )}

@@ -1,22 +1,72 @@
 // src/App.tsx
 import DocEditor from "./components/DocEditor";
-import { CssBaseline, Typography, Box } from "@mui/material";
+import DocumentList from "./components/DocumentList";
+import { CssBaseline, Typography, Box, Button, Tabs, Tab } from "@mui/material";
 import { DEFAULT_RELAYS } from "./nostr/relayPool";
+import React from "react";
 
 function App() {
-  // For testing, use a fixed docId and a randomly generated private key (hex)
-  // In production, replace with wallet integration
-  const docId = "test-doc-001";
+  const [docId, setDocId] = React.useState<string | null>(null);
+  const [title, setTitle] = React.useState("");
+
+  const [view, setView] = React.useState<"editor" | "list">("editor");
+
+  const onTitleChange = (title: string) => {
+    const titleWords = title.split(" ");
+    const id = titleWords.join("-").substring(0, 15);
+    setDocId(id);
+  };
 
   return (
     <>
       <CssBaseline />
       <Box sx={{ height: "100vh", p: 4, maxWidth: "100%" }}>
-        <Typography variant="h4" gutterBottom>
-          Nostr Collaborative Markdown Editor
-        </Typography>
+        {/* Navigation Tabs */}
+        <Box sx={{ mb: 3 }}>
+          <Tabs value={view} onChange={(_, v) => setView(v)}>
+            <Tab label="Documents" value="list" />
+            <Tab label="Editor" value="editor" />
+          </Tabs>
+        </Box>
 
-        <DocEditor docId={docId} relays={DEFAULT_RELAYS} />
+        {/* Conditional Rendering */}
+        {view === "list" ? (
+          <DocumentList
+            onEdit={(id) => {
+              console.log("Setting docId as", id);
+              setDocId(id);
+              setView("editor");
+            }}
+          />
+        ) : (
+          <>
+            {/* Document Title (auto-generated from first line) */}
+            <Box sx={{ mb: 3 }}>
+              <Typography variant="subtitle1" sx={{ mb: 1 }}>
+                Document Title (auto-generated from first line):
+              </Typography>
+              <Box
+                sx={{
+                  display: "flex",
+                  gap: 1,
+                  alignItems: "center",
+                  background: "white",
+                  p: 1.5,
+                  borderRadius: 2,
+                  border: "1px solid #ccc",
+                }}
+              >
+                <Typography>{docId}</Typography>
+              </Box>
+            </Box>
+
+            <DocEditor
+              docId={docId || ""}
+              relays={DEFAULT_RELAYS}
+              onTitleChange={onTitleChange}
+            />
+          </>
+        )}
       </Box>
     </>
   );
