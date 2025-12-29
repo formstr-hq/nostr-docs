@@ -14,6 +14,7 @@ import {
 import { DEFAULT_RELAYS } from "../nostr/relayPool";
 import { useDocumentContext } from "../contexts/DocumentContext.tsx";
 import { signerManager } from "../signer/index.ts";
+import { useRelays } from "../contexts/RelayContext.tsx";
 
 export default function DocumentList({
   onEdit,
@@ -23,6 +24,7 @@ export default function DocumentList({
   const { setSelectedDocumentId, documents, addDocument } =
     useDocumentContext();
   const [loading, setLoading] = useState(true);
+  const { relays } = useRelays();
 
   // Replace onEdit with context update
   const handleDocumentSelect = (docId: string) => {
@@ -35,7 +37,7 @@ export default function DocumentList({
       const signer = await signerManager.getSigner();
       try {
         const docs = await fetchAllDocuments(
-          DEFAULT_RELAYS,
+          relays,
           addDocument,
           await signer.getPublicKey()
         );

@@ -3,6 +3,7 @@ import { createContext, useContext, useEffect, useState } from "react";
 import { signerManager } from "../signer";
 import { fetchProfile } from "../nostr/fetchProfile"; // function to fetch kind-0 metadata
 import { withTimeout } from "../utils/timeout";
+import { useRelays } from "./RelayContext";
 
 export type UserProfile = {
   pubkey?: string;
@@ -26,7 +27,7 @@ export const UserProvider: React.FC<{ children: React.ReactNode }> = ({
   children,
 }) => {
   const [user, setUser] = useState<UserProfile | null>(null);
-
+  const relays = useRelays();
   // Load cached profile
   useEffect(() => {
     const stored = localStorage.getItem(LOCAL_STORAGE_KEY);
@@ -63,7 +64,7 @@ export const UserProvider: React.FC<{ children: React.ReactNode }> = ({
     console.log("called fetch and set");
     try {
       const profile = (await withTimeout(
-        fetchProfile(pubkey),
+        fetchProfile(pubkey, relays.relays),
         8000
       )) as UserProfile;
       console.log("Found profile", profile);

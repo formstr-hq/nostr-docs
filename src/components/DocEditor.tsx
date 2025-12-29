@@ -11,8 +11,8 @@ import {
 import ReactMarkdown from "react-markdown";
 import { publishEvent } from "../nostr/publish";
 import { useDocumentContext } from "../contexts/DocumentContext";
-import { DEFAULT_RELAYS } from "../nostr/relayPool";
 import { signerManager } from "../signer";
+import { useRelays } from "../contexts/RelayContext";
 
 export default function DocEditor() {
   const { documents, selectedDocumentId } = useDocumentContext();
@@ -23,6 +23,7 @@ export default function DocEditor() {
   const [mode, setMode] = useState<"edit" | "preview">("edit");
 
   const theme = useTheme(); // <-- MUI theme hook
+  const { relays } = useRelays();
 
   useEffect(() => {
     setMd(initial);
@@ -55,7 +56,7 @@ export default function DocEditor() {
       };
 
       const signed = await signer.signEvent(event);
-      await publishEvent(signed, DEFAULT_RELAYS);
+      await publishEvent(signed, relays);
       alert("Saved!");
     } catch (err) {
       console.error("Failed to save snapshot:", err);

@@ -1,10 +1,13 @@
 import type { Event } from "nostr-tools";
 import { DEFAULT_RELAYS, pool } from "./relayPool";
 
-export const fetchProfile = async (pubkey: string) => {
+export const fetchProfile = async (
+  pubkey: string,
+  relays: string[] = DEFAULT_RELAYS
+) => {
   return new Promise((resolve, reject) => {
     pool.subscribeMany(
-      DEFAULT_RELAYS,
+      relays,
       {
         kinds: [0],
         authors: [pubkey],
