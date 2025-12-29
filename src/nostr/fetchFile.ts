@@ -7,7 +7,8 @@ export const KIND_FILE = 33457;
 
 export async function fetchAllDocuments(
   relays: string[],
-  addDocument: (doc: Event) => void
+  addDocument: (doc: Event) => void,
+  pubkey: string
 ): Promise<NostrEvent[]> {
   return new Promise((resolve) => {
     const documents: NostrEvent[] = [];

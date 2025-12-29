@@ -12,6 +12,7 @@ import ReactMarkdown from "react-markdown";
 import { publishEvent } from "../nostr/publish";
 import { useDocumentContext } from "../contexts/DocumentContext";
 import { DEFAULT_RELAYS } from "../nostr/relayPool";
+import { signerManager } from "../signer";
 
 export default function DocEditor() {
   const { documents, selectedDocumentId } = useDocumentContext();
@@ -28,14 +29,18 @@ export default function DocEditor() {
   }, [selectedDocumentId]);
 
   const encryptContent = async (content: string) => {
-    return window.nostr?.nip44?.encrypt(
-      await window.nostr?.getPublicKey(),
-      content
-    );
+    const signer = await signerManager.getSigner();
+    if (!signer) return;
+    return signer.nip44Encrypt!(await signer.getPublicKey(), content);
   };
 
   const saveSnapshot = async () => {
-    if (!window.nostr || !selectedDocumentId) return;
+    const signer = await signerManager.getSigner();
+    if (!signer) return;
+    let dTag = selectedDocumentId;
+    if (!dTag) {
+      dTag = md.split("\n")[0].split(" ").join("-").substring(0, 15);
+    }
 
     try {
       const encryptedContent = await encryptContent(md);
@@ -43,13 +48,13 @@ export default function DocEditor() {
 
       const event = {
         kind: 33457,
-        tags: [["d", selectedDocumentId]],
+        tags: [["d", dTag]],
         content: encryptedContent,
         created_at: Math.floor(Date.now() / 1000),
-        pubkey: await window.nostr!.getPublicKey!(),
+        pubkey: await signer.getPublicKey!(),
       };
 
-      const signed = await window.nostr.signEvent(event);
+      const signed = await signer.signEvent(event);
       await publishEvent(signed, DEFAULT_RELAYS);
       alert("Saved!");
     } catch (err) {

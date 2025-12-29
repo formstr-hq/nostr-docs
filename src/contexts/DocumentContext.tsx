@@ -1,5 +1,6 @@
 import type { Event } from "nostr-tools";
 import React, { createContext, useContext, useState } from "react";
+import { signerManager } from "../signer";
 
 interface DocumentContextValue {
   documents: Map<string, { event: Event; decryptedContent: string }>;
@@ -14,9 +15,10 @@ const DocumentContext = createContext<DocumentContextValue | undefined>(
 
 const getDecryptedContent = async (event: Event): Promise<string> => {
   try {
+    const signer = await signerManager.getSigner();
     return (
-      (await window.nostr?.nip44?.decrypt(
-        await window.nostr?.getPublicKey(),
+      (await signer.nip44Decrypt!(
+        await signer.getPublicKey(),
         event.content
       )) ?? ""
     );

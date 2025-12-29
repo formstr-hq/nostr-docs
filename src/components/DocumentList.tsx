@@ -13,6 +13,7 @@ import {
 } from "@mui/material";
 import { DEFAULT_RELAYS } from "../nostr/relayPool";
 import { useDocumentContext } from "../contexts/DocumentContext.tsx";
+import { signerManager } from "../signer/index.ts";
 
 export default function DocumentList({
   onEdit,
@@ -31,8 +32,13 @@ export default function DocumentList({
 
   useEffect(() => {
     (async () => {
+      const signer = await signerManager.getSigner();
       try {
-        const docs = await fetchAllDocuments(DEFAULT_RELAYS, addDocument);
+        const docs = await fetchAllDocuments(
+          DEFAULT_RELAYS,
+          addDocument,
+          await signer.getPublicKey()
+        );
         setLoading(false);
       } catch (err) {
         console.error("Failed to fetch documents:", err);
@@ -48,7 +54,7 @@ export default function DocumentList({
   return (
     <Box sx={{ maxWidth: "800px", width: "100%", p: 2 }}>
       <Typography variant="h5" gutterBottom>
-        My Documents
+        Personal Pages
       </Typography>
       {documents.size === 0 ? (
         <Typography>
