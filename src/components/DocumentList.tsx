@@ -8,6 +8,7 @@ import {
   List,
   ListItemText,
   ListItemButton,
+  Button,
 } from "@mui/material";
 import { useDocumentContext } from "../contexts/DocumentContext.tsx";
 import { signerManager } from "../signer/index.ts";
@@ -16,7 +17,7 @@ import { useRelays } from "../contexts/RelayContext.tsx";
 export default function DocumentList({
   onEdit,
 }: {
-  onEdit: (docId: string) => void;
+  onEdit: (docId: string | null) => void;
 }) {
   const { setSelectedDocumentId, documents, addDocument } =
     useDocumentContext();
@@ -55,6 +56,18 @@ export default function DocumentList({
       <Typography variant="h5" gutterBottom>
         Personal Pages
       </Typography>
+      <Button
+        color="secondary"
+        variant="contained"
+        style={{ marginTop: 30 }}
+        onClick={() => {
+          setSelectedDocumentId(null);
+          onEdit(null);
+        }}
+      >
+        {" "}
+        Create a new private page{" "}
+      </Button>
       {documents.size === 0 ? (
         <Typography>
           No documents found. Create one using the editor!
