@@ -1,26 +1,23 @@
 // src/components/DocEditor.tsx
 
-import React, { useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { Box, Tabs, Tab, Paper, Button } from "@mui/material";
 import ReactMarkdown from "react-markdown";
-import * as Y from "yjs";
-import { fetchLatestFileEvent } from "../nostr/fetchFile";
 import { publishEvent } from "../nostr/publish";
+import { useDocumentContext } from "../contexts/DocumentContext.tsx";
+import { DEFAULT_RELAYS } from "../nostr/relayPool.ts";
 
 interface DocEditorProps {
-  docId: string;
-  relays?: string[];
   onTitleChange?: (title: string) => void;
 }
 
-export default function DocEditor({
-  docId,
-  relays = [],
-  onTitleChange,
-}: DocEditorProps) {
+export default function DocEditor({ onTitleChange }: DocEditorProps) {
+  const { documents, selectedDocumentId } = useDocumentContext();
+  const document =
+    documents.get(selectedDocumentId || "")?.decryptedContent || "";
   const [tab, setTab] = useState(0);
-  const [md, setMd] = useState("");
-
+  const [md, setMd] = useState(document);
+  const [docId, setDocId] = useState(selectedDocumentId || "");
   const encryptContent = async (content: string) => {
     return await window.nostr?.nip44?.encrypt(
       await window.nostr?.getPublicKey(),
@@ -28,45 +25,17 @@ export default function DocEditor({
     );
   };
 
-  const decryptEventContent = async (content: string) => {
-    return await window.nostr?.nip44?.decrypt(
-      await window.nostr?.getPublicKey(),
-      content
-    );
-  };
-
-  // Load latest snapshot
-  useEffect(() => {
-    if (!relays || relays.length === 0) return;
-    if (!docId) return;
-    console.log("GOt md as ", md);
-    if (md) return;
-    (async () => {
-      try {
-        const event = await fetchLatestFileEvent(docId, relays);
-        console.log("Got latest event as", event);
-        if (event) {
-          const mdText = await decryptEventContent(event.content);
-          if (!mdText) return;
-          setMd(mdText);
-        }
-      } catch (err) {
-        console.error("Failed to load snapshot:", err);
-      }
-    })();
-  }, [docId, relays]);
-
   // // Local edits
   const onLocalChange = (value: string) => {
     setMd(value);
     const lines = value.split("\n");
     const title = lines.length > 0 ? lines[0] : "";
-    if (onTitleChange) onTitleChange(title);
+    if (onTitleChange && !selectedDocumentId) onTitleChange(title);
   };
 
   // Save snapshot
   const saveSnapshot = async () => {
-    if (!relays || !window.nostr) return;
+    if (!window.nostr) return;
 
     try {
       const encryptedContent = await encryptContent(md);
@@ -83,7 +52,7 @@ export default function DocEditor({
       };
 
       const signed = await window.nostr.signEvent(event);
-      await publishEvent(signed, relays);
+      await publishEvent(signed, DEFAULT_RELAYS);
       alert("Snapshot saved!");
     } catch (err) {
       console.error("Failed to save snapshot:", err);
