@@ -1,5 +1,12 @@
 import { useEffect, useState } from "react";
-import { Box, Paper, Button, Typography, useTheme } from "@mui/material";
+import {
+  Box,
+  Paper,
+  Button,
+  Typography,
+  useTheme,
+  IconButton,
+} from "@mui/material";
 import ReactMarkdown from "react-markdown";
 import { publishEvent } from "../nostr/publish";
 import { useDocumentContext } from "../contexts/DocumentContext";
@@ -9,15 +16,25 @@ import EditIcon from "@mui/icons-material/Edit";
 import VisibilityIcon from "@mui/icons-material/Visibility";
 import { useMediaQuery } from "@mui/material";
 import ShareModal from "./ShareModal";
+import MoreVertIcon from "@mui/icons-material/MoreVert";
+import { Menu, MenuItem, ListItemIcon, ListItemText } from "@mui/material";
+import DeleteIcon from "@mui/icons-material/Delete";
+import ShareIcon from "@mui/icons-material/Share";
+import { deleteEvent } from "../nostr/deleteRequest";
+import ConfirmModal from "./common/ConfirmModal";
 
 export default function DocEditor() {
-  const { documents, selectedDocumentId } = useDocumentContext();
+  const { documents, selectedDocumentId, removeDocument } =
+    useDocumentContext();
   const doc = documents.get(selectedDocumentId || "");
   const initial = doc?.decryptedContent || "";
 
   const [md, setMd] = useState(initial);
   const [mode, setMode] = useState<"edit" | "preview">("preview");
   const [shareOpen, setShareOpen] = useState(false);
+  const [menuAnchor, setMenuAnchor] = useState<null | HTMLElement>(null);
+  const menuOpen = Boolean(menuAnchor);
+  const [confirmOpen, setConfirmOpen] = useState(false);
 
   const theme = useTheme(); // <-- MUI theme hook
   const { relays } = useRelays();
@@ -41,6 +58,21 @@ export default function DocEditor() {
     const signer = await signerManager.getSigner();
     if (!signer) return;
     return signer.nip44Encrypt!(await signer.getPublicKey(), content);
+  };
+
+  const handleDelete = async (skipPrompt = false) => {
+    if (skipPrompt) {
+      await deleteEvent({
+        eventKind: 33457,
+        eventId: selectedDocumentId!,
+        relays,
+        reason: "User requested deletion",
+      });
+      removeDocument(selectedDocumentId!);
+      return;
+    }
+
+    setConfirmOpen(true);
   };
 
   const saveSnapshot = async () => {
@@ -132,14 +164,39 @@ export default function DocEditor() {
             Save
           </Button>
 
-          <Button
-            variant="outlined"
-            color="secondary"
-            onClick={() => setShareOpen(true)}
-            sx={{ fontWeight: 700 }}
+          <IconButton onClick={(e) => setMenuAnchor(e.currentTarget)}>
+            <MoreVertIcon />
+          </IconButton>
+
+          <Menu
+            anchorEl={menuAnchor}
+            open={menuOpen}
+            onClose={() => setMenuAnchor(null)}
           >
-            Share
-          </Button>
+            <MenuItem
+              onClick={() => {
+                setShareOpen(true);
+                setMenuAnchor(null);
+              }}
+            >
+              <ListItemIcon>
+                <ShareIcon fontSize="small" />
+              </ListItemIcon>
+              <ListItemText primary="Share" />
+            </MenuItem>
+
+            <MenuItem
+              onClick={() => {
+                handleDelete();
+                setMenuAnchor(null);
+              }}
+            >
+              <ListItemIcon>
+                <DeleteIcon fontSize="small" />
+              </ListItemIcon>
+              <ListItemText primary="Delete" />
+            </MenuItem>
+          </Menu>
         </Box>
       </Paper>
 
@@ -210,6 +267,26 @@ export default function DocEditor() {
         onClose={() => setShareOpen(false)}
         onPublicPost={() => handleSharePublic()}
         onPrivateLink={(canEdit) => handleGenerateLink(canEdit)}
+      />
+      <ConfirmModal
+        open={confirmOpen}
+        title="Delete Document?"
+        description="This sends a deletion request to your relays. This process is irreversible. Do you wish to proceed?"
+        confirmText="Delete"
+        cancelText="Cancel"
+        onConfirm={async () => {
+          setConfirmOpen(false);
+          await deleteEvent({
+            eventKind: 33457,
+            eventId: selectedDocumentId!,
+            relays,
+            reason: "User requested deletion",
+          });
+          removeDocument(selectedDocumentId!);
+        }}
+        onCancel={() => {
+          setConfirmOpen(false);
+        }}
       />
     </Box>
   );

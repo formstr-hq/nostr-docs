@@ -7,6 +7,10 @@ interface DocumentContextValue {
   selectedDocumentId: string | null;
   setSelectedDocumentId: (id: string | null) => void;
   addDocument: (document: Event) => void;
+  removeDocument: (id: string) => void;
+  addDeletionRequest: (delEvent: Event) => void;
+  deletedEventIds: Set<string>;
+  visibleDocuments: Map<string, { event: Event; decryptedContent: string }>;
 }
 
 const DocumentContext = createContext<DocumentContextValue | undefined>(
@@ -37,6 +41,47 @@ export const DocumentProvider: React.FC<{ children: React.ReactNode }> = ({
   const [selectedDocumentId, setSelectedDocumentId] = useState<string | null>(
     null
   );
+  const [deletedEventIds, setDeletedEventIds] = useState<Set<string>>(
+    new Set()
+  );
+
+  const addDeletionRequest = (delEvent: Event) => {
+    const eTags = delEvent.tags.filter((t) => t[0] === "e").map((t) => t[1]);
+    const aTags = delEvent.tags
+      .filter((t) => t[0] === "a")
+      .map((t) => t[1].split(":")[2]); // extract d-tag from a-tag
+
+    setDeletedEventIds((prev) => new Set([...prev, ...eTags, ...aTags]));
+
+    setDocuments((prev) => {
+      const newDocs = new Map(prev);
+      [...eTags, ...aTags].forEach((id) => newDocs.delete(id));
+      // reset selection if needed
+      if (
+        selectedDocumentId &&
+        [...eTags, ...aTags].includes(selectedDocumentId)
+      ) {
+        setSelectedDocumentId(null);
+      }
+      return newDocs;
+    });
+  };
+
+  const removeDocument = (id: string) => {
+    setDocuments((prev) => {
+      const newDocuments = new Map(prev);
+      newDocuments.delete(id);
+      return newDocuments;
+    });
+
+    setSelectedDocumentId((current) => (current === id ? null : current));
+  };
+
+  const visibleDocuments = React.useMemo(() => {
+    return new Map(
+      [...documents.entries()].filter(([id]) => !deletedEventIds.has(id))
+    );
+  }, [documents, deletedEventIds]);
 
   const addDocument = async (document: Event) => {
     const dTag = document.tags.find((t: string[]) => t[0] === "d")?.[1];
@@ -58,6 +103,10 @@ export const DocumentProvider: React.FC<{ children: React.ReactNode }> = ({
         selectedDocumentId,
         setSelectedDocumentId,
         addDocument,
+        removeDocument,
+        deletedEventIds,
+        addDeletionRequest,
+        visibleDocuments,
       }}
     >
       {children}

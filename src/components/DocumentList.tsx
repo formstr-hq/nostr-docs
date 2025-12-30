@@ -14,13 +14,18 @@ import { useDocumentContext } from "../contexts/DocumentContext.tsx";
 import { signerManager } from "../signer/index.ts";
 import { useRelays } from "../contexts/RelayContext.tsx";
 import type { Event } from "nostr-tools";
+import { fetchDeleteRequests } from "../nostr/fetchDelete.ts";
 export default function DocumentList({
   onEdit,
 }: {
   onEdit: (docId: string | null) => void;
 }) {
-  const { setSelectedDocumentId, documents, addDocument } =
-    useDocumentContext();
+  const {
+    setSelectedDocumentId,
+    visibleDocuments,
+    addDocument,
+    addDeletionRequest,
+  } = useDocumentContext();
   const [loading, setLoading] = useState(true);
   const { relays } = useRelays();
 
@@ -34,7 +39,7 @@ export default function DocumentList({
     (async () => {
       const signer = await signerManager.getSigner();
       try {
-        await fetchAllDocuments(
+        fetchAllDocuments(
           relays,
           (doc: Event) => {
             setLoading(false);
@@ -42,6 +47,7 @@ export default function DocumentList({
           },
           await signer.getPublicKey()
         );
+        fetchDeleteRequests(relays, addDeletionRequest);
       } catch (err) {
         console.error("Failed to fetch documents:", err);
         setLoading(false);
@@ -86,7 +92,7 @@ export default function DocumentList({
         {" "}
         Create a new private page{" "}
       </Button>
-      {documents.size === 0 ? (
+      {visibleDocuments.size === 0 ? (
         <Typography>
           No documents found. Create one using the editor!
         </Typography>
@@ -99,7 +105,7 @@ export default function DocumentList({
           }}
         >
           <List>
-            {Array.from(documents.entries()).map(([id, doc]) => {
+            {Array.from(visibleDocuments.entries()).map(([id, doc]) => {
               const content = doc.decryptedContent;
               return (
                 <ListItemButton
