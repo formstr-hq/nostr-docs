@@ -188,7 +188,7 @@ export default function DocEditor({
 
   const saveSnapshot = async () => {
     const signer = await signerManager.getSigner();
-    if (!signer) return;
+    if (!signer && !editKey) return;
     let dTag = selectedDocumentId;
     if (!dTag) {
       dTag = makeTag(6);
@@ -208,7 +208,7 @@ export default function DocEditor({
       let signed: Event | null = null;
       if (editKey) signed = finalizeEvent(event, hexToBytes(editKey));
       else signed = await signer.signEvent(event);
-      await publishEvent(signed, relays);
+      await publishEvent(signed!, relays);
       alert("Saved!");
     } catch (err) {
       console.error("Failed to save snapshot:", err);

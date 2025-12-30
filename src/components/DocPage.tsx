@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { useParams } from "react-router-dom";
+import { useParams, useLocation } from "react-router-dom";
 import { useDocumentContext } from "../contexts/DocumentContext";
 import DocEditor from "../components/DocEditor";
 import { fetchDocumentByNaddr } from "../nostr/fetchFile";
@@ -10,17 +10,25 @@ import { decodeNKeys } from "../utils/nkeys";
 
 export default function DocPage() {
   const { naddr } = useParams<{ naddr: string }>();
+  const location = useLocation();
   const { documents, setSelectedDocumentId, addDocument } =
     useDocumentContext();
   const { relays } = useRelays();
+
   const [loading, setLoading] = useState(true);
   const [invalid, setInvalid] = useState(false);
-
-  const hash = window.location.hash.replace("#", "");
-  const keys = hash ? decodeNKeys(hash) : {};
+  const [decodedKeys, setDecodedKeys] = useState<{
+    viewKey?: string;
+    editKey?: string;
+  }>({});
 
   useEffect(() => {
     if (!naddr) return;
+
+    // Decode keys from hash
+    const hash = location.hash.replace("#", "");
+    const keys = hash ? decodeNKeys(hash) : {};
+    setDecodedKeys(keys);
 
     let identifier: string;
     try {
@@ -37,28 +45,32 @@ export default function DocPage() {
     const docExists = !!documents.get(identifier);
 
     if (docExists && Object.keys(keys).length !== 0) {
+      // Document already exists in context, just select it
       setSelectedDocumentId(identifier);
       setLoading(false);
     } else {
-      console.log("Fetching...");
+      // Fetch document from relays
+      console.log("Fetching document from relays...");
       (async () => {
         try {
           await fetchDocumentByNaddr(relays, naddr, (event: Event) => {
-            console.log("Keys are", keys);
             addDocument(event, keys);
             setSelectedDocumentId(identifier);
           });
         } catch (err) {
           console.error("Failed to fetch document:", err);
+          setInvalid(true);
         } finally {
           setLoading(false);
         }
       })();
     }
-  }, [naddr, documents, relays]);
+  }, [naddr, relays, location.hash, documents]);
 
   if (loading) return <div>Loading document...</div>;
   if (invalid) return <div>Invalid document URL</div>;
 
-  return <DocEditor viewKey={keys.viewKey} editKey={keys.editKey} />;
+  return (
+    <DocEditor viewKey={decodedKeys.viewKey} editKey={decodedKeys.editKey} />
+  );
 }

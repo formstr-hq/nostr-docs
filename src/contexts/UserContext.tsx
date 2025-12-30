@@ -4,6 +4,7 @@ import { signerManager } from "../signer";
 import { fetchProfile } from "../nostr/fetchProfile"; // function to fetch kind-0 metadata
 import { withTimeout } from "../utils/timeout";
 import { useRelays } from "./RelayContext";
+import LoginModal from "../components/LoginModal";
 
 export type UserProfile = {
   pubkey?: string;
@@ -27,6 +28,8 @@ export const UserProvider: React.FC<{ children: React.ReactNode }> = ({
   children,
 }) => {
   const [user, setUser] = useState<UserProfile | null>(null);
+  const [showLooginModal, setShowLoginModal] = useState<boolean>(false);
+  const [loginHandler, setLoginHandler] = useState<(() => void) | null>(null);
   const relays = useRelays();
   // Load cached profile
   useEffect(() => {
@@ -38,6 +41,22 @@ export const UserProvider: React.FC<{ children: React.ReactNode }> = ({
         console.error("Failed to parse cached user profile:", e);
       }
     }
+  }, []);
+
+  useEffect(() => {
+    signerManager.registerLoginModal(() => {
+      return new Promise<void>((resolve) => {
+        setShowLoginModal(true);
+
+        // Pass a function to LoginModal to call on successful login
+        const handleLoginSuccess = () => {
+          setShowLoginModal(false);
+          resolve(); // This finally unblocks getSigner
+        };
+
+        setLoginHandler(() => handleLoginSuccess);
+      });
+    });
   }, []);
 
   // Listen to signerManager changes
@@ -68,6 +87,7 @@ export const UserProvider: React.FC<{ children: React.ReactNode }> = ({
       )) as UserProfile;
       const userProfile: UserProfile = { pubkey, ...profile };
       setUser(userProfile);
+      loginHandler?.();
       localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(userProfile));
     } catch (e) {
       console.error("Failed to fetch user profile:", e);
@@ -100,6 +120,10 @@ export const UserProvider: React.FC<{ children: React.ReactNode }> = ({
   return (
     <UserContext.Provider value={{ user, loginModal, logout, refreshProfile }}>
       {children}
+      <LoginModal
+        open={showLooginModal}
+        onClose={() => setShowLoginModal(false)}
+      />
     </UserContext.Provider>
   );
 };

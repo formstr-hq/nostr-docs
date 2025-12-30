@@ -34,8 +34,8 @@ export default function App() {
   const theme = darkMode ? darkTheme : lightTheme;
 
   return (
-    <UserProvider>
-      <ThemeProvider theme={theme}>
+    <ThemeProvider theme={theme}>
+      <UserProvider>
         <DocumentProvider>
           <SharedPagesProvider>
             <CssBaseline />
@@ -152,8 +152,8 @@ export default function App() {
             </BrowserRouter>
           </SharedPagesProvider>
         </DocumentProvider>
-      </ThemeProvider>
-    </UserProvider>
+      </UserProvider>
+    </ThemeProvider>
   );
 }
 
