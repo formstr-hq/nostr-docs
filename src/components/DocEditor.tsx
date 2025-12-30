@@ -34,7 +34,7 @@ import { encodeNKeys } from "../utils/nkeys";
 import { bytesToHex, hexToBytes } from "nostr-tools/utils";
 import { getConversationKey } from "nostr-tools/nip44";
 import { useSharedPages } from "../contexts/SharedDocsContext";
-import { KIND_FILE } from "../nostr/fetchFile";
+import { fetchEventsByKind, KIND_FILE } from "../nostr/fetchFile";
 
 export default function DocEditor({
   viewKey,
@@ -43,7 +43,7 @@ export default function DocEditor({
   viewKey?: string;
   editKey?: string;
 }) {
-  const { documents, selectedDocumentId, removeDocument } =
+  const { documents, selectedDocumentId, removeDocument, addDocument } =
     useDocumentContext();
   const doc = documents.get(selectedDocumentId || "");
   const initial = doc?.decryptedContent || "";
@@ -67,10 +67,27 @@ export default function DocEditor({
       setMode("edit");
       setMd("");
     } else {
-      setMd(initial);
+      setMd(documents.get(selectedDocumentId)?.decryptedContent!);
       setMode("preview");
     }
-  }, [selectedDocumentId]);
+  }, [selectedDocumentId, documents]);
+
+  useEffect(() => {
+    (async () => {
+      let pubkey;
+      if (editKey) pubkey = getPublicKey(hexToBytes(editKey));
+      else pubkey = await (await signerManager.getSigner())!.getPublicKey();
+
+      fetchEventsByKind(relays, KIND_FILE, pubkey, (event: Event) => {
+        console.log("Got New Event", event);
+        if (viewKey) {
+          addDocument(event, { viewKey });
+        } else {
+          addDocument(event);
+        }
+      });
+    })();
+  }, [selectedDocumentId, relays, viewKey]);
 
   async function handleGeneratePrivateLink(canEdit: boolean) {
     if (!selectedDocumentId) return;
