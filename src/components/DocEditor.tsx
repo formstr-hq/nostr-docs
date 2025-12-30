@@ -28,9 +28,11 @@ export default function DocEditor() {
     useDocumentContext();
   const doc = documents.get(selectedDocumentId || "");
   const initial = doc?.decryptedContent || "";
-
+  const isNewDoc = !selectedDocumentId;
   const [md, setMd] = useState(initial);
-  const [mode, setMode] = useState<"edit" | "preview">("preview");
+  const [mode, setMode] = useState<"edit" | "preview">(
+    isNewDoc ? "edit" : "preview"
+  );
   const [shareOpen, setShareOpen] = useState(false);
   const [menuAnchor, setMenuAnchor] = useState<null | HTMLElement>(null);
   const menuOpen = Boolean(menuAnchor);
@@ -41,7 +43,13 @@ export default function DocEditor() {
   const isMobile = useMediaQuery("(max-width:900px)");
 
   useEffect(() => {
-    setMd(initial);
+    if (!selectedDocumentId) {
+      setMode("edit");
+      setMd("");
+    } else {
+      setMd(initial);
+      setMode("preview");
+    }
   }, [selectedDocumentId]);
 
   const handleGenerateLink = (canEdit: boolean) => {
@@ -219,6 +227,7 @@ export default function DocEditor() {
           <Box
             component="textarea"
             value={md}
+            placeholder="Start typing your page here (Markdown supported)"
             onChange={(e) => setMd(e.target.value)}
             style={{
               flex: 1, // use flex instead of height: 100%
