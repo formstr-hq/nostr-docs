@@ -1,4 +1,3 @@
-// src/components/DocumentList.tsx
 import { useEffect, useState } from "react";
 import { fetchAllDocuments } from "../nostr/fetchFile.ts";
 import {
@@ -9,6 +8,10 @@ import {
   ListItemText,
   ListItemButton,
   Button,
+  FormControl,
+  InputLabel,
+  Select,
+  MenuItem,
 } from "@mui/material";
 import { useDocumentContext } from "../contexts/DocumentContext.tsx";
 import { signerManager } from "../signer/index.ts";
@@ -17,6 +20,9 @@ import { nip19, type Event } from "nostr-tools";
 import { fetchDeleteRequests } from "../nostr/fetchDelete.ts";
 import { useUser } from "../contexts/UserContext.tsx";
 import { useNavigate } from "react-router-dom";
+import { useSharedPages } from "../contexts/SharedDocsContext.tsx";
+import { encodeNKeys } from "../utils/nkeys.ts";
+
 export default function DocumentList({
   onEdit,
 }: {
@@ -28,21 +34,41 @@ export default function DocumentList({
     addDocument,
     addDeletionRequest,
   } = useDocumentContext();
+
+  const { sharedDocuments, getKeys } = useSharedPages();
   const [loading, setLoading] = useState(true);
+  const [view, setView] = useState<"personal" | "shared">("personal");
   const { user } = useUser();
   const { relays } = useRelays();
 
   const navigate = useNavigate();
 
-  // Replace onEdit with context update
-  const handleDocumentSelect = (identifier: string, doc: Event) => {
+  const handleDocumentSelect = (doc: Event) => {
+    const dTag = doc.tags.find((t) => t[0] === "d")?.[1];
+    if (!dTag) {
+      alert("Invalid Doc");
+      return;
+    }
+
     const naddr = nip19.naddrEncode({
-      identifier: identifier, // or your unique identifier for this document
+      identifier: dTag,
       pubkey: doc.pubkey,
       kind: doc.kind,
     });
-    setSelectedDocumentId(naddr);
-    navigate(`/doc/${naddr}`);
+    const keys = getKeys(`${doc.kind}:${doc.pubkey}:${dTag}`);
+    let path = `/doc/${naddr}`;
+    console.log("got keys for navigation", keys);
+    if (keys.length > 0) {
+      const keysBeforeEncoding: any = {
+        viewKey: keys[0],
+      };
+      if (keys[1]) keysBeforeEncoding.editKey = keys[1];
+      const encodedStr = encodeNKeys(keysBeforeEncoding);
+      path = `${path}#${encodedStr}`;
+      navigate(path);
+    }
+    setSelectedDocumentId(dTag);
+    navigate(path);
   };
 
   useEffect(() => {
@@ -79,49 +105,57 @@ export default function DocumentList({
             onEdit(null);
           }}
         >
-          {" "}
-          Create a new private page{" "}
+          Create a new private page
         </Button>
       </>
     );
   }
+  type DocEntry = { event: Event; decryptedContent: string };
+  // Determine which docs to show
+  const docsToShow: Map<string, DocEntry> =
+    view === "personal" ? visibleDocuments : sharedDocuments;
 
   return (
     <Box sx={{ maxWidth: "800px", width: "100%", p: 2 }}>
-      <Typography variant="h5" gutterBottom>
-        Personal Pages
-      </Typography>
+      {/* Toggle between personal and shared */}
+      <FormControl fullWidth sx={{ mb: 2 }}>
+        <InputLabel id="doc-view-label">View</InputLabel>
+        <Select
+          labelId="doc-view-label"
+          value={view}
+          label="View"
+          onChange={(e) => setView(e.target.value as "personal" | "shared")}
+        >
+          <MenuItem value="personal">Personal Pages</MenuItem>
+          <MenuItem value="shared">Shared Documents</MenuItem>
+        </Select>
+      </FormControl>
+
       <Button
         color="secondary"
         variant="contained"
-        style={{ marginTop: 30 }}
+        style={{ marginBottom: 20 }}
         onClick={() => {
           setSelectedDocumentId(null);
           onEdit(null);
         }}
       >
-        {" "}
-        Create a new private page{" "}
+        Create a new {view === "personal" ? "private" : "shared"} page
       </Button>
-      {visibleDocuments.size === 0 ? (
+
+      {docsToShow.size === 0 ? (
         <Typography>
-          No documents found. Create one using the editor!
+          No {view === "personal" ? "personal" : "shared"} documents found.
         </Typography>
       ) : (
-        <Paper
-          elevation={0}
-          sx={{
-            p: 1,
-            bgcolor: "transparent",
-          }}
-        >
+        <Paper elevation={0} sx={{ p: 1, bgcolor: "transparent" }}>
           <List>
-            {Array.from(visibleDocuments.entries()).map(([id, doc]) => {
+            {Array.from(docsToShow.entries()).map(([id, doc]) => {
               const content = doc.decryptedContent;
               return (
                 <ListItemButton
                   key={id}
-                  onClick={() => handleDocumentSelect(id, doc.event)}
+                  onClick={() => handleDocumentSelect(doc.event)}
                   sx={{
                     borderRadius: 2,
                     mb: 1,

@@ -19,7 +19,6 @@ export async function fetchAllDocuments(
       { kinds: [KIND_FILE], authors: [pubkey] },
       {
         onevent: (event: NostrEvent) => {
-          console.log("Received document event", event);
           addDocument(event);
         },
         oneose: () => {
@@ -79,3 +78,27 @@ export async function fetchDocumentByNaddr(
     );
   });
 }
+
+export const fetchEventsByKind = (
+  relays: string[],
+  kind: number,
+  pubkey: string,
+  onEvent: (event: Event) => void
+) => {
+  return new Promise((resolve) => {
+    let latestEvent: Event | null = null;
+
+    pool.subscribeMany(
+      relays,
+      { kinds: [kind], authors: [pubkey] }, // filter by d-tag = naddr
+      {
+        onevent: (event: Event) => {
+          onEvent(event);
+        },
+        oneose: () => {
+          resolve(latestEvent);
+        },
+      }
+    );
+  });
+};

@@ -1,12 +1,14 @@
-import type { Event } from "nostr-tools";
+import { getPublicKey, nip44, type Event } from "nostr-tools";
 import React, { createContext, useContext, useState } from "react";
 import { signerManager } from "../signer";
+import { getConversationKey } from "nostr-tools/nip44";
+import { hexToBytes } from "nostr-tools/utils";
 
 interface DocumentContextValue {
   documents: Map<string, { event: Event; decryptedContent: string }>;
   selectedDocumentId: string | null;
   setSelectedDocumentId: (id: string | null) => void;
-  addDocument: (document: Event) => void;
+  addDocument: (document: Event, keys?: Record<string, string>) => void;
   removeDocument: (id: string) => void;
   addDeletionRequest: (delEvent: Event) => void;
   deletedEventIds: Set<string>;
@@ -17,8 +19,19 @@ const DocumentContext = createContext<DocumentContextValue | undefined>(
   undefined
 );
 
-const getDecryptedContent = async (event: Event): Promise<string> => {
+const getDecryptedContent = async (
+  event: Event,
+  viewKey?: string
+): Promise<string> => {
   try {
+    if (viewKey) {
+      const conversationKey = getConversationKey(
+        hexToBytes(viewKey),
+        getPublicKey(hexToBytes(viewKey))
+      );
+      const decryptedContent = nip44.decrypt(event.content, conversationKey);
+      return Promise.resolve(decryptedContent);
+    }
     const signer = await signerManager.getSigner();
     return (
       (await signer.nip44Decrypt!(
@@ -83,12 +96,15 @@ export const DocumentProvider: React.FC<{ children: React.ReactNode }> = ({
     );
   }, [documents, deletedEventIds]);
 
-  const addDocument = async (document: Event) => {
+  const addDocument = async (
+    document: Event,
+    keys?: Record<string, string>
+  ) => {
     const dTag = document.tags.find((t: string[]) => t[0] === "d")?.[1];
     if (!dTag) return;
     const existing = documents.get(dTag)?.event;
     if (existing && existing.created_at > document.created_at) return;
-    const decryptedContent = await getDecryptedContent(document);
+    const decryptedContent = await getDecryptedContent(document, keys?.viewKey);
     setDocuments((prev) => {
       const newDocuments = new Map(prev);
       newDocuments.set(dTag, { event: document, decryptedContent }); // Store decrypted content });

@@ -22,8 +22,27 @@ import DeleteIcon from "@mui/icons-material/Delete";
 import ShareIcon from "@mui/icons-material/Share";
 import { deleteEvent } from "../nostr/deleteRequest";
 import ConfirmModal from "./common/ConfirmModal";
+import {
+  finalizeEvent,
+  generateSecretKey,
+  getPublicKey,
+  nip19,
+  nip44,
+  type Event,
+} from "nostr-tools";
+import { encodeNKeys } from "../utils/nkeys";
+import { bytesToHex, hexToBytes } from "nostr-tools/utils";
+import { getConversationKey } from "nostr-tools/nip44";
+import { useSharedPages } from "../contexts/SharedDocsContext";
+import { KIND_FILE } from "../nostr/fetchFile";
 
-export default function DocEditor() {
+export default function DocEditor({
+  viewKey,
+  editKey,
+}: {
+  viewKey?: string;
+  editKey?: string;
+}) {
   const { documents, selectedDocumentId, removeDocument } =
     useDocumentContext();
   const doc = documents.get(selectedDocumentId || "");
@@ -37,6 +56,7 @@ export default function DocEditor() {
   const [menuAnchor, setMenuAnchor] = useState<null | HTMLElement>(null);
   const menuOpen = Boolean(menuAnchor);
   const [confirmOpen, setConfirmOpen] = useState(false);
+  const { addSharedDoc, refresh } = useSharedPages();
 
   const theme = useTheme(); // <-- MUI theme hook
   const { relays } = useRelays();
@@ -52,17 +72,100 @@ export default function DocEditor() {
     }
   }, [selectedDocumentId]);
 
-  const handleGenerateLink = (canEdit: boolean) => {
-    console.log("TODO: Share with friends/family", canEdit);
-    setShareOpen(false);
-  };
+  async function handleGeneratePrivateLink(canEdit: boolean) {
+    if (!selectedDocumentId) return;
+    const signer = await signerManager.getSigner();
+
+    const doc = documents.get(selectedDocumentId);
+    if (!doc) return;
+
+    // 1️⃣ Generate keys
+    const viewKeyUsed = viewKey ? hexToBytes(viewKey) : generateSecretKey();
+    const editKeyUsed = canEdit
+      ? editKey
+        ? hexToBytes(editKey)
+        : generateSecretKey()
+      : null;
+
+    const conversationKey = getConversationKey(
+      viewKeyUsed,
+      getPublicKey(viewKeyUsed)
+    );
+    const encryptedContent = nip44.encrypt(
+      doc.decryptedContent,
+      conversationKey
+    );
+
+    // 3️⃣ Create shared event
+    const sharedEvent = {
+      kind: 33457,
+      tags: [["d", selectedDocumentId]],
+      content: encryptedContent,
+      created_at: Math.floor(Date.now() / 1000),
+    };
+
+    // 4️⃣ Sign with editKey if exists, else viewKey
+    let signedEvent: Event | null = null;
+    if (editKeyUsed) signedEvent = finalizeEvent(sharedEvent, editKeyUsed);
+    else {
+      signedEvent = await signer.signEvent(sharedEvent);
+    }
+
+    // 5️⃣ Publish
+    await publishEvent(signedEvent, relays);
+    // Store Keys
+    const buildTag = [
+      `${KIND_FILE}:${
+        editKeyUsed ? getPublicKey(editKeyUsed) : await signer.getPublicKey()
+      }:${selectedDocumentId}`,
+    ];
+    if (viewKeyUsed) buildTag.push(bytesToHex(viewKeyUsed));
+    if (editKeyUsed) buildTag.push(bytesToHex(editKeyUsed));
+    if (buildTag.length > 1) {
+      await addSharedDoc(buildTag);
+      refresh();
+    }
+
+    if (editKeyUsed)
+      await deleteEvent({
+        eventKind: 33457,
+        eventId: selectedDocumentId!,
+        relays,
+        reason: "User requested deletion",
+      });
+
+    // 6️⃣ Encode keys in one nkeys string
+    const nkeysStr = encodeNKeys({
+      viewKey: bytesToHex(viewKeyUsed),
+      ...(editKeyUsed && { editKey: bytesToHex(editKeyUsed) }),
+    });
+
+    // 7️⃣ Build URL
+    const naddr = nip19.naddrEncode({
+      kind: 33457,
+      pubkey: signedEvent.pubkey,
+      identifier: selectedDocumentId,
+    });
+
+    const shareUrl = `${window.location.origin}/doc/${naddr}#${nkeysStr}`;
+
+    return shareUrl;
+  }
 
   const handleSharePublic = () => {
     console.log("TODO: Share publicly");
     setShareOpen(false);
   };
 
-  const encryptContent = async (content: string) => {
+  const encryptContent = async (content: string, viewKey?: string) => {
+    if (viewKey) {
+      const conversationKey = nip44.getConversationKey(
+        hexToBytes(viewKey),
+        getPublicKey(hexToBytes(viewKey))
+      );
+      const encryptedcontent = nip44.encrypt(content, conversationKey);
+      return Promise.resolve(encryptedcontent);
+    }
     const signer = await signerManager.getSigner();
     if (!signer) return;
     return signer.nip44Encrypt!(await signer.getPublicKey(), content);
@@ -92,7 +195,7 @@ export default function DocEditor() {
     }
 
     try {
-      const encryptedContent = await encryptContent(md);
+      const encryptedContent = await encryptContent(md, viewKey);
       if (!encryptedContent) return;
 
       const event = {
@@ -102,8 +205,9 @@ export default function DocEditor() {
         created_at: Math.floor(Date.now() / 1000),
         pubkey: await signer.getPublicKey!(),
       };
-
-      const signed = await signer.signEvent(event);
+      let signed: Event | null = null;
+      if (editKey) signed = finalizeEvent(event, hexToBytes(editKey));
+      else signed = await signer.signEvent(event);
       await publishEvent(signed, relays);
       alert("Saved!");
     } catch (err) {
@@ -275,7 +379,7 @@ export default function DocEditor() {
         open={shareOpen}
         onClose={() => setShareOpen(false)}
         onPublicPost={() => handleSharePublic()}
-        onPrivateLink={(canEdit) => handleGenerateLink(canEdit)}
+        onPrivateLink={(canEdit) => handleGeneratePrivateLink(canEdit)}
       />
       <ConfirmModal
         open={confirmOpen}
