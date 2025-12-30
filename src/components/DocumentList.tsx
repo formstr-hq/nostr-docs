@@ -13,9 +13,10 @@ import {
 import { useDocumentContext } from "../contexts/DocumentContext.tsx";
 import { signerManager } from "../signer/index.ts";
 import { useRelays } from "../contexts/RelayContext.tsx";
-import type { Event } from "nostr-tools";
+import { nip19, type Event } from "nostr-tools";
 import { fetchDeleteRequests } from "../nostr/fetchDelete.ts";
 import { useUser } from "../contexts/UserContext.tsx";
+import { useNavigate } from "react-router-dom";
 export default function DocumentList({
   onEdit,
 }: {
@@ -31,10 +32,17 @@ export default function DocumentList({
   const { user } = useUser();
   const { relays } = useRelays();
 
+  const navigate = useNavigate();
+
   // Replace onEdit with context update
-  const handleDocumentSelect = (docId: string) => {
-    setSelectedDocumentId(docId);
-    onEdit(docId); // Maintain backward compatibility if needed
+  const handleDocumentSelect = (identifier: string, doc: Event) => {
+    const naddr = nip19.naddrEncode({
+      identifier: identifier, // or your unique identifier for this document
+      pubkey: doc.pubkey,
+      kind: doc.kind,
+    });
+    setSelectedDocumentId(naddr);
+    navigate(`/doc/${naddr}`);
   };
 
   useEffect(() => {
@@ -113,7 +121,7 @@ export default function DocumentList({
               return (
                 <ListItemButton
                   key={id}
-                  onClick={() => handleDocumentSelect(id)}
+                  onClick={() => handleDocumentSelect(id, doc.event)}
                   sx={{
                     borderRadius: 2,
                     mb: 1,

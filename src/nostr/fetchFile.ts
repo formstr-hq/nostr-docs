@@ -1,7 +1,8 @@
 // src/nostr/fetchFile.ts
 
+import type { AddressPointer } from "nostr-tools/nip19";
 import { pool } from "./relayPool";
-import type { Event } from "nostr-tools";
+import { nip19, type Event } from "nostr-tools";
 
 export const KIND_FILE = 33457;
 
@@ -48,6 +49,31 @@ export async function fetchAllDocuments(
           }
 
           resolve(Object.values(grouped));
+        },
+      }
+    );
+  });
+}
+
+export async function fetchDocumentByNaddr(
+  relays: string[],
+  naddr: string,
+  onEvent: (event: Event) => void
+): Promise<Event | null> {
+  const { kind, pubkey, identifier } = nip19.decode(naddr)
+    .data as AddressPointer;
+  return new Promise((resolve) => {
+    let latestEvent: Event | null = null;
+
+    pool.subscribeMany(
+      relays,
+      { kinds: [kind], "#d": [identifier], authors: [pubkey] }, // filter by d-tag = naddr
+      {
+        onevent: (event: Event) => {
+          onEvent(event);
+        },
+        oneose: () => {
+          resolve(latestEvent);
         },
       }
     );
