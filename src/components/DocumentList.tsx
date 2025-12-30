@@ -33,6 +33,7 @@ export default function DocumentList({
     visibleDocuments,
     addDocument,
     addDeletionRequest,
+    selectedDocumentId,
   } = useDocumentContext();
 
   const { sharedDocuments, getKeys } = useSharedPages();
@@ -152,7 +153,10 @@ export default function DocumentList({
                   sx={{
                     borderRadius: 2,
                     mb: 1,
-                    bgcolor: "rgba(255,255,255,0.03)",
+                    bgcolor:
+                      selectedDocumentId === id
+                        ? "rgba(255, 165, 0, 0.3)" // Highlight color
+                        : "rgba(255,255,255,0.03)",
                     "&:hover": { bgcolor: "rgba(255,255,255,0.08)" },
                   }}
                 >
