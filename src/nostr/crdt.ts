@@ -12,13 +12,11 @@ export function subscribeCRDTOps(docId: string, relays: string[], ydoc: Y.Doc) {
     { kinds: [KIND_CRDT_OP], "#d": [docId] },
     {
       onevent: (event: NostrEvent) => {
-        console.log("Received event change", event);
         try {
           const update = Uint8Array.from(atob(event.content), (c) =>
             c.charCodeAt(0)
           );
           Y.applyUpdate(ydoc, update);
-          console.log("Update is");
         } catch (err) {
           console.error("Failed to apply CRDT op:", err);
         }

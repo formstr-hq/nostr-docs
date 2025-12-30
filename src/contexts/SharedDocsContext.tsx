@@ -37,7 +37,6 @@ export const SharedPagesProvider: React.FC<{ children: React.ReactNode }> = ({
   >(new Map());
 
   const getKeys = (id: string) => {
-    console.log("got", id, "have", sharedDocs, sharedDocuments);
     const keys = sharedDocs.find((t) => t[0] === id);
     return keys?.slice(1) || [];
   };
@@ -67,13 +66,11 @@ export const SharedPagesProvider: React.FC<{ children: React.ReactNode }> = ({
       authors: pubkeys,
       kinds: [KIND_FILE],
     };
-    console.log("Inside fetching SharedEvents filter", filter);
     pool.subscribeMany(relays, filter, {
       onevent: (event: Event) => {
         const dTag = event.tags.find((t) => t[0] === "d")?.[1];
         const eventATag = `${KIND_FILE}:${event.pubkey}:${dTag}`;
         const keys = sharedDocs.find((t) => t[0] === eventATag);
-        console.log("Received event with aTag", eventATag, keys);
         if (!keys || !keys[1]) return;
         const conversationKey = nip44.getConversationKey(
           hexToBytes(keys[1]),
@@ -100,7 +97,6 @@ export const SharedPagesProvider: React.FC<{ children: React.ReactNode }> = ({
       if (!signer) return;
 
       const pubkey = await signer.getPublicKey();
-      console.log("FEtching 11234");
       // fetch all kind 11234 events for this user
       const events: Event[] = [];
       await fetchEventsByKind(relays, 11234, pubkey, (event: Event) => {
@@ -117,10 +113,10 @@ export const SharedPagesProvider: React.FC<{ children: React.ReactNode }> = ({
       const latestEvent = events.reduce((prev, curr) =>
         curr.created_at > prev.created_at ? curr : prev
       );
-      console.log("found 11234 latest", latestEvent);
+
       // decrypt content
       const decrypted = await signer.nip44Decrypt!(pubkey, latestEvent.content);
-      console.log("found 11234 latest decrypted", decrypted);
+
       if (!decrypted) {
         setSharedDocs([]);
         setLoading(false);
@@ -133,7 +129,6 @@ export const SharedPagesProvider: React.FC<{ children: React.ReactNode }> = ({
       } catch (err) {
         console.error("Failed to parse shared docs list:", err);
       }
-      console.log("found 11234 parsed", parsed);
 
       setSharedDocs(parsed);
       fetchSharedDocuments(parsed);

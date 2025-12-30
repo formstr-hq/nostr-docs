@@ -48,6 +48,7 @@ export default function DocEditor({
 }) {
   const { documents, selectedDocumentId, removeDocument, addDocument } =
     useDocumentContext();
+  console.log("docum,ent id is", selectedDocumentId);
   const doc = documents.get(selectedDocumentId || "");
   const initial = doc?.decryptedContent || "";
   const isNewDoc = !selectedDocumentId;
@@ -78,16 +79,15 @@ export default function DocEditor({
   }, [md]);
 
   useEffect(() => {
-    if (!autosaveEnabled) return;
+    if (!selectedDocumentId) {
+      setMode("edit");
+      setMd("");
+    } else {
+      setMd(documents.get(selectedDocumentId)?.decryptedContent!);
+      if (!mode) setMode("preview");
+    }
+  }, [selectedDocumentId, documents]);
 
-    const interval = setInterval(() => {
-      if (mode === "edit" && mdRef.current.trim()) {
-        saveSnapshot(mdRef.current);
-      }
-    }, 10000);
-
-    return () => clearInterval(interval);
-  }, [mode, autosaveEnabled]);
   useEffect(() => {
     if (!autosaveEnabled) return;
 

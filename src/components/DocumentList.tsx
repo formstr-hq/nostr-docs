@@ -56,18 +56,11 @@ export default function DocumentList({
       kind: doc.kind,
     });
     const keys = getKeys(`${doc.kind}:${doc.pubkey}:${dTag}`);
-    let path = `/doc/${naddr}`;
-    console.log("got keys for navigation", keys);
-    if (keys.length > 0) {
-      const keysBeforeEncoding: any = {
-        viewKey: keys[0],
-      };
-      if (keys[1]) keysBeforeEncoding.editKey = keys[1];
-      const encodedStr = encodeNKeys(keysBeforeEncoding);
-      path = `${path}#${encodedStr}`;
-      navigate(path);
-    }
-    setSelectedDocumentId(dTag);
+    const path = keys.length
+      ? `/doc/${naddr}#${encodeNKeys({ viewKey: keys[0], editKey: keys[1] })}`
+      : `/doc/${naddr}`;
+
+    setSelectedDocumentId(dTag); // optional, DocPage will handle anyway
     navigate(path);
   };
 

@@ -44,11 +44,13 @@ export default function DocPage() {
 
     const docExists = !!documents.get(identifier);
 
-    if (docExists) {
+    if (docExists && Object.keys(keys).length !== 0) {
       // Document already exists in context, just select it
+      console.log("Doc exisits");
       setSelectedDocumentId(identifier);
       setLoading(false);
     } else {
+      console.log("Doc does not exisits");
       // Fetch document from relays
       (async () => {
         try {
@@ -64,7 +66,7 @@ export default function DocPage() {
         }
       })();
     }
-  }, [naddr, relays, location.hash, documents]);
+  }, [naddr, relays, location.hash]);
 
   if (loading) return <div>Loading document...</div>;
   if (invalid) return <div>Invalid document URL</div>;
