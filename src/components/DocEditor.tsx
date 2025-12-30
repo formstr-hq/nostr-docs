@@ -71,6 +71,7 @@ export default function DocEditor({
   const { relays } = useRelays();
   const isMobile = useMediaQuery("(max-width:900px)");
   const mdRef = useRef(md);
+  const lastSavedMdRef = useRef(md);
 
   useEffect(() => {
     mdRef.current = md;
@@ -233,6 +234,7 @@ export default function DocEditor({
     if (saving) return; // prevent overlapping saves
     setSaving(true);
     const mdToSave = content ?? md;
+    if (mdToSave === lastSavedMdRef.current) return;
     const signer = await signerManager.getSigner();
     if (!signer && !editKey) return;
     let dTag = selectedDocumentId;
@@ -255,6 +257,7 @@ export default function DocEditor({
       if (editKey) signed = finalizeEvent(event, hexToBytes(editKey));
       else signed = await signer.signEvent(event);
       await publishEvent(signed!, relays);
+      lastSavedMdRef.current = mdToSave;
       setToast({ open: true, message: "Saved" });
     } catch (err) {
       console.error("Failed to save snapshot:", err);

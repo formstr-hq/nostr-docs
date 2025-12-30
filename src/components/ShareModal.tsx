@@ -10,7 +10,12 @@ import {
   Box,
   TextField,
   CircularProgress,
+  Snackbar,
+  Alert,
+  InputAdornment,
+  IconButton,
 } from "@mui/material";
+import ContentCopyIcon from "@mui/icons-material/ContentCopy";
 import { useState } from "react";
 
 type Props = {
@@ -20,15 +25,11 @@ type Props = {
   onPrivateLink?: (canEdit: boolean) => Promise<string | void>;
 };
 
-export default function ShareModal({
-  open,
-  onClose,
-  onPublicPost,
-  onPrivateLink,
-}: Props) {
+export default function ShareModal({ open, onClose, onPrivateLink }: Props) {
   const [canEdit, setCanEdit] = useState(false);
   const [privateLink, setPrivateLink] = useState<string>("");
   const [loading, setLoading] = useState(false);
+  const [toastOpen, setToastOpen] = useState(false);
 
   const handlePrivateLink = async () => {
     if (!onPrivateLink) return;
@@ -43,6 +44,12 @@ export default function ShareModal({
     }
   };
 
+  const handleCopy = () => {
+    if (!privateLink) return;
+    navigator.clipboard.writeText(privateLink);
+    setToastOpen(true);
+  };
+
   const handleClose = () => {
     setPrivateLink("");
     setCanEdit(false);
@@ -51,80 +58,86 @@ export default function ShareModal({
   };
 
   return (
-    <Dialog open={open} onClose={handleClose} maxWidth="sm" fullWidth>
-      <DialogTitle>Share Page</DialogTitle>
+    <>
+      <Dialog open={open} onClose={handleClose} maxWidth="sm" fullWidth>
+        <DialogTitle>Share Page</DialogTitle>
 
-      <DialogContent
-        sx={{ display: "flex", flexDirection: "column", gap: 2, pt: 2 }}
-      >
-        {/* PUBLIC POST */}
-        <Paper
-          variant="outlined"
-          sx={{ p: 2, cursor: "pointer" }}
-          onClick={async () => {
-            await onPublicPost?.();
-            handleClose();
-          }}
+        <DialogContent
+          sx={{ display: "flex", flexDirection: "column", gap: 2, pt: 2 }}
         >
-          <Typography variant="h6" fontWeight={800}>
-            Post publicly as long-form article
-          </Typography>
-          <Typography color="text.secondary">
-            Publish as a public article so anyone can read it.
-          </Typography>
-        </Paper>
+          {/* PRIVATE LINK */}
+          <Paper variant="outlined" sx={{ p: 2 }}>
+            <Typography variant="h6" fontWeight={800}>
+              Get private link
+            </Typography>
+            <Typography color="text.secondary" sx={{ mb: 1 }}>
+              Only people with the link will have access.
+            </Typography>
 
-        {/* PRIVATE LINK */}
-        <Paper variant="outlined" sx={{ p: 2 }}>
-          <Typography variant="h6" fontWeight={800}>
-            Get private link
-          </Typography>
-          <Typography color="text.secondary" sx={{ mb: 1 }}>
-            Only people with the link will have access.
-          </Typography>
+            <Box sx={{ display: "flex", alignItems: "center", gap: 1, mt: 1 }}>
+              <Typography color="text.secondary">Can view</Typography>
+              <Switch
+                checked={canEdit}
+                onChange={() => setCanEdit((v) => !v)}
+                color="secondary"
+              />
+              <Typography color="text.secondary">Can edit</Typography>
+            </Box>
 
-          <Box sx={{ display: "flex", alignItems: "center", gap: 1, mt: 1 }}>
-            <Typography color="text.secondary">Can view</Typography>
-            <Switch
-              checked={canEdit}
-              onChange={() => setCanEdit((v) => !v)}
+            <Button
+              variant="contained"
               color="secondary"
-            />
-            <Typography color="text.secondary">Can edit</Typography>
-          </Box>
+              sx={{ mt: 2, fontWeight: 700, position: "relative" }}
+              onClick={handlePrivateLink}
+              disabled={loading}
+            >
+              {loading ? (
+                <CircularProgress size={24} color="inherit" />
+              ) : (
+                "Generate Link"
+              )}
+            </Button>
 
-          <Button
-            variant="contained"
-            color="secondary"
-            sx={{ mt: 2, fontWeight: 700, position: "relative" }}
-            onClick={handlePrivateLink}
-            disabled={loading}
-          >
-            {loading ? (
-              <CircularProgress size={24} color="inherit" />
-            ) : (
-              "Generate Link"
+            {privateLink && (
+              <TextField
+                sx={{ mt: 2 }}
+                fullWidth
+                label="Private Link"
+                value={privateLink}
+                InputProps={{
+                  readOnly: true,
+                  endAdornment: (
+                    <InputAdornment position="end">
+                      <IconButton onClick={handleCopy}>
+                        <ContentCopyIcon />
+                      </IconButton>
+                    </InputAdornment>
+                  ),
+                }}
+                onFocus={(e) => e.target.select()}
+              />
             )}
+          </Paper>
+        </DialogContent>
+
+        <DialogActions>
+          <Button onClick={handleClose} color="secondary">
+            Close
           </Button>
+        </DialogActions>
+      </Dialog>
 
-          {privateLink && (
-            <TextField
-              sx={{ mt: 2 }}
-              fullWidth
-              label="Private Link"
-              value={privateLink}
-              InputProps={{
-                readOnly: true,
-              }}
-              onFocus={(e) => e.target.select()}
-            />
-          )}
-        </Paper>
-      </DialogContent>
-
-      <DialogActions>
-        <Button onClick={handleClose}>Close</Button>
-      </DialogActions>
-    </Dialog>
+      {/* Snackbar for Copy Confirmation */}
+      <Snackbar
+        open={toastOpen}
+        autoHideDuration={3000}
+        onClose={() => setToastOpen(false)}
+        anchorOrigin={{ vertical: "bottom", horizontal: "center" }}
+      >
+        <Alert severity="success" sx={{ width: "100%" }}>
+          Link copied to clipboard!
+        </Alert>
+      </Snackbar>
+    </>
   );
 }
