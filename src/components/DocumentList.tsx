@@ -13,7 +13,7 @@ import {
 import { useDocumentContext } from "../contexts/DocumentContext.tsx";
 import { signerManager } from "../signer/index.ts";
 import { useRelays } from "../contexts/RelayContext.tsx";
-
+import type { Event } from "nostr-tools";
 export default function DocumentList({
   onEdit,
 }: {
@@ -36,10 +36,12 @@ export default function DocumentList({
       try {
         await fetchAllDocuments(
           relays,
-          addDocument,
+          (doc: Event) => {
+            setLoading(false);
+            addDocument(doc);
+          },
           await signer.getPublicKey()
         );
-        setLoading(false);
       } catch (err) {
         console.error("Failed to fetch documents:", err);
         setLoading(false);
@@ -48,7 +50,23 @@ export default function DocumentList({
   }, []);
 
   if (loading) {
-    return <Typography>Loading documents...</Typography>;
+    return (
+      <>
+        <Typography>Loading documents...</Typography>;
+        <Button
+          color="secondary"
+          variant="contained"
+          style={{ marginTop: 30 }}
+          onClick={() => {
+            setSelectedDocumentId(null);
+            onEdit(null);
+          }}
+        >
+          {" "}
+          Create a new private page{" "}
+        </Button>
+      </>
+    );
   }
 
   return (

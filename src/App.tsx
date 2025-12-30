@@ -19,7 +19,6 @@ import { darkTheme, lightTheme } from "./theme";
 import { ThemeProvider } from "@mui/material/styles";
 import UserMenu from "./components/UserMenu";
 import { UserProvider } from "./contexts/UserContext";
-import Logo from "./assets/formstr-pages-logo.png";
 import FormstrLogo from "./assets/formstr.svg";
 
 const drawerWidth = 320;
@@ -79,7 +78,7 @@ export default function App() {
                       fontWeight: 900,
                       letterSpacing: 1,
                       background:
-                        "linear-gradient(90deg, #FFE259 0%, #FFA751 100%)",
+                        "linear-gradient(90deg, #c7aa1aff 0%, #FFA751 100%)",
                       WebkitBackgroundClip: "text",
                       WebkitTextFillColor: "transparent",
                     }}

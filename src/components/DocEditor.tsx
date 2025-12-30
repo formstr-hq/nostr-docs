@@ -7,6 +7,8 @@ import { signerManager } from "../signer";
 import { useRelays } from "../contexts/RelayContext";
 import EditIcon from "@mui/icons-material/Edit";
 import VisibilityIcon from "@mui/icons-material/Visibility";
+import { useMediaQuery } from "@mui/material";
+import ShareModal from "./ShareModal";
 
 export default function DocEditor() {
   const { documents, selectedDocumentId } = useDocumentContext();
@@ -15,13 +17,25 @@ export default function DocEditor() {
 
   const [md, setMd] = useState(initial);
   const [mode, setMode] = useState<"edit" | "preview">("preview");
+  const [shareOpen, setShareOpen] = useState(false);
 
   const theme = useTheme(); // <-- MUI theme hook
   const { relays } = useRelays();
+  const isMobile = useMediaQuery("(max-width:900px)");
 
   useEffect(() => {
     setMd(initial);
   }, [selectedDocumentId]);
+
+  const handleGenerateLink = (canEdit: boolean) => {
+    console.log("TODO: Share with friends/family", canEdit);
+    setShareOpen(false);
+  };
+
+  const handleSharePublic = () => {
+    console.log("TODO: Share publicly");
+    setShareOpen(false);
+  };
 
   const encryptContent = async (content: string) => {
     const signer = await signerManager.getSigner();
@@ -117,6 +131,15 @@ export default function DocEditor() {
           >
             Save
           </Button>
+
+          <Button
+            variant="outlined"
+            color="secondary"
+            onClick={() => setShareOpen(true)}
+            sx={{ fontWeight: 700 }}
+          >
+            Share
+          </Button>
         </Box>
       </Paper>
 
@@ -158,7 +181,10 @@ export default function DocEditor() {
 
         {mode === "preview" && (
           <Box
+            title="Double-click to edit"
+            onDoubleClick={() => setMode("edit")}
             sx={{
+              cursor: "text",
               "& h1,h2,h3,h4": {
                 color: theme.palette.text.primary,
                 fontWeight: 800,
@@ -170,12 +196,21 @@ export default function DocEditor() {
               <ReactMarkdown>{md}</ReactMarkdown>
             ) : (
               <Typography color="text.secondary">
-                Nothing to preview yet…
+                Nothing to preview yet,{" "}
+                {isMobile
+                  ? "click button to edit"
+                  : "double click this text to edit"}
               </Typography>
             )}
           </Box>
         )}
       </Paper>
+      <ShareModal
+        open={shareOpen}
+        onClose={() => setShareOpen(false)}
+        onPublicPost={() => handleSharePublic()}
+        onPrivateLink={(canEdit) => handleGenerateLink(canEdit)}
+      />
     </Box>
   );
 }
