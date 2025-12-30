@@ -20,6 +20,7 @@ import { ThemeProvider } from "@mui/material/styles";
 import UserMenu from "./components/UserMenu";
 import { UserProvider } from "./contexts/UserContext";
 import Logo from "./assets/formstr-pages-logo.png";
+import FormstrLogo from "./assets/formstr.svg";
 
 const drawerWidth = 320;
 
@@ -62,13 +63,28 @@ export default function App() {
 
                 {/* Logo + title — ALWAYS visible */}
                 <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
-                  <img
+                  {/* <img
                     src={Logo}
                     alt="Formstr Pages"
                     style={{ height: 32, width: "auto", borderRadius: 8 }}
+                  /> */}
+                  <img
+                    src={FormstrLogo}
+                    alt="Formstr Pages"
+                    style={{ height: 32, width: "auto", borderRadius: 8 }}
                   />
-                  <Typography variant="h6" sx={{ fontWeight: 800 }}>
-                    formstr pages
+                  <Typography
+                    variant="h6"
+                    sx={{
+                      fontWeight: 900,
+                      letterSpacing: 1,
+                      background:
+                        "linear-gradient(90deg, #FFE259 0%, #FFA751 100%)",
+                      WebkitBackgroundClip: "text",
+                      WebkitTextFillColor: "transparent",
+                    }}
+                  >
+                    pages
                   </Typography>
                 </Box>
               </Box>
