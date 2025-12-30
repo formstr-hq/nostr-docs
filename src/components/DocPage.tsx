@@ -44,13 +44,12 @@ export default function DocPage() {
 
     const docExists = !!documents.get(identifier);
 
-    if (docExists && Object.keys(keys).length !== 0) {
+    if (docExists) {
       // Document already exists in context, just select it
       setSelectedDocumentId(identifier);
       setLoading(false);
     } else {
       // Fetch document from relays
-      console.log("Fetching document from relays...");
       (async () => {
         try {
           await fetchDocumentByNaddr(relays, naddr, (event: Event) => {

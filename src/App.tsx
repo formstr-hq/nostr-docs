@@ -59,7 +59,7 @@ export default function App() {
                       <IconButton
                         color="inherit"
                         edge="start"
-                        onClick={() => setMobileOpen(true)}
+                        onClick={() => setMobileOpen((prev) => !prev)}
                       >
                         <MenuIcon />
                       </IconButton>
@@ -112,7 +112,11 @@ export default function App() {
                       },
                     }}
                   >
-                    <DocumentList onEdit={() => setMobileOpen(false)} />
+                    <Box sx={{ mt: 8 }}>
+                      {" "}
+                      {/* <-- add this */}
+                      <DocumentList onEdit={() => setMobileOpen(false)} />
+                    </Box>
                   </Drawer>
                 )}
 

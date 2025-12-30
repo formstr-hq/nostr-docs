@@ -379,7 +379,7 @@ export default function DocEditor({
               "& p": { color: theme.palette.text.secondary },
             }}
           >
-            {md.trim() ? (
+            {md?.trim() ? (
               <ReactMarkdown>{md}</ReactMarkdown>
             ) : (
               <Typography color="text.secondary">
