@@ -52,7 +52,7 @@ export default function DocumentList({
   if (loading) {
     return (
       <>
-        <Typography>Loading documents...</Typography>;
+        <Typography>Loading documents...</Typography>
         <Button
           color="secondary"
           variant="contained"
