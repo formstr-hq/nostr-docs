@@ -6,6 +6,8 @@ import {
   Typography,
   useTheme,
   IconButton,
+  Snackbar,
+  Alert,
 } from "@mui/material";
 import ReactMarkdown from "react-markdown";
 import { publishEvent } from "../nostr/publish";
@@ -35,6 +37,7 @@ import { bytesToHex, hexToBytes } from "nostr-tools/utils";
 import { getConversationKey } from "nostr-tools/nip44";
 import { useSharedPages } from "../contexts/SharedDocsContext";
 import { fetchEventsByKind, KIND_FILE } from "../nostr/fetchFile";
+import { useRef } from "react";
 
 export default function DocEditor({
   viewKey,
@@ -54,6 +57,12 @@ export default function DocEditor({
   );
   const [shareOpen, setShareOpen] = useState(false);
   const [menuAnchor, setMenuAnchor] = useState<null | HTMLElement>(null);
+  const [autosaveEnabled, setAutosaveEnabled] = useState(true);
+  const [toast, setToast] = useState<{ open: boolean; message: string }>({
+    open: false,
+    message: "",
+  });
+  const [saving, setSaving] = useState(false);
   const menuOpen = Boolean(menuAnchor);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const { addSharedDoc, refresh } = useSharedPages();
@@ -61,16 +70,34 @@ export default function DocEditor({
   const theme = useTheme(); // <-- MUI theme hook
   const { relays } = useRelays();
   const isMobile = useMediaQuery("(max-width:900px)");
+  const mdRef = useRef(md);
 
   useEffect(() => {
-    if (!selectedDocumentId) {
-      setMode("edit");
-      setMd("");
-    } else {
-      setMd(documents.get(selectedDocumentId)?.decryptedContent!);
-      setMode("preview");
-    }
-  }, [selectedDocumentId, documents]);
+    mdRef.current = md;
+  }, [md]);
+
+  useEffect(() => {
+    if (!autosaveEnabled) return;
+
+    const interval = setInterval(() => {
+      if (mode === "edit" && mdRef.current.trim()) {
+        saveSnapshot(mdRef.current);
+      }
+    }, 10000);
+
+    return () => clearInterval(interval);
+  }, [mode, autosaveEnabled]);
+  useEffect(() => {
+    if (!autosaveEnabled) return;
+
+    const interval = setInterval(() => {
+      if (mode === "edit" && md.trim()) {
+        saveSnapshot();
+      }
+    }, 20000); // autosave every 20 seconds
+
+    return () => clearInterval(interval); // cleanup on unmount or toggle
+  }, [mode, autosaveEnabled]);
 
   useEffect(() => {
     (async () => {
@@ -79,7 +106,6 @@ export default function DocEditor({
       else pubkey = await (await signerManager.getSigner())!.getPublicKey();
 
       fetchEventsByKind(relays, KIND_FILE, pubkey, (event: Event) => {
-        console.log("Got New Event", event);
         if (viewKey) {
           addDocument(event, { viewKey });
         } else {
@@ -203,7 +229,10 @@ export default function DocEditor({
     setConfirmOpen(true);
   };
 
-  const saveSnapshot = async () => {
+  const saveSnapshot = async (content?: string) => {
+    if (saving) return; // prevent overlapping saves
+    setSaving(true);
+    const mdToSave = content ?? md;
     const signer = await signerManager.getSigner();
     if (!signer && !editKey) return;
     let dTag = selectedDocumentId;
@@ -212,7 +241,7 @@ export default function DocEditor({
     }
 
     try {
-      const encryptedContent = await encryptContent(md, viewKey);
+      const encryptedContent = await encryptContent(mdToSave, viewKey);
       if (!encryptedContent) return;
 
       const event = {
@@ -226,10 +255,12 @@ export default function DocEditor({
       if (editKey) signed = finalizeEvent(event, hexToBytes(editKey));
       else signed = await signer.signEvent(event);
       await publishEvent(signed!, relays);
-      alert("Saved!");
+      setToast({ open: true, message: "Saved" });
     } catch (err) {
       console.error("Failed to save snapshot:", err);
-      alert("Failed to save");
+      setToast({ open: true, message: "Failed to save!" });
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -287,10 +318,10 @@ export default function DocEditor({
           <Button
             variant="contained"
             color="secondary"
-            onClick={saveSnapshot}
+            onClick={() => saveSnapshot()}
             sx={{ fontWeight: 700 }}
           >
-            Save
+            {saving ? "Saving..." : "Save"}
           </Button>
 
           <IconButton onClick={(e) => setMenuAnchor(e.currentTarget)}>
@@ -324,6 +355,22 @@ export default function DocEditor({
                 <DeleteIcon fontSize="small" />
               </ListItemIcon>
               <ListItemText primary="Delete" />
+            </MenuItem>
+            <MenuItem
+              onClick={() => {
+                setAutosaveEnabled(!autosaveEnabled);
+                setMenuAnchor(null);
+              }}
+            >
+              <ListItemIcon>
+                <EditIcon fontSize="small" />{" "}
+                {/* You could use a better icon if desired */}
+              </ListItemIcon>
+              <ListItemText
+                primary={
+                  autosaveEnabled ? "Disable Autosave" : "Enable Autosave"
+                }
+              />
             </MenuItem>
           </Menu>
         </Box>
@@ -418,6 +465,15 @@ export default function DocEditor({
           setConfirmOpen(false);
         }}
       />
+      <Snackbar
+        open={toast.open}
+        autoHideDuration={3000}
+        onClose={() => setToast({ ...toast, open: false })}
+      >
+        <Alert severity="success" sx={{ width: "100%" }}>
+          {toast.message}
+        </Alert>
+      </Snackbar>
     </Box>
   );
 }

@@ -33,10 +33,8 @@ class Signer {
       if (bunkerUri?.bunkerUri) {
         await this.loginWithNip46(bunkerUri.bunkerUri);
       } else if (window.nostr && Object.keys(keys).length != 0) {
-        console.log("Restoring loginWithNip07");
         await this.loginWithNip07();
       } else if (keys?.pubkey && keys?.secret) {
-        console.log("Restoring guest");
         await this.loginWithGuestKey(hexToBytes(keys.secret));
       }
     } catch (e) {
