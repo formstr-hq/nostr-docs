@@ -255,7 +255,7 @@ export default function DocEditor() {
               <Typography color="text.secondary">
                 Nothing to preview yet,{" "}
                 {isMobile
-                  ? "click button to edit"
+                  ? "double tap this text to edit"
                   : "double click this text to edit"}
               </Typography>
             )}

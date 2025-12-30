@@ -61,21 +61,17 @@ export const UserProvider: React.FC<{ children: React.ReactNode }> = ({
 
   // Fetch kind-0 metadata and update state + localStorage
   const fetchAndSetProfile = async (pubkey: string) => {
-    console.log("called fetch and set");
     try {
       const profile = (await withTimeout(
         fetchProfile(pubkey, relays.relays),
-        8000
+        3000
       )) as UserProfile;
-      console.log("Found profile", profile);
       const userProfile: UserProfile = { pubkey, ...profile };
-      console.log("Setting user profile", userProfile);
       setUser(userProfile);
       localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(userProfile));
     } catch (e) {
       console.error("Failed to fetch user profile:", e);
       setUser({ pubkey }); // fallback to minimal profile
-      console.log("Setting user profile", pubkey);
       localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify({ pubkey }));
     }
   };

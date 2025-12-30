@@ -15,6 +15,7 @@ import { signerManager } from "../signer/index.ts";
 import { useRelays } from "../contexts/RelayContext.tsx";
 import type { Event } from "nostr-tools";
 import { fetchDeleteRequests } from "../nostr/fetchDelete.ts";
+import { useUser } from "../contexts/UserContext.tsx";
 export default function DocumentList({
   onEdit,
 }: {
@@ -27,6 +28,7 @@ export default function DocumentList({
     addDeletionRequest,
   } = useDocumentContext();
   const [loading, setLoading] = useState(true);
+  const { user } = useUser();
   const { relays } = useRelays();
 
   // Replace onEdit with context update
@@ -37,6 +39,7 @@ export default function DocumentList({
 
   useEffect(() => {
     (async () => {
+      if (!user) return;
       const signer = await signerManager.getSigner();
       try {
         fetchAllDocuments(
@@ -53,7 +56,7 @@ export default function DocumentList({
         setLoading(false);
       }
     })();
-  }, []);
+  }, [user]);
 
   if (loading) {
     return (
