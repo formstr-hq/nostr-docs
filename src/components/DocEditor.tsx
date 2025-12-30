@@ -93,7 +93,7 @@ export default function DocEditor({
 
     const interval = setInterval(() => {
       if (mode === "edit" && md.trim()) {
-        saveSnapshot();
+        saveSnapshot(mdRef.current);
       }
     }, 20000); // autosave every 20 seconds
 
