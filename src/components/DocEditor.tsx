@@ -366,7 +366,7 @@ export default function DocEditor({
               onClick={() => loginModal()}
               sx={{ fontWeight: 700 }}
             >
-              Login to Save
+              Login
             </Button>
           )}
 
