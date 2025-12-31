@@ -38,6 +38,7 @@ import { getConversationKey } from "nostr-tools/nip44";
 import { useSharedPages } from "../contexts/SharedDocsContext";
 import { fetchEventsByKind, KIND_FILE } from "../nostr/fetchFile";
 import { useRef } from "react";
+import { useUser } from "../contexts/UserContext";
 
 export default function DocEditor({
   viewKey,
@@ -46,9 +47,13 @@ export default function DocEditor({
   viewKey?: string;
   editKey?: string;
 }) {
-  const { documents, selectedDocumentId, removeDocument, addDocument } =
-    useDocumentContext();
-  console.log("docum,ent id is", selectedDocumentId);
+  const {
+    documents,
+    selectedDocumentId,
+    removeDocument,
+    addDocument,
+    setSelectedDocumentId,
+  } = useDocumentContext();
   const doc = documents.get(selectedDocumentId || "");
   const initial = doc?.decryptedContent || "";
   const isNewDoc = !selectedDocumentId;
@@ -59,9 +64,14 @@ export default function DocEditor({
   const [shareOpen, setShareOpen] = useState(false);
   const [menuAnchor, setMenuAnchor] = useState<null | HTMLElement>(null);
   const [autosaveEnabled, setAutosaveEnabled] = useState(true);
-  const [toast, setToast] = useState<{ open: boolean; message: string }>({
+  const [toast, setToast] = useState<{
+    open: boolean;
+    message: string;
+    severity: "success" | "error";
+  }>({
     open: false,
     message: "",
+    severity: "success",
   });
   const [saving, setSaving] = useState(false);
   const menuOpen = Boolean(menuAnchor);
@@ -73,6 +83,7 @@ export default function DocEditor({
   const isMobile = useMediaQuery("(max-width:900px)");
   const mdRef = useRef(md);
   const lastSavedMdRef = useRef(md);
+  const { user, loginModal } = useUser();
 
   useEffect(() => {
     mdRef.current = md;
@@ -86,7 +97,17 @@ export default function DocEditor({
       setMd(documents.get(selectedDocumentId)?.decryptedContent!);
       if (!mode) setMode("preview");
     }
-  }, [selectedDocumentId, documents]);
+  }, [selectedDocumentId]);
+
+  useEffect(() => {
+    if (!selectedDocumentId) {
+      setMode("edit");
+      if (!md) setMd("");
+    } else {
+      setMd(documents.get(selectedDocumentId)?.decryptedContent!);
+      if (!mode) setMode("preview");
+    }
+  }, [documents]);
 
   useEffect(() => {
     if (!autosaveEnabled) return;
@@ -101,6 +122,7 @@ export default function DocEditor({
   }, [mode, autosaveEnabled]);
 
   useEffect(() => {
+    if (!selectedDocumentId) return;
     (async () => {
       let pubkey;
       if (editKey) pubkey = getPublicKey(hexToBytes(editKey));
@@ -234,15 +256,24 @@ export default function DocEditor({
     if (saving) return; // prevent overlapping saves
     setSaving(true);
     const mdToSave = content ?? md;
-    if (mdToSave === lastSavedMdRef.current) return;
-    const signer = await signerManager.getSigner();
-    if (!signer && !editKey) return;
-    let dTag = selectedDocumentId;
-    if (!dTag) {
-      dTag = makeTag(6);
-    }
-
     try {
+      if (mdToSave === lastSavedMdRef.current) return;
+      const signer = await signerManager.getSigner();
+
+      if (!signer && !editKey) {
+        console.log("No signer found");
+        setSaving(false);
+        setToast({
+          open: true,
+          message: "Please Login to save",
+          severity: "error",
+        });
+        return;
+      }
+      let dTag = selectedDocumentId;
+      if (!dTag) {
+        dTag = makeTag(6);
+      }
       const encryptedContent = await encryptContent(mdToSave, viewKey);
       if (!encryptedContent) return;
 
@@ -257,11 +288,13 @@ export default function DocEditor({
       if (editKey) signed = finalizeEvent(event, hexToBytes(editKey));
       else signed = await signer.signEvent(event);
       await publishEvent(signed!, relays);
+      setSelectedDocumentId(dTag);
       lastSavedMdRef.current = mdToSave;
-      setToast({ open: true, message: "Saved" });
+      setToast({ open: true, message: "Saved", severity: "success" });
     } catch (err) {
       console.error("Failed to save snapshot:", err);
-      setToast({ open: true, message: "Failed to save!" });
+      setSaving(false);
+      setToast({ open: true, message: "Failed to save!", severity: "error" });
     } finally {
       setSaving(false);
     }
@@ -317,15 +350,25 @@ export default function DocEditor({
               </Button>
             )}
           </Box>
-
-          <Button
-            variant="contained"
-            color="secondary"
-            onClick={() => saveSnapshot()}
-            sx={{ fontWeight: 700 }}
-          >
-            {saving ? "Saving..." : "Save"}
-          </Button>
+          {user ? (
+            <Button
+              variant="contained"
+              color="secondary"
+              onClick={() => saveSnapshot()}
+              sx={{ fontWeight: 700 }}
+            >
+              {saving ? "Saving..." : "Save"}
+            </Button>
+          ) : (
+            <Button
+              variant="contained"
+              color="secondary"
+              onClick={() => loginModal()}
+              sx={{ fontWeight: 700 }}
+            >
+              Login to Save
+            </Button>
+          )}
 
           <IconButton onClick={(e) => setMenuAnchor(e.currentTarget)}>
             <MoreVertIcon />
@@ -473,7 +516,7 @@ export default function DocEditor({
         autoHideDuration={3000}
         onClose={() => setToast({ ...toast, open: false })}
       >
-        <Alert severity="success" sx={{ width: "100%" }}>
+        <Alert severity={toast.severity} sx={{ width: "100%" }}>
           {toast.message}
         </Alert>
       </Snackbar>

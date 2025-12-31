@@ -67,7 +67,7 @@ export const UserProvider: React.FC<{ children: React.ReactNode }> = ({
         const signer = await signerManager.getSigner();
         const pubkey = await signer.getPublicKey();
         console.log("calling fetch and set");
-        await fetchAndSetProfile(pubkey);
+        fetchAndSetProfile(pubkey);
       } else {
         setUser(null);
         localStorage.removeItem(LOCAL_STORAGE_KEY);
@@ -80,22 +80,20 @@ export const UserProvider: React.FC<{ children: React.ReactNode }> = ({
 
   // Fetch kind-0 metadata and update state + localStorage
   const fetchAndSetProfile = async (pubkey: string) => {
+    loginHandler?.(); // <-- move this UP here
     try {
       const profile = (await withTimeout(
         fetchProfile(pubkey, relays.relays),
         3000
       )) as UserProfile;
-      const userProfile: UserProfile = { pubkey, ...profile };
+      const userProfile = { pubkey, ...profile };
       setUser(userProfile);
-      loginHandler?.();
       localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(userProfile));
-    } catch (e) {
-      console.error("Failed to fetch user profile:", e);
-      setUser({ pubkey }); // fallback to minimal profile
+    } catch {
+      setUser({ pubkey });
       localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify({ pubkey }));
     }
   };
-
   const loginModal = async () => {
     try {
       const signer = await signerManager.getSigner(); // calls login modal if no signer
