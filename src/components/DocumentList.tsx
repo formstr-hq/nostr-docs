@@ -76,7 +76,7 @@ export default function DocumentList({
             setLoading(false);
             addDocument(doc);
           },
-          await signer.getPublicKey()
+          await signer.getPublicKey(),
         );
         fetchDeleteRequests(relays, addDeletionRequest);
       } catch (err) {
@@ -89,7 +89,7 @@ export default function DocumentList({
   if (loading) {
     return (
       <>
-        <Typography>Loading documents...</Typography>
+        {/* <Typography>Loading documents...</Typography> */}
         <Button
           color="secondary"
           variant="contained"
@@ -97,6 +97,8 @@ export default function DocumentList({
           onClick={() => {
             setSelectedDocumentId(null);
             onEdit(null);
+            console.log("navigationg to home");
+            navigate("/");
           }}
         >
           Create a new private page
@@ -132,6 +134,7 @@ export default function DocumentList({
         onClick={() => {
           setSelectedDocumentId(null);
           onEdit(null);
+          navigate("/");
         }}
       >
         Create a new {view === "personal" ? "private" : "shared"} page
@@ -166,7 +169,7 @@ export default function DocumentList({
                       (content.length > 40 ? "..." : "")
                     }
                     secondary={new Date(
-                      doc.event.created_at * 1000
+                      doc.event.created_at * 1000,
                     ).toLocaleString()}
                   />
                 </ListItemButton>

@@ -1,10 +1,10 @@
 import type { Event } from "nostr-tools";
-import { KIND_FILE } from "./fetchFile";
 import { pool } from "./relayPool";
+import { KIND_FILE } from "./kinds";
 
 export const fetchDeleteRequests = (
   relays: string[],
-  onEvent: (event: Event) => void
+  onEvent: (event: Event) => void,
 ) => {
   const deleteSubscriptionFilter = {
     kinds: [5], // NIP-09 deletion requests

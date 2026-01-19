@@ -14,7 +14,6 @@ import MenuIcon from "@mui/icons-material/Menu";
 import { ThemeProvider } from "@mui/material/styles";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 
-import DocEditor from "./components/DocEditor";
 import DocumentList from "./components/DocumentList";
 import UserMenu from "./components/UserMenu";
 import { DocumentProvider } from "./contexts/DocumentContext";
@@ -147,7 +146,12 @@ export default function App() {
                 >
                   <Routes>
                     <Route path="/" element={<HomePage />} />
-                    <Route path="/doc/:naddr" element={<DocPage />} />
+                    <Route
+                      path="/doc/:naddr"
+                      element={
+                        <DocPage key={location.pathname + location.hash} />
+                      }
+                    />
                     <Route path="/about" element={<AboutPage />} />
                     <Route path="*" element={<NotFoundPage />} />
                   </Routes>
@@ -162,7 +166,7 @@ export default function App() {
 }
 
 export function HomePage() {
-  return <DocEditor />;
+  return <DocPage />;
 }
 
 export function AboutPage() {

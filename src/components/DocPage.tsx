@@ -1,12 +1,12 @@
 import { useEffect, useState } from "react";
 import { useParams, useLocation } from "react-router-dom";
 import { useDocumentContext } from "../contexts/DocumentContext";
-import DocEditor from "../components/DocEditor";
 import { fetchDocumentByNaddr } from "../nostr/fetchFile";
 import { useRelays } from "../contexts/RelayContext";
 import { nip19, type Event } from "nostr-tools";
 import type { AddressPointer } from "nostr-tools/nip19";
 import { decodeNKeys } from "../utils/nkeys";
+import { DocumentEditorController } from "./editor/DocEditorController";
 
 export default function DocPage() {
   const { naddr } = useParams<{ naddr: string }>();
@@ -23,9 +23,14 @@ export default function DocPage() {
   }>({});
 
   useEffect(() => {
-    if (!naddr) return;
-
+    console.log("NADDR Changed", naddr, loading);
+    if (!naddr) {
+      setLoading(false);
+      return;
+    }
     // Decode keys from hash
+    setLoading(true);
+    setInvalid(false);
     const hash = location.hash.replace("#", "");
     const keys = hash ? decodeNKeys(hash) : {};
     setDecodedKeys(keys);
@@ -42,21 +47,25 @@ export default function DocPage() {
       return;
     }
 
-    const docExists = !!documents.get(identifier);
+    const docExists = documents.get(identifier);
 
     if (docExists && Object.keys(keys).length !== 0) {
       // Document already exists in context, just select it
-      console.log("Doc exisits");
+      console.log("Doc exisits with keys", docExists, keys, identifier);
       setSelectedDocumentId(identifier);
       setLoading(false);
     } else {
-      console.log("Doc does not exisits");
+      console.log("Doc does not exisits or keys does not exists", keys);
       // Fetch document from relays
       (async () => {
         try {
           await fetchDocumentByNaddr(relays, naddr, (event: Event) => {
+            const dTag = event.tags.find((t) => t[0] === "d")?.[1];
+            if (!dTag) return;
+            console.log("Found  document", event);
             addDocument(event, keys);
-            setSelectedDocumentId(identifier);
+            setSelectedDocumentId(dTag);
+            setLoading(false);
           });
         } catch (err) {
           console.error("Failed to fetch document:", err);
@@ -72,6 +81,9 @@ export default function DocPage() {
   if (invalid) return <div>Invalid document URL</div>;
 
   return (
-    <DocEditor viewKey={decodedKeys.viewKey} editKey={decodedKeys.editKey} />
+    <DocumentEditorController
+      viewKey={decodedKeys.viewKey}
+      editKey={decodedKeys.editKey}
+    />
   );
 }

@@ -3,13 +3,12 @@
 import type { AddressPointer } from "nostr-tools/nip19";
 import { pool } from "./relayPool";
 import { nip19, type Event } from "nostr-tools";
-
-export const KIND_FILE = 33457;
+import { KIND_FILE } from "./kinds";
 
 export async function fetchAllDocuments(
   relays: string[],
   addDocument: (doc: Event) => void,
-  pubkey: string
+  pubkey: string,
 ): Promise<NostrEvent[]> {
   return new Promise((resolve) => {
     const documents: NostrEvent[] = [];
@@ -49,7 +48,7 @@ export async function fetchAllDocuments(
 
           resolve(Object.values(grouped));
         },
-      }
+      },
     );
   });
 }
@@ -57,7 +56,7 @@ export async function fetchAllDocuments(
 export async function fetchDocumentByNaddr(
   relays: string[],
   naddr: string,
-  onEvent: (event: Event) => void
+  onEvent: (event: Event) => void,
 ): Promise<Event | null> {
   const { kind, pubkey, identifier } = nip19.decode(naddr)
     .data as AddressPointer;
@@ -74,7 +73,7 @@ export async function fetchDocumentByNaddr(
         oneose: () => {
           resolve(latestEvent);
         },
-      }
+      },
     );
   });
 }
@@ -83,7 +82,7 @@ export const fetchEventsByKind = (
   relays: string[],
   kind: number,
   pubkey: string,
-  onEvent: (event: Event) => void
+  onEvent: (event: Event) => void,
 ) => {
   return new Promise((resolve) => {
     let latestEvent: Event | null = null;
@@ -98,7 +97,7 @@ export const fetchEventsByKind = (
         oneose: () => {
           resolve(latestEvent);
         },
-      }
+      },
     );
   });
 };
