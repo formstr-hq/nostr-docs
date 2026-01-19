@@ -22,6 +22,7 @@ import { useUser } from "../contexts/UserContext.tsx";
 import { useNavigate } from "react-router-dom";
 import { useSharedPages } from "../contexts/SharedDocsContext.tsx";
 import { encodeNKeys } from "../utils/nkeys.ts";
+import { getEventAddress } from "../utils/helpers.ts";
 
 export default function DocumentList({
   onEdit,
@@ -46,13 +47,14 @@ export default function DocumentList({
 
   const handleDocumentSelect = (doc: Event) => {
     const dTag = doc.tags.find((t) => t[0] === "d")?.[1];
-    if (!dTag) {
+    const address = getEventAddress(doc);
+    if (!address) {
       alert("Invalid Doc");
       return;
     }
 
     const naddr = nip19.naddrEncode({
-      identifier: dTag,
+      identifier: dTag!,
       pubkey: doc.pubkey,
       kind: doc.kind,
     });
@@ -61,7 +63,7 @@ export default function DocumentList({
       ? `/doc/${naddr}#${encodeNKeys({ viewKey: keys[0], editKey: keys[1] })}`
       : `/doc/${naddr}`;
 
-    setSelectedDocumentId(dTag); // optional, DocPage will handle anyway
+    setSelectedDocumentId(address); // optional, DocPage will handle anyway
     navigate(path);
   };
 
@@ -106,10 +108,7 @@ export default function DocumentList({
       </>
     );
   }
-  type DocEntry = { event: Event; decryptedContent: string };
-  // Determine which docs to show
-  const docsToShow: Map<string, DocEntry> =
-    view === "personal" ? visibleDocuments : sharedDocuments;
+  const docsToShow = view === "personal" ? visibleDocuments : sharedDocuments;
 
   return (
     <Box sx={{ maxWidth: "800px", width: "100%", p: 2 }}>
@@ -147,29 +146,33 @@ export default function DocumentList({
       ) : (
         <Paper elevation={0} sx={{ p: 1, bgcolor: "transparent" }}>
           <List>
-            {Array.from(docsToShow.entries()).map(([id, doc]) => {
-              const content = doc.decryptedContent;
+            {Array.from(docsToShow.entries()).map(([address, history]) => {
+              const latest = history.versions.at(-1);
+              if (!latest) return null;
+
+              const { event, decryptedContent } = latest;
+
               return (
                 <ListItemButton
-                  key={id}
-                  onClick={() => handleDocumentSelect(doc.event)}
+                  key={address}
+                  onClick={() => handleDocumentSelect(event)}
                   sx={{
                     borderRadius: 2,
                     mb: 1,
                     bgcolor:
-                      selectedDocumentId === id
-                        ? "rgba(255, 165, 0, 0.3)" // Highlight color
+                      selectedDocumentId === address
+                        ? "rgba(255, 165, 0, 0.3)"
                         : "rgba(255,255,255,0.03)",
                     "&:hover": { bgcolor: "rgba(255,255,255,0.08)" },
                   }}
                 >
                   <ListItemText
                     primary={
-                      content.substring(0, 40) +
-                      (content.length > 40 ? "..." : "")
+                      decryptedContent.slice(0, 40) +
+                      (decryptedContent.length > 40 ? "..." : "")
                     }
                     secondary={new Date(
-                      doc.event.created_at * 1000,
+                      event.created_at * 1000,
                     ).toLocaleString()}
                   />
                 </ListItemButton>

@@ -13,17 +13,26 @@ import { publishEvent } from "../nostr/publish";
 import { pool } from "../nostr/relayPool";
 import { KIND_FILE } from "../nostr/kinds";
 
+type DocumentVersion = {
+  event: Event;
+  decryptedContent: string;
+};
+
+type DocumentHistory = {
+  versions: DocumentVersion[]; // sorted oldest → newest
+};
+
 interface SharedPagesContextValue {
   loading: boolean;
   getSharedDocs: () => string[][];
   addSharedDoc: (tag: string[]) => Promise<void>;
   refresh: () => Promise<void>;
-  sharedDocuments: Map<string, { event: Event; decryptedContent: string }>;
+  sharedDocuments: Map<string, DocumentHistory>;
   getKeys: (id: string) => string[];
 }
 
 const SharedPagesContext = createContext<SharedPagesContextValue | undefined>(
-  undefined
+  undefined,
 );
 
 export const SharedPagesProvider: React.FC<{ children: React.ReactNode }> = ({
@@ -33,7 +42,7 @@ export const SharedPagesProvider: React.FC<{ children: React.ReactNode }> = ({
   const [sharedDocs, setSharedDocs] = useState<string[][]>([]);
   const [loading, setLoading] = useState(true);
   const [sharedDocuments, setSharedDocuments] = useState<
-    Map<string, { event: Event; decryptedContent: string }>
+    Map<string, DocumentHistory>
   >(new Map());
 
   const getKeys = (id: string) => {
@@ -69,21 +78,44 @@ export const SharedPagesProvider: React.FC<{ children: React.ReactNode }> = ({
     pool.subscribeMany(relays, filter, {
       onevent: (event: Event) => {
         const dTag = event.tags.find((t) => t[0] === "d")?.[1];
-        const eventATag = `${KIND_FILE}:${event.pubkey}:${dTag}`;
-        const keys = sharedDocs.find((t) => t[0] === eventATag);
+        if (!dTag) return;
+
+        const address = `${KIND_FILE}:${event.pubkey}:${dTag}`;
+        const keys = sharedDocs.find((t) => t[0] === address);
         if (!keys || !keys[1]) return;
+
         const conversationKey = nip44.getConversationKey(
           hexToBytes(keys[1]),
-          getPublicKey(hexToBytes(keys[1]))
+          getPublicKey(hexToBytes(keys[1])),
         );
-        const decryptedContent = nip44.decrypt(event.content, conversationKey);
+
+        let decryptedContent: string;
+        try {
+          decryptedContent = nip44.decrypt(event.content, conversationKey);
+        } catch {
+          return;
+        }
         setSharedDocuments((prev) => {
-          const newMap = new Map(prev);
-          newMap.set(eventATag, {
-            event: event,
-            decryptedContent: decryptedContent,
-          });
-          return newMap;
+          const next = new Map(prev);
+          const history = next.get(address) ?? {
+            address,
+            versions: [],
+          };
+
+          if (history.versions.some((v) => v.event.id === event.id)) {
+            return prev;
+          }
+
+          history.versions = [
+            ...history.versions,
+            {
+              event,
+              decryptedContent,
+            },
+          ].sort((a, b) => a.event.created_at - b.event.created_at);
+
+          next.set(address, history);
+          return next;
         });
       },
     });
@@ -111,7 +143,7 @@ export const SharedPagesProvider: React.FC<{ children: React.ReactNode }> = ({
 
       // pick the latest event
       const latestEvent = events.reduce((prev, curr) =>
-        curr.created_at > prev.created_at ? curr : prev
+        curr.created_at > prev.created_at ? curr : prev,
       );
 
       // decrypt content

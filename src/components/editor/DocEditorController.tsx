@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Box, Paper, Snackbar, Alert, Typography } from "@mui/material";
+import { Box, Paper, Snackbar, Alert } from "@mui/material";
 import { useNavigate } from "react-router-dom";
 import { finalizeEvent, getPublicKey, nip19, type Event } from "nostr-tools";
 import { hexToBytes } from "nostr-tools/utils";
@@ -18,6 +18,7 @@ import ShareModal from "../ShareModal";
 import { handleGeneratePrivateLink, handleSharePublic } from "./utils";
 import { encryptContent } from "../../utils/encryption";
 import { KIND_FILE } from "../../nostr/kinds";
+import { getLatestVersion } from "../../utils/helpers";
 
 export function DocumentEditorController({
   viewKey,
@@ -38,15 +39,24 @@ export function DocumentEditorController({
   const { relays } = useRelays();
 
   const isDraft = selectedDocumentId === null;
-  const doc = selectedDocumentId ? documents.get(selectedDocumentId) : null;
-  console.log("received doc", doc, selectedDocumentId, documents);
+  const history = selectedDocumentId ? documents.get(selectedDocumentId) : null;
 
-  const [md, setMd] = useState(doc?.decryptedContent || "");
+  const versions =
+    history?.versions.map((v) => ({
+      id: v.event.id,
+      created_at: v.event.created_at,
+    })) ?? [];
+  const activeVersion = history ? getLatestVersion(history) : null;
+  console.log("Id is", selectedDocumentId, "versions are", history);
+
+  const [md, setMd] = useState(activeVersion?.decryptedContent || "");
   const [mode, setMode] = useState<"edit" | "preview">(
     isDraft ? "edit" : "preview",
   );
   const [saving, setSaving] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
+  const [pendingVersionId, setPendingVersionId] = useState<string | null>(null);
+  const [historyConfirmOpen, setHistoryConfirmOpen] = useState(false);
 
   const [toast, setToast] = useState<{
     open: boolean;
@@ -56,24 +66,69 @@ export function DocumentEditorController({
   const [shareOpen, setShareOpen] = useState(false);
 
   const lastSavedMdRef = useRef<string>("");
-  useEffect(() => {
-    if (!doc) return;
 
-    setMd(doc.decryptedContent ?? "");
-    lastSavedMdRef.current = doc.decryptedContent ?? "";
-  }, [doc?.event.id]);
+  const selectionRef = useRef<{ start: number; end: number } | null>(null);
+
+  const preserveSelection = () => {
+    const el = document.activeElement as HTMLTextAreaElement | null;
+    if (!el) return;
+    selectionRef.current = {
+      start: el.selectionStart,
+      end: el.selectionEnd,
+    };
+  };
+
+  const restoreSelection = () => {
+    requestAnimationFrame(() => {
+      const el = document.activeElement as HTMLTextAreaElement | null;
+      if (!el || !selectionRef.current) return;
+      el.setSelectionRange(
+        selectionRef.current.start,
+        selectionRef.current.end,
+      );
+    });
+  };
+  useEffect(() => {
+    if (!activeVersion) return;
+    preserveSelection();
+    setMd(activeVersion.decryptedContent ?? "");
+    restoreSelection();
+    lastSavedMdRef.current = activeVersion.decryptedContent ?? "";
+  }, [activeVersion?.event.id]);
+
+  const handleSelectVersion = (eventId: string) => {
+    setPendingVersionId(eventId);
+    setHistoryConfirmOpen(true);
+  };
+
+  const applyHistoricalVersion = () => {
+    if (!history || !pendingVersionId) return;
+
+    const version = history.versions.find(
+      (v) => v.event.id === pendingVersionId,
+    );
+
+    if (!version) return;
+
+    setMd(version.decryptedContent);
+    lastSavedMdRef.current = version.decryptedContent;
+
+    setMode("preview");
+    setHistoryConfirmOpen(false);
+    setPendingVersionId(null);
+  };
 
   /* -----------------------------
      LOW-LEVEL SNAPSHOT (UNCHANGED)
   ------------------------------ */
 
-  const saveSnapshotWithDTag = async (dTag: string, content: string) => {
+  const saveSnapshotWithAddress = async (address: string, content: string) => {
     const signer = await signerManager.getSigner();
 
     if (!signer && !editKey) {
       throw new Error("No signer");
     }
-
+    const dTag = address.split(":")?.[2];
     const encryptedContent = await encryptContent(content, viewKey);
     if (!encryptedContent) throw new Error("Encryption failed");
 
@@ -105,11 +160,16 @@ export function DocumentEditorController({
 
   const saveNewDocument = async (content: string): Promise<string> => {
     const dTag = makeTag(6);
-    await saveSnapshotWithDTag(dTag, content);
-    setSelectedDocumentId(dTag);
-    const pubkey = editKey
-      ? getPublicKey(hexToBytes(editKey))
-      : await (await signerManager.getSigner()).getPublicKey();
+    let pubkey: string;
+    if (editKey) pubkey = getPublicKey(hexToBytes(editKey));
+    else {
+      const signer = await signerManager.getSigner();
+      pubkey = await signer.getPublicKey();
+    }
+    const address = `${KIND_FILE}:${pubkey}:${dTag}`;
+    setSelectedDocumentId(address);
+    await saveSnapshotWithAddress(address, content);
+    setSelectedDocumentId(address);
     const naddr = nip19.naddrEncode({
       pubkey: pubkey,
       kind: KIND_FILE,
@@ -119,8 +179,8 @@ export function DocumentEditorController({
     return dTag;
   };
 
-  const saveExistingDocument = async (dTag: string, content: string) => {
-    await saveSnapshotWithDTag(dTag, content);
+  const saveExistingDocument = async (address: string, content: string) => {
+    await saveSnapshotWithAddress(address, content);
   };
 
   /* -----------------------------
@@ -192,7 +252,6 @@ export function DocumentEditorController({
 
     setConfirmOpen(true);
   };
-  console.log("MD value is", md);
 
   return (
     <Box
@@ -207,6 +266,8 @@ export function DocumentEditorController({
         onShare={() => {
           setShareOpen(true);
         }}
+        versions={versions}
+        onSelectVersion={handleSelectVersion}
       />
 
       <Paper
@@ -219,7 +280,11 @@ export function DocumentEditorController({
       >
         <DocEditorSurface
           value={md}
-          onChange={setMd}
+          onChange={(value: string) => {
+            preserveSelection();
+            setMd(value);
+            restoreSelection();
+          }}
           mode={mode}
           onToggleMode={() =>
             setMode((m) => (m === "edit" ? "preview" : "edit"))
@@ -255,6 +320,18 @@ export function DocumentEditorController({
           setConfirmOpen(false);
         }}
       />
+      <ConfirmModal
+        open={historyConfirmOpen}
+        title="Open Historical Version?"
+        description="If you edit this version and save, it will overwrite the current document."
+        confirmText="Open Version"
+        cancelText="Cancel"
+        onConfirm={applyHistoricalVersion}
+        onCancel={() => {
+          setHistoryConfirmOpen(false);
+          setPendingVersionId(null);
+        }}
+      />
       <ShareModal
         open={shareOpen}
         onClose={() => setShareOpen(false)}
@@ -263,7 +340,7 @@ export function DocumentEditorController({
           handleGeneratePrivateLink(
             canEdit,
             selectedDocumentId,
-            doc?.decryptedContent!,
+            activeVersion?.decryptedContent!,
             relays,
             viewKey,
             editKey,

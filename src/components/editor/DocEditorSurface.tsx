@@ -1,4 +1,5 @@
 import { Box, Typography, useTheme } from "@mui/material";
+import { useRef } from "react";
 import ReactMarkdown from "react-markdown";
 
 type Props = {
@@ -17,11 +18,13 @@ export function DocEditorSurface({
   isMobile,
 }: Props) {
   const theme = useTheme();
-  console.log("Value in sureface", value);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+
   if (mode === "edit") {
     return (
       <Box
         component="textarea"
+        ref={textareaRef}
         value={value}
         placeholder="Start typing your page here (Markdown supported)"
         onChange={(e) => onChange(e.target.value)}

@@ -4,7 +4,6 @@ import { useDocumentContext } from "../contexts/DocumentContext";
 import { fetchDocumentByNaddr } from "../nostr/fetchFile";
 import { useRelays } from "../contexts/RelayContext";
 import { nip19, type Event } from "nostr-tools";
-import type { AddressPointer } from "nostr-tools/nip19";
 import { decodeNKeys } from "../utils/nkeys";
 import { DocumentEditorController } from "./editor/DocEditorController";
 
@@ -35,11 +34,11 @@ export default function DocPage() {
     const keys = hash ? decodeNKeys(hash) : {};
     setDecodedKeys(keys);
 
-    let identifier: string;
+    let address: string;
     try {
       const decoded = nip19.decode(naddr);
       if (decoded.type !== "naddr") throw new Error("Not an naddr");
-      identifier = (decoded.data as AddressPointer).identifier;
+      address = `${decoded.data.kind}:${decoded.data.pubkey}:${decoded.data.identifier}`;
     } catch (err) {
       console.error("Invalid naddr:", naddr, err);
       setInvalid(true);
@@ -47,12 +46,12 @@ export default function DocPage() {
       return;
     }
 
-    const docExists = documents.get(identifier);
+    const docExists = documents.get(address);
 
     if (docExists && Object.keys(keys).length !== 0) {
       // Document already exists in context, just select it
-      console.log("Doc exisits with keys", docExists, keys, identifier);
-      setSelectedDocumentId(identifier);
+      console.log("Doc exisits with keys", docExists, keys, address);
+      setSelectedDocumentId(address);
       setLoading(false);
     } else {
       console.log("Doc does not exisits or keys does not exists", keys);
@@ -62,9 +61,11 @@ export default function DocPage() {
           await fetchDocumentByNaddr(relays, naddr, (event: Event) => {
             const dTag = event.tags.find((t) => t[0] === "d")?.[1];
             if (!dTag) return;
-            console.log("Found  document", event);
+
+            const address = `${event.kind}:${event.pubkey}:${dTag}`;
+
             addDocument(event, keys);
-            setSelectedDocumentId(dTag);
+            setSelectedDocumentId(address);
             setLoading(false);
           });
         } catch (err) {

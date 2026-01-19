@@ -16,6 +16,11 @@ import { useUser } from "../../contexts/UserContext";
 import DeleteIcon from "@mui/icons-material/Delete";
 import ShareIcon from "@mui/icons-material/Share";
 
+type VersionEntry = {
+  id: string;
+  created_at: number;
+};
+
 type Props = {
   mode: "edit" | "preview";
   saving: boolean;
@@ -23,6 +28,8 @@ type Props = {
   onSave: () => void;
   handleDelete: () => void;
   onShare: () => void;
+  versions: VersionEntry[];
+  onSelectVersion: (eventId: string) => void;
 };
 
 export function EditorToolbar({
@@ -32,10 +39,14 @@ export function EditorToolbar({
   onSave,
   handleDelete,
   onShare,
+  versions,
+  onSelectVersion,
 }: Props) {
   const { user, loginModal } = useUser();
   const [menuAnchor, setMenuAnchor] = useState<null | HTMLElement>(null);
   const [autosaveEnabled, setAutosaveEnabled] = useState(true);
+  const [historyAnchor, setHistoryAnchor] = useState<null | HTMLElement>(null);
+  const historyOpen = Boolean(historyAnchor);
 
   const menuOpen = Boolean(menuAnchor);
   return (
@@ -145,6 +156,39 @@ export function EditorToolbar({
               primary={autosaveEnabled ? "Disable Autosave" : "Enable Autosave"}
             />
           </MenuItem>
+          <MenuItem
+            onClick={(e) => {
+              e.stopPropagation();
+              setHistoryAnchor(e.currentTarget);
+            }}
+          >
+            <ListItemIcon>
+              <VisibilityIcon fontSize="small" />
+            </ListItemIcon>
+            <ListItemText primary="History" />
+          </MenuItem>
+        </Menu>
+        <Menu
+          anchorEl={historyAnchor}
+          open={historyOpen}
+          onClose={() => setHistoryAnchor(null)}
+        >
+          {versions
+            .slice()
+            .sort((a, b) => b.created_at - a.created_at)
+            .map((v) => (
+              <MenuItem
+                key={v.id}
+                onClick={() => {
+                  onSelectVersion(v.id);
+                  setHistoryAnchor(null);
+                }}
+              >
+                <ListItemText
+                  primary={new Date(v.created_at * 1000).toLocaleString()}
+                />
+              </MenuItem>
+            ))}
         </Menu>
       </Box>
     </Paper>

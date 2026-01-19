@@ -1,21 +1,36 @@
 import { getPublicKey, nip44, type Event } from "nostr-tools";
-import React, { createContext, useContext, useState } from "react";
+import React, { createContext, useContext, useMemo, useState } from "react";
 import { signerManager } from "../signer";
 import { getConversationKey } from "nostr-tools/nip44";
 import { hexToBytes } from "nostr-tools/utils";
+import { useUser, type UserProfile } from "./UserContext";
+import { getEventAddress } from "../utils/helpers";
+
+type DocumentVersion = {
+  event: Event;
+  decryptedContent: string;
+};
+
+type DocumentHistory = {
+  versions: DocumentVersion[]; // sorted oldest → newest
+};
 
 interface DocumentContextValue {
-  documents: Map<string, { event: Event; decryptedContent: string }>;
+  documents: Map<string, DocumentHistory>;
   selectedDocumentId: string | null;
+
   setSelectedDocumentId: (id: string | null) => void;
   addDocument: (
     document: Event,
     keys?: { viewKey?: string; editKey?: string },
   ) => void;
+
   removeDocument: (id: string) => void;
   addDeletionRequest: (delEvent: Event) => void;
+
   deletedEventIds: Set<string>;
-  visibleDocuments: Map<string, { event: Event; decryptedContent: string }>;
+
+  visibleDocuments: Map<string, DocumentHistory>;
 }
 
 const DocumentContext = createContext<DocumentContextValue | undefined>(
@@ -25,37 +40,38 @@ const DocumentContext = createContext<DocumentContextValue | undefined>(
 const getDecryptedContent = async (
   event: Event,
   viewKey?: string,
-): Promise<string> => {
+  user?: UserProfile | null,
+  loginCallback?: () => Promise<void>,
+): Promise<string | null> => {
   try {
+    let decrypted = null;
     if (viewKey) {
       const conversationKey = getConversationKey(
         hexToBytes(viewKey),
         getPublicKey(hexToBytes(viewKey)),
       );
-      console.log("Conversation key is", conversationKey);
       const decryptedContent = nip44.decrypt(event.content, conversationKey);
-      console.log("decrypted content is", decryptedContent);
       return Promise.resolve(decryptedContent);
+    } else if (!user) await loginCallback?.();
+    else if (event.pubkey === user?.pubkey) {
+      const signer = await signerManager.getSigner();
+      decrypted = await signer.nip44Decrypt!(user.pubkey, event.content);
+      //console.log("Decrypted content is", decrypted);
     }
-    const signer = await signerManager.getSigner();
-    const decrypted = await signer.nip44Decrypt!(
-      await signer.getPublicKey(),
-      event.content,
-    );
-    if (!decrypted) throw Error("could not Decrypt");
     return decrypted;
   } catch (err) {
     console.error("Failed to decrypt content:", err);
-    throw Error("could not decrypt");
+    return null;
   }
 };
 
 export const DocumentProvider: React.FC<{ children: React.ReactNode }> = ({
   children,
 }) => {
-  const [documents, setDocuments] = useState<
-    Map<string, { event: Event; decryptedContent: string }>
-  >(new Map());
+  const { user, loginModal } = useUser();
+  const [documents, setDocuments] = useState<Map<string, DocumentHistory>>(
+    new Map(),
+  );
   const [selectedDocumentId, setSelectedDocumentId] = useState<string | null>(
     null,
   );
@@ -65,24 +81,10 @@ export const DocumentProvider: React.FC<{ children: React.ReactNode }> = ({
 
   const addDeletionRequest = (delEvent: Event) => {
     const eTags = delEvent.tags.filter((t) => t[0] === "e").map((t) => t[1]);
-    const aTags = delEvent.tags
-      .filter((t) => t[0] === "a")
-      .map((t) => t[1].split(":")[2]); // extract d-tag from a-tag
+
+    const aTags = delEvent.tags.filter((t) => t[0] === "a").map((t) => t[1]);
 
     setDeletedEventIds((prev) => new Set([...prev, ...eTags, ...aTags]));
-
-    // setDocuments((prev) => {
-    //   const newDocs = new Map(prev);
-    //   [...eTags, ...aTags].forEach((id) => newDocs.delete(id));
-    //   // reset selection if needed
-    //   if (
-    //     selectedDocumentId &&
-    //     [...eTags, ...aTags].includes(selectedDocumentId)
-    //   ) {
-    //     setSelectedDocumentId(null);
-    //   }
-    //   return newDocs;
-    // });
   };
 
   const removeDocument = (id: string) => {
@@ -96,9 +98,19 @@ export const DocumentProvider: React.FC<{ children: React.ReactNode }> = ({
     setSelectedDocumentId((current) => (current === id ? null : current));
   };
 
-  const visibleDocuments = React.useMemo(() => {
+  const visibleDocuments = useMemo(() => {
     return new Map(
-      [...documents.entries()].filter(([id]) => !deletedEventIds.has(id)),
+      [...documents.entries()]
+        .filter(([address]) => !deletedEventIds.has(address))
+        .map(([address, history]): [string, DocumentHistory] => [
+          address,
+          {
+            versions: history.versions.filter(
+              (v) => !deletedEventIds.has(v.event.id),
+            ),
+          },
+        ])
+        .filter(([, h]) => h.versions.length > 0),
     );
   }, [documents, deletedEventIds]);
 
@@ -106,26 +118,38 @@ export const DocumentProvider: React.FC<{ children: React.ReactNode }> = ({
     document: Event,
     keys?: Record<string, string>,
   ) => {
-    const dTag = document.tags.find((t: string[]) => t[0] === "d")?.[1];
-    if (!dTag) return;
-    console.log("searching", dTag, "in", documents);
-    const existing = documents.get(dTag)?.event;
-    if (existing && existing.created_at >= document.created_at) return;
-    console.log(
-      "Adding AGAIN",
-      dTag,
-      "previous evenbt",
-      existing?.created_at,
-      "new event at",
-      document.created_at,
+    const address = getEventAddress(document);
+    console.log("Got Event Address as:", address);
+    if (!address) return;
+    const decryptedContent = await getDecryptedContent(
+      document,
+      keys?.viewKey,
+      user,
+      loginModal,
     );
-    const decryptedContent = await getDecryptedContent(document, keys?.viewKey);
-    if (existing)
-      console.log("Content received for new", decryptedContent, dTag);
+    if (!decryptedContent) return;
+
     setDocuments((prev) => {
-      const newDocuments = new Map(prev);
-      newDocuments.set(dTag, { event: document, decryptedContent }); // Store decrypted content });
-      return newDocuments;
+      const next = new Map(prev);
+      const history = next.get(address) ?? {
+        address,
+        versions: [],
+      };
+
+      if (history.versions.some((v) => v.event.id === document.id)) {
+        return prev;
+      }
+
+      history.versions = [
+        ...history.versions,
+        {
+          event: document,
+          decryptedContent,
+        },
+      ].sort((a, b) => a.event.created_at - b.event.created_at);
+
+      next.set(address, history);
+      return next;
     });
   };
 
