@@ -8,7 +8,7 @@ import { BunkerSigner } from "./nip46";
 
 export async function createNip46Signer(
   uri: string,
-  params: BunkerSignerParams = {}
+  params: BunkerSignerParams = {},
 ): Promise<NostrSigner> {
   const parsedUri = new URL(uri);
   const clientSecretKey: Uint8Array = getAppSecretKeyFromLocalStorage();
@@ -17,12 +17,10 @@ export async function createNip46Signer(
     if (!bp) throw new Error("Invalid NIP-46 URI");
     const bunker = BunkerSigner.fromBunker(clientSecretKey, bp, params);
     await bunker.connect();
-    console.log("BUNKER CONNECTED");
     return wrapBunkerSigner(bunker);
   } else if (parsedUri.protocol === "nostrconnect:") {
     return BunkerSigner.fromURI(clientSecretKey, uri, params);
   } else {
-    console.log("URL PROTOCOL IS", parsedUri.protocol);
     throw new Error("INVALID URI");
   }
 }

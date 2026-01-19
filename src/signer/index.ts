@@ -71,7 +71,6 @@ class Signer {
     setBunkerUriInLocalStorage(bunkerUri);
     this.signer = remoteSigner;
     this.notify();
-    console.log("LOGIN WITH BUNKER COMPLETE");
   }
 
   logout() {
@@ -79,7 +78,6 @@ class Signer {
     removeKeysFromLocalStorage();
     removeBunkerUriFromLocalStorage();
     removeAppSecretFromLocalStorage();
-    console.log("Logged out from everywhere");
     this.notify();
   }
 
@@ -87,9 +85,7 @@ class Signer {
     if (this.signer) return this.signer;
 
     if (this.loginModalCallback) {
-      console.log("GOING TO CALL LOGINMODALCALLBACK");
       await this.loginModalCallback();
-      console.log("AFTER CALLING loginModal Callback", this.signer);
       if (this.signer) return this.signer;
     }
 

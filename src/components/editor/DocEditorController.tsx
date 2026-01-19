@@ -47,7 +47,6 @@ export function DocumentEditorController({
       created_at: v.event.created_at,
     })) ?? [];
   const activeVersion = history ? getLatestVersion(history) : null;
-  console.log("Id is", selectedDocumentId, "versions are", history);
 
   const [md, setMd] = useState(activeVersion?.decryptedContent || "");
   const [mode, setMode] = useState<"edit" | "preview">(

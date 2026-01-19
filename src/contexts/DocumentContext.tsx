@@ -56,7 +56,6 @@ const getDecryptedContent = async (
     else if (event.pubkey === user?.pubkey) {
       const signer = await signerManager.getSigner();
       decrypted = await signer.nip44Decrypt!(user.pubkey, event.content);
-      //console.log("Decrypted content is", decrypted);
     }
     return decrypted;
   } catch (err) {
@@ -88,7 +87,6 @@ export const DocumentProvider: React.FC<{ children: React.ReactNode }> = ({
   };
 
   const removeDocument = (id: string) => {
-    console.log("remove document called");
     setDocuments((prev) => {
       const newDocuments = new Map(prev);
       newDocuments.delete(id);
@@ -119,7 +117,6 @@ export const DocumentProvider: React.FC<{ children: React.ReactNode }> = ({
     keys?: Record<string, string>,
   ) => {
     const address = getEventAddress(document);
-    console.log("Got Event Address as:", address);
     if (!address) return;
     const decryptedContent = await getDecryptedContent(
       document,
@@ -135,7 +132,6 @@ export const DocumentProvider: React.FC<{ children: React.ReactNode }> = ({
         address,
         versions: [],
       };
-
       if (history.versions.some((v) => v.event.id === document.id)) {
         return prev;
       }

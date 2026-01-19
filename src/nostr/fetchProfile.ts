@@ -3,7 +3,7 @@ import { DEFAULT_RELAYS, pool } from "./relayPool";
 
 export const fetchProfile = async (
   pubkey: string,
-  relays: string[] = DEFAULT_RELAYS
+  relays: string[] = DEFAULT_RELAYS,
 ) => {
   return new Promise((resolve, reject) => {
     pool.subscribeMany(
@@ -18,11 +18,10 @@ export const fetchProfile = async (
             const profile = JSON.parse(event.content);
             resolve(profile);
           } catch (e) {
-            console.log("couldn't get profile");
             reject();
           }
         },
-      }
+      },
     );
   });
 };
