@@ -7,6 +7,7 @@ import React, {
 } from "react";
 import { fetchEventsByKind } from "../nostr/fetchFile";
 import { useRelays } from "./RelayContext";
+import { useUser } from "./UserContext";
 import { signerManager } from "../signer";
 import {
   getPublicKey,
@@ -46,6 +47,7 @@ export const SharedPagesProvider: React.FC<{ children: React.ReactNode }> = ({
   children,
 }) => {
   const { relays } = useRelays();
+  const { user } = useUser();
   const [sharedDocs, setSharedDocs] = useState<string[][]>([]);
   const [loading, setLoading] = useState(true);
   const [sharedDocuments, setSharedDocuments] = useState<
@@ -193,16 +195,23 @@ export const SharedPagesProvider: React.FC<{ children: React.ReactNode }> = ({
   };
 
   useEffect(() => {
-    refresh();
+    if (user) {
+      refresh();
+    } else {
+      // Clear shared docs when user logs out
+      setSharedDocs([]);
+      setSharedDocuments(new Map());
+      setLoading(false);
+    }
 
-    // Cleanup subscription on unmount
+    // Cleanup subscription on unmount or when dependencies change
     return () => {
       if (subscriptionRef.current) {
         subscriptionRef.current.close();
         subscriptionRef.current = null;
       }
     };
-  }, [relays]);
+  }, [relays, user]);
 
   const getSharedDocs = () => [...sharedDocs];
 

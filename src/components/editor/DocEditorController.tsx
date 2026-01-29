@@ -5,6 +5,7 @@ import { finalizeEvent, getPublicKey, nip19, type Event } from "nostr-tools";
 import { hexToBytes } from "nostr-tools/utils";
 
 import { useDocumentContext } from "../../contexts/DocumentContext";
+import { useSharedPages } from "../../contexts/SharedDocsContext";
 import { signerManager } from "../../signer";
 import { useRelays } from "../../contexts/RelayContext";
 import { publishEvent } from "../../nostr/publish";
@@ -35,6 +36,7 @@ export function DocumentEditorController({
     removeDocument,
     addDocument,
   } = useDocumentContext();
+  const { addSharedDoc } = useSharedPages();
 
   const navigate = useNavigate();
   const { relays } = useRelays();
@@ -353,16 +355,26 @@ export function DocumentEditorController({
         open={shareOpen}
         onClose={() => setShareOpen(false)}
         onPublicPost={() => handleSharePublic()}
-        onPrivateLink={(canEdit) =>
-          handleGeneratePrivateLink(
+        onPrivateLink={async (canEdit) => {
+          const result = await handleGeneratePrivateLink(
             canEdit,
             selectedDocumentId,
             md,
             relays,
             viewKey,
             editKey,
-          )
-        }
+          );
+
+          // Track the shared document
+          const sharedDocTag = [
+            result.address,
+            result.viewKey,
+            ...(result.editKey ? [result.editKey] : []),
+          ];
+          await addSharedDoc(sharedDocTag);
+
+          return result.url;
+        }}
       />
     </Box>
   );

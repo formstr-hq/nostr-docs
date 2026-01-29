@@ -35,6 +35,13 @@ function parseAddress(address: string): {
   return { kind, pubkey, identifier };
 }
 
+export type ShareResult = {
+  url: string;
+  address: string;
+  viewKey: string;
+  editKey?: string;
+};
+
 export async function handleGeneratePrivateLink(
   canEdit: boolean,
   selectedDocumentId: string | null,
@@ -42,7 +49,7 @@ export async function handleGeneratePrivateLink(
   relays: string[],
   viewKey?: string,
   editKey?: string,
-): Promise<string> {
+): Promise<ShareResult> {
   if (!selectedDocumentId) {
     throw new Error("No document selected");
   }
@@ -110,7 +117,8 @@ export async function handleGeneratePrivateLink(
     ...(editKeyUsed && { editKey: bytesToHex(editKeyUsed) }),
   });
 
-  // 7️⃣ Build URL
+  // 7️⃣ Build URL and address
+  const newAddress = `${KIND_FILE}:${signedEvent.pubkey}:${dTag}`;
   const naddr = nip19.naddrEncode({
     kind: KIND_FILE,
     pubkey: signedEvent.pubkey,
@@ -119,5 +127,10 @@ export async function handleGeneratePrivateLink(
 
   const shareUrl = `${window.location.origin}/doc/${naddr}#${nkeysStr}`;
 
-  return shareUrl;
+  return {
+    url: shareUrl,
+    address: newAddress,
+    viewKey: bytesToHex(viewKeyUsed),
+    ...(editKeyUsed && { editKey: bytesToHex(editKeyUsed) }),
+  };
 }
