@@ -240,8 +240,7 @@ export function DocumentEditorController({
   const handleDelete = async (skipPrompt = false) => {
     if (skipPrompt) {
       await deleteEvent({
-        eventKind: 33457,
-        eventId: selectedDocumentId!,
+        address: selectedDocumentId!,
         relays,
         reason: "User requested deletion",
       });
@@ -308,8 +307,7 @@ export function DocumentEditorController({
         onConfirm={async () => {
           setConfirmOpen(false);
           await deleteEvent({
-            eventKind: 33457,
-            eventId: selectedDocumentId!,
+            address: selectedDocumentId!,
             relays,
             reason: "User requested deletion",
           });
@@ -339,7 +337,7 @@ export function DocumentEditorController({
           handleGeneratePrivateLink(
             canEdit,
             selectedDocumentId,
-            activeVersion?.decryptedContent!,
+            md,
             relays,
             viewKey,
             editKey,

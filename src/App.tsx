@@ -12,7 +12,7 @@ import {
 } from "@mui/material";
 import MenuIcon from "@mui/icons-material/Menu";
 import { ThemeProvider } from "@mui/material/styles";
-import { BrowserRouter, Routes, Route } from "react-router-dom";
+import { BrowserRouter, Routes, Route, useLocation } from "react-router-dom";
 
 import DocumentList from "./components/DocumentList";
 import UserMenu from "./components/UserMenu";
@@ -146,12 +146,7 @@ export default function App() {
                 >
                   <Routes>
                     <Route path="/" element={<HomePage />} />
-                    <Route
-                      path="/doc/:naddr"
-                      element={
-                        <DocPage key={location.pathname + location.hash} />
-                      }
-                    />
+                    <Route path="/doc/:naddr" element={<DocPageWrapper />} />
                     <Route path="/about" element={<AboutPage />} />
                     <Route path="*" element={<NotFoundPage />} />
                   </Routes>
@@ -163,6 +158,11 @@ export default function App() {
       </UserProvider>
     </ThemeProvider>
   );
+}
+
+function DocPageWrapper() {
+  const location = useLocation();
+  return <DocPage key={location.pathname + location.hash} />;
 }
 
 export function HomePage() {
