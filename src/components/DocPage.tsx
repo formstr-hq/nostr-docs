@@ -3,7 +3,7 @@ import { useParams, useLocation } from "react-router-dom";
 import { useDocumentContext } from "../contexts/DocumentContext";
 import { fetchDocumentByNaddr } from "../nostr/fetchFile";
 import { useRelays } from "../contexts/RelayContext";
-import { nip19, type Event } from "nostr-tools";
+import { nip19 } from "nostr-tools";
 import { decodeNKeys } from "../utils/nkeys";
 import { DocumentEditorController } from "./editor/DocEditorController";
 
@@ -49,31 +49,40 @@ export default function DocPage() {
 
     const docExists = documents.get(address);
 
-    // If document exists in context with matching keys, use it
+    // If document exists in context, use it
     if (docExists) {
       setSelectedDocumentId(address);
       setLoading(false);
     } else {
       // Fetch document from relays
-      let eventFound = false;
       (async () => {
         try {
-          await fetchDocumentByNaddr(relays, naddr, (event: Event) => {
-            eventFound = true;
-            const dTag = event.tags.find((t) => t[0] === "d")?.[1];
-            if (!dTag) return;
+          // fetchDocumentByNaddr returns the latest event after subscription ends
+          const latestEvent = await fetchDocumentByNaddr(
+            relays,
+            naddr,
+            () => {}, // We use the return value instead of callback
+          );
 
-            const eventAddress = `${event.kind}:${event.pubkey}:${dTag}`;
-
-            addDocument(event, keys);
-            setSelectedDocumentId(eventAddress);
-          });
-
-          // After fetch completes, check if we found any events
-          if (!eventFound) {
+          if (!latestEvent) {
             console.error("Document not found on relays:", address);
             setNotFound(true);
+            return;
           }
+
+          const dTag = latestEvent.tags.find(
+            (t: string[]) => t[0] === "d",
+          )?.[1];
+          if (!dTag) {
+            setInvalid(true);
+            return;
+          }
+
+          const eventAddress = `${latestEvent.kind}:${latestEvent.pubkey}:${dTag}`;
+
+          // Await addDocument to ensure it completes before setting selected
+          await addDocument(latestEvent, keys);
+          setSelectedDocumentId(eventAddress);
         } catch (err) {
           console.error("Failed to fetch document:", err);
           setInvalid(true);

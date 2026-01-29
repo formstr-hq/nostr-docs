@@ -86,6 +86,9 @@ export async function handleGeneratePrivateLink(
   if (editKeyUsed) {
     signedEvent = finalizeEvent(sharedEvent, editKeyUsed);
   } else {
+    if (!signer) {
+      throw new Error("No signer available");
+    }
     signedEvent = await signer.signEvent(sharedEvent);
   }
 

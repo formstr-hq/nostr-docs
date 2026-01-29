@@ -1,5 +1,11 @@
-import React, { createContext, useContext, useState, useEffect } from "react";
-import { fetchEventsByKind } from "../nostr/fetchFile"; // your existing fetch/publish helpers
+import React, {
+  createContext,
+  useContext,
+  useState,
+  useEffect,
+  useRef,
+} from "react";
+import { fetchEventsByKind } from "../nostr/fetchFile";
 import { useRelays } from "./RelayContext";
 import { signerManager } from "../signer";
 import {
@@ -12,6 +18,7 @@ import { hexToBytes } from "nostr-tools/utils";
 import { publishEvent } from "../nostr/publish";
 import { pool } from "../nostr/relayPool";
 import { KIND_FILE } from "../nostr/kinds";
+import type { SubCloser } from "nostr-tools/abstract-pool";
 
 type DocumentVersion = {
   event: Event;
@@ -45,12 +52,22 @@ export const SharedPagesProvider: React.FC<{ children: React.ReactNode }> = ({
     Map<string, DocumentHistory>
   >(new Map());
 
+  const subscriptionRef = useRef<SubCloser | null>(null);
+
   const getKeys = (id: string) => {
     const keys = sharedDocs.find((t) => t[0] === id);
     return keys?.slice(1) || [];
   };
 
   const fetchSharedDocuments = (sharedDocs: string[][]) => {
+    // Close any existing subscription before creating a new one
+    if (subscriptionRef.current) {
+      subscriptionRef.current.close();
+      subscriptionRef.current = null;
+    }
+
+    if (sharedDocs.length === 0) return;
+
     const aTags = sharedDocs.map((t) => t[0]);
     const dTags = aTags
       .map((a) => {
@@ -60,7 +77,7 @@ export const SharedPagesProvider: React.FC<{ children: React.ReactNode }> = ({
           return null;
         }
       })
-      .filter((b) => b !== null);
+      .filter((b): b is string => b !== null);
     const pubkeys = aTags
       .map((a) => {
         try {
@@ -69,13 +86,17 @@ export const SharedPagesProvider: React.FC<{ children: React.ReactNode }> = ({
           return null;
         }
       })
-      .filter((b) => b !== null);
+      .filter((b): b is string => b !== null);
+
+    if (dTags.length === 0 || pubkeys.length === 0) return;
+
     const filter = {
       "#d": dTags,
       authors: pubkeys,
       kinds: [KIND_FILE],
     };
-    pool.subscribeMany(relays, filter, {
+
+    subscriptionRef.current = pool.subscribeMany(relays, filter, {
       onevent: (event: Event) => {
         const dTag = event.tags.find((t) => t[0] === "d")?.[1];
         if (!dTag) return;
@@ -173,6 +194,14 @@ export const SharedPagesProvider: React.FC<{ children: React.ReactNode }> = ({
 
   useEffect(() => {
     refresh();
+
+    // Cleanup subscription on unmount
+    return () => {
+      if (subscriptionRef.current) {
+        subscriptionRef.current.close();
+        subscriptionRef.current = null;
+      }
+    };
   }, [relays]);
 
   const getSharedDocs = () => [...sharedDocs];

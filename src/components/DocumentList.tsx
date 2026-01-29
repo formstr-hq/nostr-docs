@@ -59,30 +59,45 @@ export default function DocumentList({
       kind: doc.kind,
     });
     const keys = getKeys(`${doc.kind}:${doc.pubkey}:${dTag}`);
-    const path = keys.length
-      ? `/doc/${naddr}#${encodeNKeys({ viewKey: keys[0], editKey: keys[1] })}`
-      : `/doc/${naddr}`;
 
-    setSelectedDocumentId(address); // optional, DocPage will handle anyway
+    // Only include keys that exist
+    let path = `/doc/${naddr}`;
+    if (keys.length > 0 && keys[0]) {
+      const nkeysObj: Record<string, string> = { viewKey: keys[0] };
+      if (keys[1]) {
+        nkeysObj.editKey = keys[1];
+      }
+      path = `/doc/${naddr}#${encodeNKeys(nkeysObj)}`;
+    }
+
+    setSelectedDocumentId(address);
     navigate(path);
   };
 
   useEffect(() => {
     (async () => {
-      if (!user) return;
+      if (!user) {
+        setLoading(false);
+        return;
+      }
       const signer = await signerManager.getSigner();
+      if (!signer) {
+        setLoading(false);
+        return;
+      }
       try {
-        fetchAllDocuments(
+        const pubkey = await signer.getPublicKey();
+        await fetchAllDocuments(
           relays,
           (doc: Event) => {
-            setLoading(false);
             addDocument(doc);
           },
-          await signer.getPublicKey(),
+          pubkey,
         );
         fetchDeleteRequests(relays, addDeletionRequest);
       } catch (err) {
         console.error("Failed to fetch documents:", err);
+      } finally {
         setLoading(false);
       }
     })();
