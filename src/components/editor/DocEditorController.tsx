@@ -5,6 +5,7 @@ import { finalizeEvent, getPublicKey, nip19, type Event } from "nostr-tools";
 import { hexToBytes } from "nostr-tools/utils";
 
 import { useDocumentContext } from "../../contexts/DocumentContext";
+import { useSharedPages } from "../../contexts/SharedDocsContext";
 import { signerManager } from "../../signer";
 import { useRelays } from "../../contexts/RelayContext";
 import { publishEvent } from "../../nostr/publish";
@@ -19,6 +20,7 @@ import { handleGeneratePrivateLink, handleSharePublic } from "./utils";
 import { encryptContent } from "../../utils/encryption";
 import { KIND_FILE } from "../../nostr/kinds";
 import { getLatestVersion } from "../../utils/helpers";
+import { encodeNKeys } from "../../utils/nkeys";
 
 export function DocumentEditorController({
   viewKey,
@@ -34,6 +36,7 @@ export function DocumentEditorController({
     removeDocument,
     addDocument,
   } = useDocumentContext();
+  const { addSharedDoc } = useSharedPages();
 
   const navigate = useNavigate();
   const { relays } = useRelays();
@@ -122,29 +125,38 @@ export function DocumentEditorController({
   ------------------------------ */
 
   const saveSnapshotWithAddress = async (address: string, content: string) => {
-    const signer = await signerManager.getSigner();
-
-    if (!signer && !editKey) {
-      throw new Error("No signer");
-    }
     const dTag = address.split(":")?.[2];
     const encryptedContent = await encryptContent(content, viewKey);
     if (!encryptedContent) throw new Error("Encryption failed");
 
-    const event = {
-      kind: 33457,
-      tags: [["d", dTag]],
-      content: encryptedContent,
-      created_at: Math.floor(Date.now() / 1000),
-      pubkey: await signer.getPublicKey!(),
-    };
-
     let signed: Event;
+
     if (editKey) {
-      signed = finalizeEvent(event, hexToBytes(editKey));
+      // Use editKey for shared documents
+      const editKeyBytes = hexToBytes(editKey);
+      const event = {
+        kind: KIND_FILE,
+        tags: [["d", dTag]],
+        content: encryptedContent,
+        created_at: Math.floor(Date.now() / 1000),
+      };
+      signed = finalizeEvent(event, editKeyBytes);
     } else {
+      // Use signer for owned documents
+      const signer = await signerManager.getSigner();
+      if (!signer) {
+        throw new Error("No signer available");
+      }
+      const event = {
+        kind: KIND_FILE,
+        tags: [["d", dTag]],
+        content: encryptedContent,
+        created_at: Math.floor(Date.now() / 1000),
+        pubkey: await signer.getPublicKey(),
+      };
       signed = await signer.signEvent(event);
     }
+
     addDocument(signed, {
       viewKey: viewKey,
       editKey: editKey,
@@ -174,7 +186,17 @@ export function DocumentEditorController({
       kind: KIND_FILE,
       identifier: dTag,
     });
-    navigate(`/doc/${naddr}`, { replace: true });
+
+    // Preserve nkeys in URL if they exist
+    let url = `/doc/${naddr}`;
+    if (viewKey || editKey) {
+      const nkeysStr = encodeNKeys({
+        ...(viewKey && { viewKey }),
+        ...(editKey && { editKey }),
+      });
+      url += `#${nkeysStr}`;
+    }
+    navigate(url, { replace: true });
     return dTag;
   };
 
@@ -240,8 +262,7 @@ export function DocumentEditorController({
   const handleDelete = async (skipPrompt = false) => {
     if (skipPrompt) {
       await deleteEvent({
-        eventKind: 33457,
-        eventId: selectedDocumentId!,
+        address: selectedDocumentId!,
         relays,
         reason: "User requested deletion",
       });
@@ -308,8 +329,7 @@ export function DocumentEditorController({
         onConfirm={async () => {
           setConfirmOpen(false);
           await deleteEvent({
-            eventKind: 33457,
-            eventId: selectedDocumentId!,
+            address: selectedDocumentId!,
             relays,
             reason: "User requested deletion",
           });
@@ -335,16 +355,26 @@ export function DocumentEditorController({
         open={shareOpen}
         onClose={() => setShareOpen(false)}
         onPublicPost={() => handleSharePublic()}
-        onPrivateLink={(canEdit) =>
-          handleGeneratePrivateLink(
+        onPrivateLink={async (canEdit) => {
+          const result = await handleGeneratePrivateLink(
             canEdit,
             selectedDocumentId,
-            activeVersion?.decryptedContent!,
+            md,
             relays,
             viewKey,
             editKey,
-          )
-        }
+          );
+
+          // Track the shared document
+          const sharedDocTag = [
+            result.address,
+            result.viewKey,
+            ...(result.editKey ? [result.editKey] : []),
+          ];
+          await addSharedDoc(sharedDocTag);
+
+          return result.url;
+        }}
       />
     </Box>
   );

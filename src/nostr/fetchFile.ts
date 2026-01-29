@@ -65,9 +65,13 @@ export async function fetchDocumentByNaddr(
 
     pool.subscribeMany(
       relays,
-      { kinds: [kind], "#d": [identifier], authors: [pubkey] }, // filter by d-tag = naddr
+      { kinds: [kind], "#d": [identifier], authors: [pubkey] },
       {
         onevent: (event: Event) => {
+          // Track the latest event by created_at
+          if (!latestEvent || event.created_at > latestEvent.created_at) {
+            latestEvent = event;
+          }
           onEvent(event);
         },
         oneose: () => {
@@ -83,15 +87,18 @@ export const fetchEventsByKind = (
   kind: number,
   pubkey: string,
   onEvent: (event: Event) => void,
-) => {
+): Promise<Event | null> => {
   return new Promise((resolve) => {
     let latestEvent: Event | null = null;
 
     pool.subscribeMany(
       relays,
-      { kinds: [kind], authors: [pubkey] }, // filter by d-tag = naddr
+      { kinds: [kind], authors: [pubkey] },
       {
         onevent: (event: Event) => {
+          if (!latestEvent || event.created_at > latestEvent.created_at) {
+            latestEvent = event;
+          }
           onEvent(event);
         },
         oneose: () => {

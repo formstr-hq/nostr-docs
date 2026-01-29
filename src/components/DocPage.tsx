@@ -3,7 +3,7 @@ import { useParams, useLocation } from "react-router-dom";
 import { useDocumentContext } from "../contexts/DocumentContext";
 import { fetchDocumentByNaddr } from "../nostr/fetchFile";
 import { useRelays } from "../contexts/RelayContext";
-import { nip19, type Event } from "nostr-tools";
+import { nip19 } from "nostr-tools";
 import { decodeNKeys } from "../utils/nkeys";
 import { DocumentEditorController } from "./editor/DocEditorController";
 
@@ -16,13 +16,13 @@ export default function DocPage() {
 
   const [loading, setLoading] = useState(true);
   const [invalid, setInvalid] = useState(false);
+  const [notFound, setNotFound] = useState(false);
   const [decodedKeys, setDecodedKeys] = useState<{
     viewKey?: string;
     editKey?: string;
   }>({});
 
   useEffect(() => {
-    console.log("NADDR Changed", naddr, loading);
     if (!naddr) {
       setLoading(false);
       return;
@@ -30,6 +30,7 @@ export default function DocPage() {
     // Decode keys from hash
     setLoading(true);
     setInvalid(false);
+    setNotFound(false);
     const hash = location.hash.replace("#", "");
     const keys = hash ? decodeNKeys(hash) : {};
     setDecodedKeys(keys);
@@ -48,26 +49,40 @@ export default function DocPage() {
 
     const docExists = documents.get(address);
 
-    if (docExists && Object.keys(keys).length !== 0) {
-      // Document already exists in context, just select it
-      console.log("Doc exisits with keys", docExists, keys, address);
+    // If document exists in context, use it
+    if (docExists) {
       setSelectedDocumentId(address);
       setLoading(false);
     } else {
-      console.log("Doc does not exisits or keys does not exists", keys);
       // Fetch document from relays
       (async () => {
         try {
-          await fetchDocumentByNaddr(relays, naddr, (event: Event) => {
-            const dTag = event.tags.find((t) => t[0] === "d")?.[1];
-            if (!dTag) return;
+          // fetchDocumentByNaddr returns the latest event after subscription ends
+          const latestEvent = await fetchDocumentByNaddr(
+            relays,
+            naddr,
+            () => {}, // We use the return value instead of callback
+          );
 
-            const address = `${event.kind}:${event.pubkey}:${dTag}`;
+          if (!latestEvent) {
+            console.error("Document not found on relays:", address);
+            setNotFound(true);
+            return;
+          }
 
-            addDocument(event, keys);
-            setSelectedDocumentId(address);
-            setLoading(false);
-          });
+          const dTag = latestEvent.tags.find(
+            (t: string[]) => t[0] === "d",
+          )?.[1];
+          if (!dTag) {
+            setInvalid(true);
+            return;
+          }
+
+          const eventAddress = `${latestEvent.kind}:${latestEvent.pubkey}:${dTag}`;
+
+          // Await addDocument to ensure it completes before setting selected
+          await addDocument(latestEvent, keys);
+          setSelectedDocumentId(eventAddress);
         } catch (err) {
           console.error("Failed to fetch document:", err);
           setInvalid(true);
@@ -80,6 +95,7 @@ export default function DocPage() {
 
   if (loading) return <div>Loading document...</div>;
   if (invalid) return <div>Invalid document URL</div>;
+  if (notFound) return <div>Document not found. It may have been deleted or not yet propagated to relays.</div>;
 
   return (
     <DocumentEditorController

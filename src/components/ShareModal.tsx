@@ -30,15 +30,22 @@ export default function ShareModal({ open, onClose, onPrivateLink }: Props) {
   const [privateLink, setPrivateLink] = useState<string>("");
   const [loading, setLoading] = useState(false);
   const [toastOpen, setToastOpen] = useState(false);
+  const [error, setError] = useState<string>("");
 
   const handlePrivateLink = async () => {
     if (!onPrivateLink) return;
     setLoading(true);
+    setError("");
     try {
       const url = await onPrivateLink(canEdit);
-      if (typeof url === "string") setPrivateLink(url);
+      if (typeof url === "string") {
+        setPrivateLink(url);
+      } else {
+        setError("Failed to generate link. Please try again.");
+      }
     } catch (err) {
       console.error("Failed to generate private link:", err);
+      setError(err instanceof Error ? err.message : "Failed to generate link");
     } finally {
       setLoading(false);
     }
@@ -54,6 +61,7 @@ export default function ShareModal({ open, onClose, onPrivateLink }: Props) {
     setPrivateLink("");
     setCanEdit(false);
     setLoading(false);
+    setError("");
     onClose();
   };
 
@@ -97,6 +105,12 @@ export default function ShareModal({ open, onClose, onPrivateLink }: Props) {
                 "Generate Link"
               )}
             </Button>
+
+            {error && (
+              <Typography color="error" sx={{ mt: 2 }}>
+                {error}
+              </Typography>
+            )}
 
             {privateLink && (
               <TextField

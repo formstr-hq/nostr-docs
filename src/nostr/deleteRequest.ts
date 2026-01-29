@@ -2,36 +2,55 @@ import { signerManager } from "../signer";
 import { publishEvent } from "../nostr/publish";
 
 /**
+ * Parses an a-link address string into its components.
+ * @param address Format: "kind:pubkey:identifier"
+ */
+function parseAddress(address: string): {
+  kind: number;
+  pubkey: string;
+  identifier: string;
+} | null {
+  const parts = address.split(":");
+  if (parts.length !== 3) return null;
+  const [kindStr, pubkey, identifier] = parts;
+  const kind = parseInt(kindStr, 10);
+  if (isNaN(kind)) return null;
+  return { kind, pubkey, identifier };
+}
+
+/**
  * Sends a NIP-09 deletion request for a replaceable document or event.
- * @param eventKind Kind of the event to delete (e.g., 33457)
- * @param eventId The d-tag or unique identifier of the event
+ * @param address The full a-link address (format: "kind:pubkey:identifier")
  * @param relays List of relay URLs
  * @param reason Optional text explaining deletion
  */
 export async function deleteEvent({
-  eventKind,
-  eventId,
+  address,
   relays,
   reason = "User requested deletion",
 }: {
-  eventKind: number;
-  eventId: string;
+  address: string;
   relays: string[];
   reason?: string;
 }) {
+  const parsed = parseAddress(address);
+  if (!parsed) {
+    throw new Error(`Invalid address format: ${address}`);
+  }
+
   const signer = await signerManager.getSigner();
   if (!signer) throw new Error("No signer available");
 
-  const pubkey = await signer.getPublicKey!();
+  const signerPubkey = await signer.getPublicKey!();
 
   const event = {
     kind: 5, // NIP-09 deletion request
-    pubkey,
+    pubkey: signerPubkey,
     created_at: Math.floor(Date.now() / 1000),
     content: reason,
     tags: [
-      ["a", `${eventKind}:${pubkey}:${eventId}`],
-      ["k", String(eventKind)],
+      ["a", address],
+      ["k", String(parsed.kind)],
     ],
   };
 

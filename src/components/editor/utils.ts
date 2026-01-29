@@ -11,11 +11,35 @@ import { bytesToHex, hexToBytes } from "nostr-tools/utils";
 import { signerManager } from "../../signer";
 import { publishEvent } from "../../nostr/publish";
 import { deleteEvent } from "../../nostr/deleteRequest";
-import { KIND_FILE } from "../../nostr/kinds";
 import { encodeNKeys } from "../../utils/nkeys";
+import { KIND_FILE } from "../../nostr/kinds";
 
 export const handleSharePublic = () => {
   console.log("TODO: Share publicly");
+};
+
+/**
+ * Parses an a-link address into its components.
+ * @param address Format: "kind:pubkey:identifier"
+ */
+function parseAddress(address: string): {
+  kind: number;
+  pubkey: string;
+  identifier: string;
+} | null {
+  const parts = address.split(":");
+  if (parts.length !== 3) return null;
+  const [kindStr, pubkey, identifier] = parts;
+  const kind = parseInt(kindStr, 10);
+  if (isNaN(kind)) return null;
+  return { kind, pubkey, identifier };
+}
+
+export type ShareResult = {
+  url: string;
+  address: string;
+  viewKey: string;
+  editKey?: string;
 };
 
 export async function handleGeneratePrivateLink(
@@ -25,11 +49,22 @@ export async function handleGeneratePrivateLink(
   relays: string[],
   viewKey?: string,
   editKey?: string,
-) {
-  if (!selectedDocumentId) return;
-  const signer = await signerManager.getSigner();
+): Promise<ShareResult> {
+  if (!selectedDocumentId) {
+    throw new Error("No document selected");
+  }
+  if (!docContent) {
+    throw new Error("Document content is empty");
+  }
 
-  if (!docContent) return;
+  // Parse the address to extract components (selectedDocumentId is an a-link: "kind:pubkey:identifier")
+  const parsed = parseAddress(selectedDocumentId);
+  if (!parsed) {
+    throw new Error("Invalid document address format");
+  }
+  const { identifier: dTag } = parsed;
+
+  const signer = await signerManager.getSigner();
 
   // 1️⃣ Generate keys
   const viewKeyUsed = viewKey ? hexToBytes(viewKey) : generateSecretKey();
@@ -45,43 +80,36 @@ export async function handleGeneratePrivateLink(
   );
   const encryptedContent = nip44.encrypt(docContent, conversationKey);
 
-  // 3️⃣ Create shared event
+  // 2️⃣ Create shared event with the same d-tag
   const sharedEvent = {
-    kind: 33457,
-    tags: [["d", selectedDocumentId]],
+    kind: KIND_FILE,
+    tags: [["d", dTag]],
     content: encryptedContent,
     created_at: Math.floor(Date.now() / 1000),
   };
 
-  // 4️⃣ Sign with editKey if exists, else viewKey
-  let signedEvent: Event | null = null;
-  if (editKeyUsed) signedEvent = finalizeEvent(sharedEvent, editKeyUsed);
-  else {
+  // 3️⃣ Sign with editKey if provided, otherwise use user's signer
+  let signedEvent: Event;
+  if (editKeyUsed) {
+    signedEvent = finalizeEvent(sharedEvent, editKeyUsed);
+  } else {
+    if (!signer) {
+      throw new Error("No signer available");
+    }
     signedEvent = await signer.signEvent(sharedEvent);
   }
 
-  // 5️⃣ Publish
+  // 4️⃣ Publish the new shared event first
   await publishEvent(signedEvent, relays);
-  // Store Keys
-  const buildTag = [
-    `${KIND_FILE}:${
-      editKeyUsed ? getPublicKey(editKeyUsed) : await signer.getPublicKey()
-    }:${selectedDocumentId}`,
-  ];
-  if (viewKeyUsed) buildTag.push(bytesToHex(viewKeyUsed));
-  if (editKeyUsed) buildTag.push(bytesToHex(editKeyUsed));
-  if (buildTag.length > 1) {
-    // await addSharedDoc(buildTag);
-    // refresh();
-  }
 
-  if (editKeyUsed)
+  // 5️⃣ If sharing with edit permissions, delete the original after successful publish
+  if (editKeyUsed) {
     await deleteEvent({
-      eventKind: 33457,
-      eventId: selectedDocumentId!,
+      address: selectedDocumentId,
       relays,
-      reason: "User requested deletion",
+      reason: "Document transferred to new owner",
     });
+  }
 
   // 6️⃣ Encode keys in one nkeys string
   const nkeysStr = encodeNKeys({
@@ -89,14 +117,20 @@ export async function handleGeneratePrivateLink(
     ...(editKeyUsed && { editKey: bytesToHex(editKeyUsed) }),
   });
 
-  // 7️⃣ Build URL
+  // 7️⃣ Build URL and address
+  const newAddress = `${KIND_FILE}:${signedEvent.pubkey}:${dTag}`;
   const naddr = nip19.naddrEncode({
-    kind: 33457,
+    kind: KIND_FILE,
     pubkey: signedEvent.pubkey,
-    identifier: selectedDocumentId,
+    identifier: dTag,
   });
 
   const shareUrl = `${window.location.origin}/doc/${naddr}#${nkeysStr}`;
 
-  return shareUrl;
+  return {
+    url: shareUrl,
+    address: newAddress,
+    viewKey: bytesToHex(viewKeyUsed),
+    ...(editKeyUsed && { editKey: bytesToHex(editKeyUsed) }),
+  };
 }
