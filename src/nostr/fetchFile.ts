@@ -13,14 +13,17 @@ export async function fetchAllDocuments(
   return new Promise((resolve) => {
     const documents: NostrEvent[] = [];
 
-    pool.subscribeMany(
+    const sub = pool.subscribeMany(
       relays,
       { kinds: [KIND_FILE], authors: [pubkey] },
       {
         onevent: (event: NostrEvent) => {
+          documents.push(event);
           addDocument(event);
         },
         oneose: () => {
+          sub.close();
+
           // Group by d-tag and select latest version
           const grouped: Record<string, NostrEvent> = {};
 
@@ -63,7 +66,7 @@ export async function fetchDocumentByNaddr(
   return new Promise((resolve) => {
     let latestEvent: Event | null = null;
 
-    pool.subscribeMany(
+    const sub = pool.subscribeMany(
       relays,
       { kinds: [kind], "#d": [identifier], authors: [pubkey] },
       {
@@ -75,6 +78,7 @@ export async function fetchDocumentByNaddr(
           onEvent(event);
         },
         oneose: () => {
+          sub.close();
           resolve(latestEvent);
         },
       },
@@ -91,7 +95,7 @@ export const fetchEventsByKind = (
   return new Promise((resolve) => {
     let latestEvent: Event | null = null;
 
-    pool.subscribeMany(
+    const sub = pool.subscribeMany(
       relays,
       { kinds: [kind], authors: [pubkey] },
       {
@@ -102,6 +106,7 @@ export const fetchEventsByKind = (
           onEvent(event);
         },
         oneose: () => {
+          sub.close();
           resolve(latestEvent);
         },
       },

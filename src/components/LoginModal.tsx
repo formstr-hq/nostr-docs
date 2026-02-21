@@ -10,6 +10,7 @@ import {
   Typography,
   Collapse,
   Box,
+  Alert,
 } from "@mui/material";
 import { useState } from "react";
 import { signerManager } from "../signer";
@@ -24,22 +25,38 @@ export default function LoginModal({
 }) {
   const [showNip46, setShowNip46] = useState(false);
   const [uri, setUri] = useState("");
+  const [error, setError] = useState<string>("");
 
   const handleNip07 = async () => {
-    await signerManager.loginWithNip07();
-    onClose();
+    setError("");
+    try {
+      await signerManager.loginWithNip07();
+      onClose();
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : "NIP-07 login failed");
+    }
   };
 
   const handleGuest = async () => {
-    const key = generateSecretKey();
-    await signerManager.createGuestAccount(key);
-    onClose();
+    setError("");
+    try {
+      const key = generateSecretKey();
+      await signerManager.createGuestAccount(key);
+      onClose();
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : "Temporary login failed");
+    }
   };
 
   const handleNip46 = async () => {
     if (!uri) return;
-    await signerManager.loginWithNip46(uri);
-    onClose();
+    setError("");
+    try {
+      await signerManager.loginWithNip46(uri);
+      onClose();
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : "Bunker login failed");
+    }
   };
 
   return (
@@ -50,8 +67,14 @@ export default function LoginModal({
 
       <DialogContent sx={{ textAlign: "center" }}>
         <Typography variant="body2" color="text.secondary">
-          Select how you’d like to sign in.
+          Select how you'd like to sign in.
         </Typography>
+
+        {error && (
+          <Alert severity="error" sx={{ mt: 2, textAlign: "left" }}>
+            {error}
+          </Alert>
+        )}
 
         <Stack spacing={1.5} mt={3}>
           <Button fullWidth variant="contained" onClick={handleNip07}>

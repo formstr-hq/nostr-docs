@@ -243,8 +243,9 @@ export const SharedPagesProvider: React.FC<{ children: React.ReactNode }> = ({
 
     await publishEvent(signed, relays);
 
-    // update state
+    // update state and subscribe to newly added document
     setSharedDocs(updatedDocs);
+    fetchSharedDocuments(updatedDocs);
   };
 
   return (

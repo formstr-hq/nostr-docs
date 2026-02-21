@@ -55,6 +55,7 @@ export default function DocPage() {
       setLoading(false);
     } else {
       // Fetch document from relays
+      let cancelled = false;
       (async () => {
         try {
           // fetchDocumentByNaddr returns the latest event after subscription ends
@@ -63,6 +64,8 @@ export default function DocPage() {
             naddr,
             () => {}, // We use the return value instead of callback
           );
+
+          if (cancelled) return;
 
           if (!latestEvent) {
             console.error("Document not found on relays:", address);
@@ -74,7 +77,7 @@ export default function DocPage() {
             (t: string[]) => t[0] === "d",
           )?.[1];
           if (!dTag) {
-            setInvalid(true);
+            if (!cancelled) setInvalid(true);
             return;
           }
 
@@ -82,14 +85,19 @@ export default function DocPage() {
 
           // Await addDocument to ensure it completes before setting selected
           await addDocument(latestEvent, keys);
+          if (cancelled) return;
           setSelectedDocumentId(eventAddress);
         } catch (err) {
           console.error("Failed to fetch document:", err);
-          setInvalid(true);
+          if (!cancelled) setInvalid(true);
         } finally {
-          setLoading(false);
+          if (!cancelled) setLoading(false);
         }
       })();
+
+      return () => {
+        cancelled = true;
+      };
     }
   }, [naddr, relays, location.hash]);
 

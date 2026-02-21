@@ -1,5 +1,5 @@
 // src/contexts/UserContext.tsx
-import { createContext, useContext, useEffect, useState } from "react";
+import React, { createContext, useContext, useEffect, useState } from "react";
 import { signerManager } from "../signer";
 import { fetchProfile } from "../nostr/fetchProfile"; // function to fetch kind-0 metadata
 import { withTimeout } from "../utils/timeout";
@@ -28,8 +28,9 @@ export const UserProvider: React.FC<{ children: React.ReactNode }> = ({
   children,
 }) => {
   const [user, setUser] = useState<UserProfile | null>(null);
-  const [showLooginModal, setShowLoginModal] = useState<boolean>(false);
+  const [showLoginModal, setShowLoginModal] = useState<boolean>(false);
   const [loginHandler, setLoginHandler] = useState<(() => void) | null>(null);
+  const [cancelHandler, setCancelHandler] = useState<(() => void) | null>(null);
   const relays = useRelays();
   // Load cached profile
   useEffect(() => {
@@ -45,7 +46,7 @@ export const UserProvider: React.FC<{ children: React.ReactNode }> = ({
 
   useEffect(() => {
     signerManager.registerLoginModal(() => {
-      return new Promise<void>((resolve) => {
+      return new Promise<void>((resolve, reject) => {
         setShowLoginModal(true);
 
         // Pass a function to LoginModal to call on successful login
@@ -54,7 +55,13 @@ export const UserProvider: React.FC<{ children: React.ReactNode }> = ({
           resolve(); // This finally unblocks getSigner
         };
 
+        const handleLoginCancel = () => {
+          setShowLoginModal(false);
+          reject(new Error("Login cancelled by user"));
+        };
+
         setLoginHandler(() => handleLoginSuccess);
+        setCancelHandler(() => handleLoginCancel);
       });
     });
   }, []);
@@ -62,8 +69,8 @@ export const UserProvider: React.FC<{ children: React.ReactNode }> = ({
   // Listen to signerManager changes
   useEffect(() => {
     signerManager.onChange(async () => {
-      console.log("On change truggered");
-      if (signerManager["signer"]) {
+      console.log("On change triggered");
+      if (signerManager.hasSigner()) {
         const signer = await signerManager.getSigner();
         const pubkey = await signer.getPublicKey();
         console.log("calling fetch and set");
@@ -80,7 +87,7 @@ export const UserProvider: React.FC<{ children: React.ReactNode }> = ({
 
   // Fetch kind-0 metadata and update state + localStorage
   const fetchAndSetProfile = async (pubkey: string) => {
-    loginHandler?.(); // <-- move this UP here
+    loginHandler?.(); // resolve the login modal promise
     try {
       const profile = (await withTimeout(
         fetchProfile(pubkey, relays.relays),
@@ -119,8 +126,11 @@ export const UserProvider: React.FC<{ children: React.ReactNode }> = ({
     <UserContext.Provider value={{ user, loginModal, logout, refreshProfile }}>
       {children}
       <LoginModal
-        open={showLooginModal}
-        onClose={() => setShowLoginModal(false)}
+        open={showLoginModal}
+        onClose={() => {
+          cancelHandler?.();
+          setShowLoginModal(false);
+        }}
       />
     </UserContext.Provider>
   );

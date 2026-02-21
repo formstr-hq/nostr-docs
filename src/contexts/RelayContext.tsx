@@ -38,6 +38,7 @@ export function RelayProvider({ children }: { children: ReactNode }) {
         const results = await pool.querySync(defaultRelays, filters);
 
         if (results && results.length > 0) {
+          results.sort((a, b) => b.created_at - a.created_at);
           const userRelays = results[0].tags
             .filter((tag) => tag[0] === "r")
             .map((tag) => tag[1]);

@@ -4,6 +4,7 @@ import { bytesToHex, hexToBytes } from "@noble/hashes/utils";
 const LOCAL_APP_SECRET_KEY = "formstr:client-secret";
 const LOCAL_BUNKER_URI = "formstr:bunkerUri";
 const LOCAL_STORAGE_KEYS = "formstr:keys";
+const SESSION_STORAGE_GUEST_KEY = "formstr:guest-secret";
 
 type BunkerUri = { bunkerUri: string };
 
@@ -48,4 +49,16 @@ export const removeBunkerUriFromLocalStorage = () => {
 
 export const removeAppSecretFromLocalStorage = () => {
   localStorage.removeItem(LOCAL_APP_SECRET_KEY);
+};
+
+export const setGuestSecretInSession = (secret: string) => {
+  sessionStorage.setItem(SESSION_STORAGE_GUEST_KEY, secret);
+};
+
+export const getGuestSecretFromSession = (): string | null => {
+  return sessionStorage.getItem(SESSION_STORAGE_GUEST_KEY);
+};
+
+export const removeGuestSecretFromSession = () => {
+  sessionStorage.removeItem(SESSION_STORAGE_GUEST_KEY);
 };

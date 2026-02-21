@@ -6,7 +6,9 @@ export const fetchProfile = async (
   relays: string[] = DEFAULT_RELAYS,
 ) => {
   return new Promise((resolve, reject) => {
-    pool.subscribeMany(
+    let resolved = false;
+
+    const sub = pool.subscribeMany(
       relays,
       {
         kinds: [0],
@@ -14,11 +16,21 @@ export const fetchProfile = async (
       },
       {
         onevent: (event: Event) => {
+          if (resolved) return;
           try {
             const profile = JSON.parse(event.content);
+            resolved = true;
+            sub.close();
             resolve(profile);
           } catch (e) {
-            reject();
+            reject(e);
+          }
+        },
+        oneose: () => {
+          sub.close();
+          if (!resolved) {
+            resolved = true;
+            resolve(null);
           }
         },
       },

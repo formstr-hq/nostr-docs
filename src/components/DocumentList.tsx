@@ -94,7 +94,7 @@ export default function DocumentList({
           },
           pubkey,
         );
-        fetchDeleteRequests(relays, addDeletionRequest);
+        await fetchDeleteRequests(relays, addDeletionRequest);
       } catch (err) {
         console.error("Failed to fetch documents:", err);
       } finally {
@@ -183,8 +183,8 @@ export default function DocumentList({
                 >
                   <ListItemText
                     primary={
-                      decryptedContent.slice(0, 40) +
-                      (decryptedContent.length > 40 ? "..." : "")
+                      (decryptedContent ?? "").slice(0, 40) +
+                      ((decryptedContent ?? "").length > 40 ? "..." : "")
                     }
                     secondary={new Date(
                       event.created_at * 1000,

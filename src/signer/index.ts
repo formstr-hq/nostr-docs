@@ -9,6 +9,9 @@ import {
   removeKeysFromLocalStorage,
   removeBunkerUriFromLocalStorage,
   removeAppSecretFromLocalStorage,
+  setGuestSecretInSession,
+  getGuestSecretFromSession,
+  removeGuestSecretFromSession,
 } from "./utils";
 import { createLocalSigner } from "./LocalSigner";
 import { bytesToHex, hexToBytes } from "nostr-tools/utils";
@@ -19,7 +22,10 @@ class Signer {
   private loginModalCallback: (() => Promise<void>) | null = null;
 
   constructor() {
-    this.restoreFromStorage();
+    // Do NOT call restoreFromStorage() here — no onChange listeners are
+    // registered yet, so the notify() call would be a no-op that races with
+    // the useEffect-triggered call. restoreFromStorage() is called explicitly
+    // from the UserContext useEffect after listeners are registered.
   }
 
   registerLoginModal(callback: () => Promise<void>) {
@@ -29,19 +35,23 @@ class Signer {
   async restoreFromStorage() {
     const keys = getKeysFromLocalStorage();
     const bunkerUri = getBunkerUriInLocalStorage();
+    const guestSecret = getGuestSecretFromSession();
     try {
       if (bunkerUri?.bunkerUri) {
         await this.loginWithNip46(bunkerUri.bunkerUri);
-      } else if (window.nostr && Object.keys(keys).length != 0) {
+      } else if (window.nostr && keys?.pubkey && !keys?.secret) {
+        // Only restore NIP-07 if we stored a pubkey without a secret (i.e. NIP-07 session)
         await this.loginWithNip07();
-      } else if (keys?.pubkey && keys?.secret) {
-        await this.loginWithGuestKey(hexToBytes(keys.secret));
+      } else if (guestSecret) {
+        // Restore guest session from sessionStorage
+        await this.loginWithGuestKey(hexToBytes(guestSecret));
       }
     } catch (e) {
       console.error("Signer restore failed:", e);
     }
     this.notify();
   }
+
   private async loginWithGuestKey(privkey: Uint8Array) {
     this.signer = createLocalSigner(privkey);
   }
@@ -51,8 +61,10 @@ class Signer {
 
     const pubkey = await this.signer.getPublicKey();
 
-    // Save keys and user data
-    setKeysInLocalStorage(pubkey, bytesToHex(privkey));
+    // Store pubkey in localStorage (not the secret — that stays in sessionStorage)
+    setKeysInLocalStorage(pubkey);
+    // Store secret in sessionStorage only (wiped when tab closes)
+    setGuestSecretInSession(bytesToHex(privkey));
     this.notify();
   }
 
@@ -78,7 +90,12 @@ class Signer {
     removeKeysFromLocalStorage();
     removeBunkerUriFromLocalStorage();
     removeAppSecretFromLocalStorage();
+    removeGuestSecretFromSession();
     this.notify();
+  }
+
+  hasSigner(): boolean {
+    return this.signer !== null;
   }
 
   async getSigner(): Promise<NostrSigner> {

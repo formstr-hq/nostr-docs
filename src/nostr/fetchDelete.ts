@@ -11,11 +11,12 @@ export const fetchDeleteRequests = (
     "#k": [`${KIND_FILE}`],
   };
   return new Promise((resolve) => {
-    pool.subscribeMany(relays, deleteSubscriptionFilter, {
+    const sub = pool.subscribeMany(relays, deleteSubscriptionFilter, {
       onevent: (event: Event) => {
         onEvent(event);
       },
       oneose: () => {
+        sub.close();
         resolve(undefined);
       },
     });

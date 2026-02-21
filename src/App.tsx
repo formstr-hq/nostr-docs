@@ -22,6 +22,7 @@ import { darkTheme, lightTheme } from "./theme";
 import FormstrLogo from "./assets/formstr.svg";
 import DocPage from "./components/DocPage";
 import { SharedPagesProvider } from "./contexts/SharedDocsContext";
+import { RelayProvider } from "./contexts/RelayContext";
 
 const drawerWidth = 320;
 
@@ -35,6 +36,7 @@ export default function App() {
   return (
     <ThemeProvider theme={theme}>
       <UserProvider>
+        <RelayProvider>
         <DocumentProvider>
           <SharedPagesProvider>
             <CssBaseline />
@@ -155,6 +157,7 @@ export default function App() {
             </BrowserRouter>
           </SharedPagesProvider>
         </DocumentProvider>
+        </RelayProvider>
       </UserProvider>
     </ThemeProvider>
   );

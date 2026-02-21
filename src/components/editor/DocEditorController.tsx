@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Box, Paper, Snackbar, Alert } from "@mui/material";
+import { Box, Paper, Snackbar, Alert, useMediaQuery } from "@mui/material";
 import { useNavigate } from "react-router-dom";
 import { finalizeEvent, getPublicKey, nip19, type Event } from "nostr-tools";
 import { hexToBytes } from "nostr-tools/utils";
@@ -42,6 +42,7 @@ export function DocumentEditorController({
   const { relays } = useRelays();
 
   const isDraft = selectedDocumentId === null;
+  const isMobile = useMediaQuery("(max-width:900px)");
   const history = selectedDocumentId ? documents.get(selectedDocumentId) : null;
 
   const versions =
@@ -178,7 +179,6 @@ export function DocumentEditorController({
       pubkey = await signer.getPublicKey();
     }
     const address = `${KIND_FILE}:${pubkey}:${dTag}`;
-    setSelectedDocumentId(address);
     await saveSnapshotWithAddress(address, content);
     setSelectedDocumentId(address);
     const naddr = nip19.naddrEncode({
@@ -260,6 +260,8 @@ export function DocumentEditorController({
   ------------------------------ */
 
   const handleDelete = async (skipPrompt = false) => {
+    if (isDraft) return;
+
     if (skipPrompt) {
       await deleteEvent({
         address: selectedDocumentId!,
@@ -267,6 +269,7 @@ export function DocumentEditorController({
         reason: "User requested deletion",
       });
       removeDocument(selectedDocumentId!);
+      navigate("/");
       return;
     }
 
@@ -309,7 +312,7 @@ export function DocumentEditorController({
           onToggleMode={() =>
             setMode((m) => (m === "edit" ? "preview" : "edit"))
           }
-          isMobile
+          isMobile={isMobile}
         />
       </Paper>
 
@@ -334,6 +337,7 @@ export function DocumentEditorController({
             reason: "User requested deletion",
           });
           removeDocument(selectedDocumentId!);
+          navigate("/");
         }}
         onCancel={() => {
           setConfirmOpen(false);
