@@ -23,7 +23,7 @@ interface DocumentContextValue {
   addDocument: (
     document: Event,
     keys?: { viewKey?: string; editKey?: string },
-  ) => void;
+  ) => Promise<void>;
 
   removeDocument: (id: string) => void;
   addDeletionRequest: (delEvent: Event) => void;
@@ -44,7 +44,6 @@ const getDecryptedContent = async (
   loginCallback?: () => Promise<void>,
 ): Promise<string | null> => {
   try {
-    let decrypted = null;
     if (viewKey) {
       const conversationKey = getConversationKey(
         hexToBytes(viewKey),
@@ -52,12 +51,18 @@ const getDecryptedContent = async (
       );
       const decryptedContent = nip44.decrypt(event.content, conversationKey);
       return Promise.resolve(decryptedContent);
-    } else if (!user) await loginCallback?.();
-    else if (event.pubkey === user?.pubkey) {
-      const signer = await signerManager.getSigner();
-      decrypted = await signer.nip44Decrypt!(user.pubkey, event.content);
     }
-    return decrypted;
+
+    // If no user, trigger login and then decrypt using the freshly-acquired signer
+    if (!user) {
+      await loginCallback?.();
+    }
+
+    // After login (or if user was already set), get signer and decrypt
+    const signer = await signerManager.getSigner();
+    const pubkey = await signer.getPublicKey();
+    if (event.pubkey !== pubkey) return null;
+    return await signer.nip44Decrypt!(pubkey, event.content);
   } catch (err) {
     console.error("Failed to decrypt content:", err);
     return null;
