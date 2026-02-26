@@ -12,6 +12,43 @@ export async function fetchAllDocuments(
 ): Promise<NostrEvent[]> {
   return new Promise((resolve) => {
     const documents: NostrEvent[] = [];
+    let settled = false;
+
+    const finish = () => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeout);
+      sub.close();
+
+      // Group by d-tag and select latest version
+      const grouped: Record<string, NostrEvent> = {};
+
+      for (const event of documents) {
+        let dTag: string | undefined;
+
+        // Extract d-tag from event tags
+        for (const tag of event.tags) {
+          if (tag.length >= 2 && tag[0] === "d") {
+            dTag = tag[1];
+            break;
+          }
+        }
+
+        if (dTag) {
+          // Keep the latest event for this d-tag
+          if (
+            !grouped[dTag] ||
+            event.created_at > grouped[dTag].created_at
+          ) {
+            grouped[dTag] = event;
+          }
+        }
+      }
+
+      resolve(Object.values(grouped));
+    };
+
+    const timeout = setTimeout(finish, 8000);
 
     const sub = pool.subscribeMany(
       relays,
@@ -21,36 +58,7 @@ export async function fetchAllDocuments(
           documents.push(event);
           addDocument(event);
         },
-        oneose: () => {
-          sub.close();
-
-          // Group by d-tag and select latest version
-          const grouped: Record<string, NostrEvent> = {};
-
-          for (const event of documents) {
-            let dTag: string | undefined;
-
-            // Extract d-tag from event tags
-            for (const tag of event.tags) {
-              if (tag.length >= 2 && tag[0] === "d") {
-                dTag = tag[1];
-                break;
-              }
-            }
-
-            if (dTag) {
-              // Keep the latest event for this d-tag
-              if (
-                !grouped[dTag] ||
-                event.created_at > grouped[dTag].created_at
-              ) {
-                grouped[dTag] = event;
-              }
-            }
-          }
-
-          resolve(Object.values(grouped));
-        },
+        oneose: finish,
       },
     );
   });

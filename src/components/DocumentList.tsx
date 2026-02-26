@@ -85,6 +85,7 @@ export default function DocumentList({
         setLoading(false);
         return;
       }
+      setLoading(true);
       try {
         const pubkey = await signer.getPublicKey();
         await fetchAllDocuments(
@@ -101,12 +102,11 @@ export default function DocumentList({
         setLoading(false);
       }
     })();
-  }, [user]);
+  }, [user, relays]);
 
   if (loading) {
     return (
-      <>
-        {/* <Typography>Loading documents...</Typography> */}
+      <Box sx={{ p: 2 }}>
         <Button
           color="secondary"
           variant="contained"
@@ -114,13 +114,12 @@ export default function DocumentList({
           onClick={() => {
             setSelectedDocumentId(null);
             onEdit(null);
-            console.log("navigationg to home");
             navigate("/");
           }}
         >
           Create a new private page
         </Button>
-      </>
+      </Box>
     );
   }
   const docsToShow = view === "personal" ? visibleDocuments : sharedDocuments;
