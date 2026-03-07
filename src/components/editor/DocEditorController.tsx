@@ -1,8 +1,21 @@
 import { useEffect, useRef, useState } from "react";
-import { Box, Paper, Snackbar, Alert, useMediaQuery } from "@mui/material";
+import {
+  Box,
+  Paper,
+  Snackbar,
+  Alert,
+  useMediaQuery,
+  Typography,
+} from "@mui/material";
 import { useNavigate } from "react-router-dom";
 import { finalizeEvent, getPublicKey, nip19, type Event } from "nostr-tools";
 import { hexToBytes } from "nostr-tools/utils";
+import { useEditor } from "@tiptap/react";
+import StarterKit from "@tiptap/starter-kit";
+import { Markdown } from "tiptap-markdown";
+import Link from "@tiptap/extension-link";
+import Placeholder from "@tiptap/extension-placeholder";
+import CharacterCount from "@tiptap/extension-character-count";
 
 import { useDocumentContext } from "../../contexts/DocumentContext";
 import { useSharedPages } from "../../contexts/SharedDocsContext";
@@ -21,6 +34,8 @@ import { encryptContent } from "../../utils/encryption";
 import { KIND_FILE } from "../../nostr/kinds";
 import { getLatestVersion } from "../../utils/helpers";
 import { encodeNKeys } from "../../utils/nkeys";
+
+type EditorMode = "edit" | "preview" | "split";
 
 export function DocumentEditorController({
   viewKey,
@@ -52,15 +67,17 @@ export function DocumentEditorController({
     })) ?? [];
   const activeVersion = history ? getLatestVersion(history) : null;
 
-  const [md, setMd] = useState(activeVersion?.decryptedContent || "");
-  const [mode, setMode] = useState<"edit" | "preview">(
-    isDraft ? "edit" : "preview",
-  );
+  const initialContent = activeVersion?.decryptedContent ?? "";
+
+  const [md, setMd] = useState(initialContent);
+  const [mode, setMode] = useState<EditorMode>(isDraft ? "edit" : "preview");
   const [saving, setSaving] = useState(false);
+  const [focusMode, setFocusMode] = useState(false);
+  const [wordCount, setWordCount] = useState(0);
+  const [charCount, setCharCount] = useState(0);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [pendingVersionId, setPendingVersionId] = useState<string | null>(null);
   const [historyConfirmOpen, setHistoryConfirmOpen] = useState(false);
-
   const [toast, setToast] = useState<{
     open: boolean;
     message: string;
@@ -68,35 +85,84 @@ export function DocumentEditorController({
   }>({ open: false, message: "", severity: "success" });
   const [shareOpen, setShareOpen] = useState(false);
 
-  const lastSavedMdRef = useRef<string>("");
+  const lastSavedMdRef = useRef<string>(initialContent);
+  // Always-current markdown — avoids stale closures in effects/save
+  const mdRef = useRef<string>(initialContent);
+  // Track whether first-mount effect has run (skip re-setting content on init)
+  const isFirstMount = useRef(true);
 
-  const selectionRef = useRef<{ start: number; end: number } | null>(null);
+  /* ── TipTap editor instance ────────────────────────────── */
+  const editor = useEditor({
+    extensions: [
+      StarterKit,
+      Markdown.configure({ html: false, tightLists: true }),
+      Link.configure({ openOnClick: false }),
+      Placeholder.configure({
+        placeholder: "Start writing your page here…",
+      }),
+      CharacterCount,
+    ],
+    editorProps: {
+      attributes: { class: "tiptap" },
+    },
+    content: initialContent,
+    editable: mode !== "preview",
+    onUpdate: ({ editor }) => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const newMd = (editor.storage as any).markdown.getMarkdown() as string;
+      mdRef.current = newMd;
+      setMd(newMd);
+      setWordCount(editor.storage.characterCount.words());
+      setCharCount(editor.storage.characterCount.characters());
+    },
+  });
 
-  const preserveSelection = () => {
-    const el = document.activeElement as HTMLTextAreaElement | null;
-    if (!el) return;
-    selectionRef.current = {
-      start: el.selectionStart,
-      end: el.selectionEnd,
-    };
-  };
-
-  const restoreSelection = () => {
-    requestAnimationFrame(() => {
-      const el = document.activeElement as HTMLTextAreaElement | null;
-      if (!el || !selectionRef.current) return;
-      el.setSelectionRange(
-        selectionRef.current.start,
-        selectionRef.current.end,
-      );
-    });
-  };
+  /* ── Sync word/char count on editor ready ──────────────── */
   useEffect(() => {
+    if (editor) {
+      setWordCount(editor.storage.characterCount.words());
+      setCharCount(editor.storage.characterCount.characters());
+    }
+  }, [editor]);
+
+  /* ── Update editor editable state when mode changes ───── */
+  useEffect(() => {
+    if (!editor) return;
+    editor.setEditable(mode !== "preview");
+    // When switching back to WYSIWYG, sync with the latest markdown
+    // (user may have edited raw markdown in split mode)
+    if (mode === "edit") {
+      editor.commands.setContent(mdRef.current, { emitUpdate: false });
+    }
+  }, [mode, editor]);
+
+  /* ── Escape key to exit focus mode ─────────────────────── */
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape" && focusMode) setFocusMode(false);
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [focusMode]);
+
+  /* ── Resync when active version changes (relay updates) ── */
+  useEffect(() => {
+    if (isFirstMount.current) {
+      isFirstMount.current = false;
+      return;
+    }
     if (!activeVersion) return;
-    preserveSelection();
-    setMd(activeVersion.decryptedContent ?? "");
-    restoreSelection();
-    lastSavedMdRef.current = activeVersion.decryptedContent ?? "";
+    // Never clobber unsaved changes the user is currently editing
+    if (mdRef.current !== lastSavedMdRef.current) return;
+    const content = activeVersion.decryptedContent ?? "";
+    mdRef.current = content;
+    setMd(content);
+    lastSavedMdRef.current = content;
+    if (editor) {
+      editor.commands.setContent(content, { emitUpdate: false });
+      setWordCount(editor.storage.characterCount.words());
+      setCharCount(editor.storage.characterCount.characters());
+    }
   }, [activeVersion?.event.id]);
 
   const handleSelectVersion = (eventId: string) => {
@@ -110,20 +176,21 @@ export function DocumentEditorController({
     const version = history.versions.find(
       (v) => v.event.id === pendingVersionId,
     );
-
     if (!version) return;
 
-    setMd(version.decryptedContent);
-    lastSavedMdRef.current = version.decryptedContent;
-
+    const content = version.decryptedContent ?? "";
+    mdRef.current = content;
+    setMd(content);
+    lastSavedMdRef.current = content;
+    if (editor) {
+      editor.commands.setContent(content, { emitUpdate: false });
+    }
     setMode("preview");
     setHistoryConfirmOpen(false);
     setPendingVersionId(null);
   };
 
-  /* -----------------------------
-     LOW-LEVEL SNAPSHOT (UNCHANGED)
-  ------------------------------ */
+  /* ── Save helpers ──────────────────────────────────────── */
 
   const saveSnapshotWithAddress = async (address: string, content: string) => {
     const dTag = address.split(":")?.[2];
@@ -133,7 +200,6 @@ export function DocumentEditorController({
     let signed: Event;
 
     if (editKey) {
-      // Use editKey for shared documents
       const editKeyBytes = hexToBytes(editKey);
       const event = {
         kind: KIND_FILE,
@@ -143,11 +209,8 @@ export function DocumentEditorController({
       };
       signed = finalizeEvent(event, editKeyBytes);
     } else {
-      // Use signer for owned documents
       const signer = await signerManager.getSigner();
-      if (!signer) {
-        throw new Error("No signer available");
-      }
+      if (!signer) throw new Error("No signer available");
       const event = {
         kind: KIND_FILE,
         tags: [["d", dTag]],
@@ -158,17 +221,9 @@ export function DocumentEditorController({
       signed = await signer.signEvent(event);
     }
 
-    addDocument(signed, {
-      viewKey: viewKey,
-      editKey: editKey,
-    });
-
+    addDocument(signed, { viewKey, editKey });
     await publishEvent(signed, relays);
   };
-
-  /* -----------------------------
-     EXPLICIT SAVE METHODS
-  ------------------------------ */
 
   const saveNewDocument = async (content: string): Promise<string> => {
     const dTag = makeTag(6);
@@ -182,12 +237,11 @@ export function DocumentEditorController({
     await saveSnapshotWithAddress(address, content);
     setSelectedDocumentId(address);
     const naddr = nip19.naddrEncode({
-      pubkey: pubkey,
+      pubkey,
       kind: KIND_FILE,
       identifier: dTag,
     });
 
-    // Preserve nkeys in URL if they exist
     let url = `/doc/${naddr}`;
     if (viewKey || editKey) {
       const nkeysStr = encodeNKeys({
@@ -204,15 +258,17 @@ export function DocumentEditorController({
     await saveSnapshotWithAddress(address, content);
   };
 
-  /* -----------------------------
-     PUBLIC SAVE ENTRYPOINT
-  ------------------------------ */
-
   const handleSave = async (silent = false) => {
-    console.log("Begin Saving");
     if (saving) return;
 
-    const mdToSave = md;
+    // In WYSIWYG mode, read from editor (avoids stale React state).
+    // In split/preview mode, mdRef is updated by the textarea onChange.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const mdToSave =
+      mode === "edit" && editor
+        ? ((editor.storage as any).markdown.getMarkdown() as string)
+        : mdRef.current;
+
     if (mdToSave === lastSavedMdRef.current) return;
 
     setSaving(true);
@@ -222,9 +278,7 @@ export function DocumentEditorController({
       } else {
         await saveExistingDocument(selectedDocumentId!, mdToSave);
       }
-
       lastSavedMdRef.current = mdToSave;
-
       if (!silent) {
         setToast({ open: true, message: "Saved", severity: "success" });
       }
@@ -238,26 +292,7 @@ export function DocumentEditorController({
     } finally {
       setSaving(false);
     }
-    console.log("Saving done");
   };
-
-  /* -----------------------------
-     AUTOSAVE (UNCHANGED SEMANTICS)
-  ------------------------------ */
-
-  //   useEffect(() => {
-  //     if (!selectedDocumentId) return;
-
-  //     const id = setInterval(() => {
-  //       handleSave();
-  //     }, 20_000);
-
-  //     return () => clearInterval(id);
-  //   }, [selectedDocumentId]);
-
-  /* -----------------------------
-     RENDER
-  ------------------------------ */
 
   const handleDelete = async (skipPrompt = false) => {
     if (isDraft) return;
@@ -276,46 +311,86 @@ export function DocumentEditorController({
     setConfirmOpen(true);
   };
 
+  /* ── Render ────────────────────────────────────────────── */
+  const hasUnsavedChanges = md !== lastSavedMdRef.current;
+
   return (
     <Box
-      sx={{ height: "100%", display: "flex", flexDirection: "column", gap: 2 }}
+      sx={{
+        height: "100%",
+        display: "flex",
+        flexDirection: "column",
+        overflow: "hidden",
+        gap: 1,
+        ...(focusMode && {
+          position: "fixed",
+          inset: 0,
+          zIndex: 1300,
+          bgcolor: "background.default",
+          p: 3,
+        }),
+      }}
     >
       <EditorToolbar
         saving={saving}
         mode={mode}
+        onSetMode={setMode}
         onSave={() => handleSave(false)}
-        onToggleMode={() => setMode((m) => (m === "edit" ? "preview" : "edit"))}
         handleDelete={handleDelete}
-        onShare={() => {
-          setShareOpen(true);
-        }}
+        onShare={() => setShareOpen(true)}
         versions={versions}
         onSelectVersion={handleSelectVersion}
+        editor={editor}
+        focusMode={focusMode}
+        onToggleFocusMode={() => setFocusMode((f) => !f)}
       />
 
       <Paper
         sx={{
           flex: 1,
-          p: 3,
           borderRadius: 3,
-          overflowY: "auto",
+          overflow: "hidden",
+          display: "flex",
+          flexDirection: "column",
         }}
       >
         <DocEditorSurface
           value={md}
-          onChange={(value: string) => {
-            preserveSelection();
-            setMd(value);
-            restoreSelection();
-          }}
+          editor={editor}
           mode={mode}
-          onToggleMode={() =>
-            setMode((m) => (m === "edit" ? "preview" : "edit"))
-          }
+          onChange={(value) => {
+            // Used by the split-mode markdown textarea
+            mdRef.current = value;
+            setMd(value);
+          }}
+          onToggleMode={() => setMode("edit")}
           isMobile={isMobile}
         />
       </Paper>
 
+      {/* ── Status bar ───────────────────────────────────── */}
+      <Box
+        sx={{
+          display: "flex",
+          justifyContent: "flex-end",
+          alignItems: "center",
+          gap: 2,
+          px: 1,
+          flexShrink: 0,
+        }}
+      >
+        {hasUnsavedChanges && (
+          <Typography variant="caption" color="warning.main">
+            Unsaved changes
+          </Typography>
+        )}
+        <Typography variant="caption" color="text.secondary">
+          {wordCount} {wordCount === 1 ? "word" : "words"} ·{" "}
+          {charCount.toLocaleString()} chars
+        </Typography>
+      </Box>
+
+      {/* ── Snackbar ─────────────────────────────────────── */}
       <Snackbar
         open={toast.open}
         autoHideDuration={3000}
@@ -323,6 +398,8 @@ export function DocumentEditorController({
       >
         <Alert severity={toast.severity}>{toast.message}</Alert>
       </Snackbar>
+
+      {/* ── Modals ───────────────────────────────────────── */}
       <ConfirmModal
         open={confirmOpen}
         title="Delete Document?"
@@ -339,9 +416,7 @@ export function DocumentEditorController({
           removeDocument(selectedDocumentId!);
           navigate("/");
         }}
-        onCancel={() => {
-          setConfirmOpen(false);
-        }}
+        onCancel={() => setConfirmOpen(false)}
       />
       <ConfirmModal
         open={historyConfirmOpen}
@@ -369,7 +444,6 @@ export function DocumentEditorController({
             editKey,
           );
 
-          // Track the shared document
           const sharedDocTag = [
             result.address,
             result.viewKey,

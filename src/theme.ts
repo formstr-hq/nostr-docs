@@ -1,5 +1,24 @@
 import { createTheme } from "@mui/material/styles";
 
+const sharedComponents = {
+  MuiButton: {
+    styleOverrides: {
+      root: {
+        lineHeight: 1,
+        textTransform: "none" as const,
+      },
+    },
+  },
+  MuiToggleButton: {
+    styleOverrides: {
+      root: {
+        lineHeight: 1,
+        textTransform: "none" as const,
+      },
+    },
+  },
+};
+
 // Dark theme
 export const darkTheme = createTheme({
   palette: {
@@ -17,6 +36,7 @@ export const darkTheme = createTheme({
   },
   typography: { fontFamily: `"Inter", sans-serif` },
   shape: { borderRadius: 12 },
+  components: sharedComponents,
 });
 
 // Light theme
@@ -24,9 +44,10 @@ export const lightTheme = createTheme({
   palette: {
     mode: "light",
     primary: { main: "#0A2540" },
-    secondary: { main: "#FFB703" },
+    // Darker amber for light mode — same brand feel, readable on white
+    secondary: { main: "#B45309", light: "#D97706", dark: "#92400E" },
     background: {
-      default: "#F7F7F7",
+      default: "#F3F4F6",
       paper: "#FFFFFF",
     },
     text: {
@@ -36,4 +57,5 @@ export const lightTheme = createTheme({
   },
   typography: { fontFamily: `"Inter", sans-serif` },
   shape: { borderRadius: 12 },
+  components: sharedComponents,
 });

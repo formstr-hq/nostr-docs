@@ -1,41 +1,77 @@
 #root {
-  max-width: 1280px;
-  margin: 0 auto;
-  padding: 2rem;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
 }
 
-.logo {
-  height: 6em;
-  padding: 1.5em;
-  will-change: filter;
-  transition: filter 300ms;
-}
-.logo:hover {
-  filter: drop-shadow(0 0 2em #646cffaa);
-}
-.logo.react:hover {
-  filter: drop-shadow(0 0 2em #61dafbaa);
-}
-
-@keyframes logo-spin {
-  from {
-    transform: rotate(0deg);
-  }
-  to {
-    transform: rotate(360deg);
-  }
+/* ── TipTap editor styles ─────────────────────────────────── */
+.tiptap {
+  outline: none;
+  border: none;
+  box-shadow: none;
+  /* Fill the visible editor area; content beyond scrolls */
+  min-height: max(300px, calc(100vh - 280px));
+  font-size: 17px;
+  line-height: 1.7;
+  font-family: "Inter", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  padding: 4px 0;
 }
 
-@media (prefers-reduced-motion: no-preference) {
-  a:nth-of-type(2) .logo {
-    animation: logo-spin infinite 20s linear;
-  }
+/* Remove browser outline on the contenteditable element */
+[contenteditable],
+[contenteditable]:focus,
+[contenteditable]:focus-visible { outline: none !important; }
+
+.tiptap p.is-editor-empty:first-child::before {
+  content: attr(data-placeholder);
+  float: left;
+  color: rgba(150, 150, 150, 0.6);
+  pointer-events: none;
+  height: 0;
 }
 
-.card {
-  padding: 2em;
+.tiptap h1 { font-size: 2em;   font-weight: 800; margin: 0.5em 0; }
+.tiptap h2 { font-size: 1.5em; font-weight: 700; margin: 0.5em 0; }
+.tiptap h3 { font-size: 1.17em;font-weight: 600; margin: 0.5em 0; }
+
+.tiptap code {
+  background: rgba(128, 128, 128, 0.2);
+  border-radius: 4px;
+  padding: 0.15em 0.4em;
+  font-family: "Fira Code", "Cascadia Code", monospace;
+  font-size: 0.9em;
 }
 
-.read-the-docs {
-  color: #888;
+.tiptap pre {
+  background: rgba(128, 128, 128, 0.15);
+  border-radius: 8px;
+  padding: 1em;
+  overflow-x: auto;
 }
+
+.tiptap pre code {
+  background: none;
+  padding: 0;
+}
+
+.tiptap ul,
+.tiptap ol { padding-left: 1.5em; }
+
+.tiptap blockquote {
+  border-left: 3px solid rgba(128, 128, 128, 0.4);
+  padding-left: 1em;
+  margin: 0.5em 0;
+  color: rgba(150, 150, 150, 0.9);
+}
+
+.tiptap a {
+  color: #646cff;
+  text-decoration: underline;
+}
+
+.tiptap p { margin: 0.4em 0; }
+
+/* Remove all focus/border artifacts */
+.ProseMirror,
+.ProseMirror:focus,
+.ProseMirror-focused { outline: none !important; border: none !important; box-shadow: none !important; }

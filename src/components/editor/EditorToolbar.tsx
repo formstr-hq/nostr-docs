@@ -2,19 +2,37 @@ import {
   Paper,
   Box,
   Button,
+  ButtonBase,
   IconButton,
   Menu,
   MenuItem,
   ListItemIcon,
   ListItemText,
+  Divider,
+  ToggleButtonGroup,
+  ToggleButton,
+  Tooltip,
 } from "@mui/material";
 import EditIcon from "@mui/icons-material/Edit";
 import VisibilityIcon from "@mui/icons-material/Visibility";
+import ViewColumnIcon from "@mui/icons-material/ViewColumn";
 import MoreVertIcon from "@mui/icons-material/MoreVert";
-import { useState } from "react";
-import { useUser } from "../../contexts/UserContext";
 import DeleteIcon from "@mui/icons-material/Delete";
 import ShareIcon from "@mui/icons-material/Share";
+import FullscreenIcon from "@mui/icons-material/Fullscreen";
+import FullscreenExitIcon from "@mui/icons-material/FullscreenExit";
+import FormatBoldIcon from "@mui/icons-material/FormatBold";
+import FormatItalicIcon from "@mui/icons-material/FormatItalic";
+import FormatListBulletedIcon from "@mui/icons-material/FormatListBulleted";
+import FormatListNumberedIcon from "@mui/icons-material/FormatListNumbered";
+import CodeIcon from "@mui/icons-material/Code";
+import LinkIcon from "@mui/icons-material/Link";
+import FormatQuoteIcon from "@mui/icons-material/FormatQuote";
+import { useState } from "react";
+import { useUser } from "../../contexts/UserContext";
+import type { Editor } from "@tiptap/react";
+
+type EditorMode = "edit" | "preview" | "split";
 
 type VersionEntry = {
   id: string;
@@ -22,175 +40,348 @@ type VersionEntry = {
 };
 
 type Props = {
-  mode: "edit" | "preview";
+  mode: EditorMode;
   saving: boolean;
-  onToggleMode: () => void;
+  onSetMode: (mode: EditorMode) => void;
   onSave: () => void;
   handleDelete: () => void;
   onShare: () => void;
   versions: VersionEntry[];
   onSelectVersion: (eventId: string) => void;
+  editor: Editor | null;
+  focusMode: boolean;
+  onToggleFocusMode: () => void;
 };
 
 export function EditorToolbar({
   mode,
   saving,
-  onToggleMode,
+  onSetMode,
   onSave,
   handleDelete,
   onShare,
   versions,
   onSelectVersion,
+  editor,
+  focusMode,
+  onToggleFocusMode,
 }: Props) {
   const { user, loginModal } = useUser();
   const [menuAnchor, setMenuAnchor] = useState<null | HTMLElement>(null);
-  const [autosaveEnabled, setAutosaveEnabled] = useState(true);
   const [historyAnchor, setHistoryAnchor] = useState<null | HTMLElement>(null);
-  const historyOpen = Boolean(historyAnchor);
 
   const menuOpen = Boolean(menuAnchor);
+  const historyOpen = Boolean(historyAnchor);
+
+  const showFormatting = (mode === "edit" || mode === "split") && !!editor;
+
+  const handleLink = () => {
+    if (!editor) return;
+    const url = window.prompt("Enter URL");
+    if (url) {
+      editor.chain().focus().setLink({ href: url }).run();
+    }
+  };
+
   return (
     <Paper
       elevation={2}
       sx={{
-        p: 1.5,
-        px: 2,
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "space-between",
-        bgcolor: "background.paper",
         borderRadius: 2,
         border: "1px solid rgba(0,0,0,0.08)",
-        position: "sticky",
-        top: 0,
-        zIndex: 20,
+        overflow: "hidden",
+        flexShrink: 0,
       }}
     >
-      <Box sx={{ display: "flex", gap: 2 }}>
-        <Box sx={{ display: "flex", gap: 2 }}>
-          {mode === "preview" ? (
+      {/* ── Row 1: mode toggles + actions ─────────────────── */}
+      <Box
+        sx={{
+          p: 1,
+          px: 1.5,
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          gap: 1,
+        }}
+      >
+        {/* Left: mode toggle */}
+        <ToggleButtonGroup
+          value={mode}
+          exclusive
+          size="small"
+          onChange={(_, val) => val && onSetMode(val as EditorMode)}
+          sx={{ "& .MuiToggleButton-root": { px: 1.5 } }}
+        >
+          <ToggleButton value="edit" title="WYSIWYG editor">
+            <EditIcon fontSize="small" />
+          </ToggleButton>
+          <ToggleButton value="split" title="Split: markdown + preview">
+            <ViewColumnIcon fontSize="small" />
+          </ToggleButton>
+          <ToggleButton value="preview" title="Rendered preview">
+            <VisibilityIcon fontSize="small" />
+          </ToggleButton>
+        </ToggleButtonGroup>
+
+        {/* Right: save + focus + overflow menu */}
+        <Box sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
+          {user ? (
             <Button
-              variant="outlined"
+              variant="contained"
               color="secondary"
-              onClick={onToggleMode}
-              startIcon={<EditIcon />}
-              sx={{ fontWeight: 700 }}
+              size="small"
+              onClick={onSave}
+              sx={{ fontWeight: 700, px: 2 }}
             >
-              Edit
+              {saving ? "Saving…" : "Save"}
             </Button>
           ) : (
             <Button
-              variant="outlined"
+              variant="contained"
               color="secondary"
-              onClick={onToggleMode}
-              startIcon={<VisibilityIcon />}
-              sx={{ fontWeight: 700 }}
+              size="small"
+              onClick={() => loginModal()}
+              sx={{ fontWeight: 700, px: 2 }}
             >
-              Preview
+              Login to Save
             </Button>
           )}
+
+          <Tooltip title={focusMode ? "Exit focus mode" : "Focus mode"}>
+            <IconButton size="small" onClick={onToggleFocusMode}>
+              {focusMode ? (
+                <FullscreenExitIcon fontSize="small" />
+              ) : (
+                <FullscreenIcon fontSize="small" />
+              )}
+            </IconButton>
+          </Tooltip>
+
+          <IconButton
+            size="small"
+            onClick={(e) => setMenuAnchor(e.currentTarget)}
+          >
+            <MoreVertIcon fontSize="small" />
+          </IconButton>
+
+          <Menu
+            anchorEl={menuAnchor}
+            open={menuOpen}
+            onClose={() => setMenuAnchor(null)}
+          >
+            <MenuItem
+              onClick={() => {
+                onShare();
+                setMenuAnchor(null);
+              }}
+            >
+              <ListItemIcon>
+                <ShareIcon fontSize="small" />
+              </ListItemIcon>
+              <ListItemText primary="Share" />
+            </MenuItem>
+
+            <MenuItem
+              onClick={(e) => {
+                e.stopPropagation();
+                setHistoryAnchor(e.currentTarget);
+                setMenuAnchor(null);
+              }}
+            >
+              <ListItemIcon>
+                <VisibilityIcon fontSize="small" />
+              </ListItemIcon>
+              <ListItemText primary="History" />
+            </MenuItem>
+
+            <Divider />
+
+            <MenuItem
+              onClick={() => {
+                handleDelete();
+                setMenuAnchor(null);
+              }}
+              sx={{ color: "error.main" }}
+            >
+              <ListItemIcon sx={{ color: "error.main" }}>
+                <DeleteIcon fontSize="small" />
+              </ListItemIcon>
+              <ListItemText primary="Delete" />
+            </MenuItem>
+          </Menu>
+
+          <Menu
+            anchorEl={historyAnchor}
+            open={historyOpen}
+            onClose={() => setHistoryAnchor(null)}
+          >
+            {versions.length === 0 && (
+              <MenuItem disabled>
+                <ListItemText primary="No history yet" />
+              </MenuItem>
+            )}
+            {versions
+              .slice()
+              .sort((a, b) => b.created_at - a.created_at)
+              .map((v) => (
+                <MenuItem
+                  key={v.id}
+                  onClick={() => {
+                    onSelectVersion(v.id);
+                    setHistoryAnchor(null);
+                  }}
+                >
+                  <ListItemText
+                    primary={new Date(v.created_at * 1000).toLocaleString()}
+                  />
+                </MenuItem>
+              ))}
+          </Menu>
         </Box>
-        {user ? (
-          <Button
-            variant="contained"
-            color="secondary"
-            onClick={() => onSave()}
-            sx={{ fontWeight: 700 }}
-          >
-            {saving ? "Saving..." : "Save"}
-          </Button>
-        ) : (
-          <Button
-            variant="contained"
-            color="secondary"
-            onClick={() => loginModal()}
-            sx={{ fontWeight: 700 }}
-          >
-            Login
-          </Button>
-        )}
+      </Box>
 
-        <IconButton onClick={(e) => setMenuAnchor(e.currentTarget)}>
-          <MoreVertIcon />
-        </IconButton>
+      {/* ── Row 2: formatting buttons (edit/split only) ───── */}
+      {showFormatting && (
+        <>
+          <Divider />
+          <Box
+            sx={{
+              px: 1,
+              py: 0.5,
+              display: "flex",
+              alignItems: "center",
+              gap: 0.25,
+              flexWrap: "wrap",
+            }}
+          >
+            {/* Text style */}
+            <Tooltip title="Bold (Ctrl+B)">
+              <IconButton
+                size="small"
+                onClick={() => editor.chain().focus().toggleBold().run()}
+                color={editor.isActive("bold") ? "secondary" : "default"}
+                sx={{ fontWeight: 900 }}
+              >
+                <FormatBoldIcon fontSize="small" />
+              </IconButton>
+            </Tooltip>
+            <Tooltip title="Italic (Ctrl+I)">
+              <IconButton
+                size="small"
+                onClick={() => editor.chain().focus().toggleItalic().run()}
+                color={editor.isActive("italic") ? "secondary" : "default"}
+              >
+                <FormatItalicIcon fontSize="small" />
+              </IconButton>
+            </Tooltip>
+            <Tooltip title="Inline code">
+              <IconButton
+                size="small"
+                onClick={() => editor.chain().focus().toggleCode().run()}
+                color={editor.isActive("code") ? "secondary" : "default"}
+              >
+                <CodeIcon fontSize="small" />
+              </IconButton>
+            </Tooltip>
+            <Tooltip title="Link">
+              <IconButton
+                size="small"
+                onClick={handleLink}
+                color={editor.isActive("link") ? "secondary" : "default"}
+              >
+                <LinkIcon fontSize="small" />
+              </IconButton>
+            </Tooltip>
 
-        <Menu
-          anchorEl={menuAnchor}
-          open={menuOpen}
-          onClose={() => setMenuAnchor(null)}
-        >
-          <MenuItem
-            onClick={() => {
-              onShare();
-              setMenuAnchor(null);
-            }}
-          >
-            <ListItemIcon>
-              <ShareIcon fontSize="small" />
-            </ListItemIcon>
-            <ListItemText primary="Share" />
-          </MenuItem>
+            <Divider orientation="vertical" flexItem sx={{ mx: 0.5 }} />
 
-          <MenuItem
-            onClick={() => {
-              handleDelete();
-              setMenuAnchor(null);
-            }}
-          >
-            <ListItemIcon>
-              <DeleteIcon fontSize="small" />
-            </ListItemIcon>
-            <ListItemText primary="Delete" />
-          </MenuItem>
-          <MenuItem
-            onClick={() => {
-              setAutosaveEnabled(!autosaveEnabled);
-              setMenuAnchor(null);
-            }}
-          >
-            <ListItemIcon>
-              <EditIcon fontSize="small" />{" "}
-              {/* You could use a better icon if desired */}
-            </ListItemIcon>
-            <ListItemText
-              primary={autosaveEnabled ? "Disable Autosave" : "Enable Autosave"}
-            />
-          </MenuItem>
-          <MenuItem
-            onClick={(e) => {
-              e.stopPropagation();
-              setHistoryAnchor(e.currentTarget);
-            }}
-          >
-            <ListItemIcon>
-              <VisibilityIcon fontSize="small" />
-            </ListItemIcon>
-            <ListItemText primary="History" />
-          </MenuItem>
-        </Menu>
-        <Menu
-          anchorEl={historyAnchor}
-          open={historyOpen}
-          onClose={() => setHistoryAnchor(null)}
-        >
-          {versions
-            .slice()
-            .sort((a, b) => b.created_at - a.created_at)
-            .map((v) => (
-              <MenuItem
-                key={v.id}
-                onClick={() => {
-                  onSelectVersion(v.id);
-                  setHistoryAnchor(null);
+            {/* Headings */}
+            {([1, 2, 3] as const).map((level) => (
+              <Tooltip key={level} title={`Heading ${level}`}>
+                <ButtonBase
+                  onClick={() =>
+                    editor.chain().focus().toggleHeading({ level }).run()
+                  }
+                  sx={{
+                    width: 28,
+                    height: 28,
+                    borderRadius: 1,
+                    fontSize: "0.7rem",
+                    fontWeight: 800,
+                    fontFamily: "inherit",
+                    color: editor.isActive("heading", { level })
+                      ? "secondary.main"
+                      : "text.secondary",
+                    "&:hover": { bgcolor: "action.hover" },
+                    transition: "background-color 0.15s, color 0.15s",
+                  }}
+                >
+                  H{level}
+                </ButtonBase>
+              </Tooltip>
+            ))}
+
+            <Divider orientation="vertical" flexItem sx={{ mx: 0.5 }} />
+
+            {/* Lists */}
+            <Tooltip title="Bullet list">
+              <IconButton
+                size="small"
+                onClick={() => editor.chain().focus().toggleBulletList().run()}
+                color={editor.isActive("bulletList") ? "secondary" : "default"}
+              >
+                <FormatListBulletedIcon fontSize="small" />
+              </IconButton>
+            </Tooltip>
+            <Tooltip title="Numbered list">
+              <IconButton
+                size="small"
+                onClick={() => editor.chain().focus().toggleOrderedList().run()}
+                color={
+                  editor.isActive("orderedList") ? "secondary" : "default"
+                }
+              >
+                <FormatListNumberedIcon fontSize="small" />
+              </IconButton>
+            </Tooltip>
+            <Tooltip title="Blockquote">
+              <IconButton
+                size="small"
+                onClick={() => editor.chain().focus().toggleBlockquote().run()}
+                color={
+                  editor.isActive("blockquote") ? "secondary" : "default"
+                }
+              >
+                <FormatQuoteIcon fontSize="small" />
+              </IconButton>
+            </Tooltip>
+
+            <Divider orientation="vertical" flexItem sx={{ mx: 0.5 }} />
+
+            {/* Code block */}
+            <Tooltip title="Code block">
+              <ButtonBase
+                onClick={() => editor.chain().focus().toggleCodeBlock().run()}
+                sx={{
+                  width: 32,
+                  height: 28,
+                  borderRadius: 1,
+                  fontSize: "0.62rem",
+                  fontWeight: 700,
+                  fontFamily: "monospace",
+                  color: editor.isActive("codeBlock")
+                    ? "secondary.main"
+                    : "text.secondary",
+                  "&:hover": { bgcolor: "action.hover" },
+                  transition: "background-color 0.15s, color 0.15s",
                 }}
               >
-                <ListItemText
-                  primary={new Date(v.created_at * 1000).toLocaleString()}
-                />
-              </MenuItem>
-            ))}
-        </Menu>
-      </Box>
+                {"</>"}
+              </ButtonBase>
+            </Tooltip>
+          </Box>
+        </>
+      )}
     </Paper>
   );
 }

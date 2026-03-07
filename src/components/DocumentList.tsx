@@ -1,18 +1,20 @@
 import { useEffect, useState } from "react";
+import { alpha } from "@mui/material/styles";
 import { fetchAllDocuments } from "../nostr/fetchFile.ts";
 import {
   Box,
   Typography,
-  Paper,
   List,
   ListItemText,
   ListItemButton,
   Button,
-  FormControl,
-  InputLabel,
-  Select,
-  MenuItem,
+  Skeleton,
+  Tab,
+  Tabs,
+  Chip,
+  Divider,
 } from "@mui/material";
+import AddIcon from "@mui/icons-material/Add";
 import { useDocumentContext } from "../contexts/DocumentContext.tsx";
 import { signerManager } from "../signer/index.ts";
 import { useRelays } from "../contexts/RelayContext.tsx";
@@ -39,10 +41,9 @@ export default function DocumentList({
 
   const { sharedDocuments, getKeys } = useSharedPages();
   const [loading, setLoading] = useState(true);
-  const [view, setView] = useState<"personal" | "shared">("personal");
+  const [tab, setTab] = useState<"personal" | "shared">("personal");
   const { user } = useUser();
   const { relays } = useRelays();
-
   const navigate = useNavigate();
 
   const handleDocumentSelect = (doc: Event) => {
@@ -60,13 +61,10 @@ export default function DocumentList({
     });
     const keys = getKeys(`${doc.kind}:${doc.pubkey}:${dTag}`);
 
-    // Only include keys that exist
     let path = `/doc/${naddr}`;
     if (keys.length > 0 && keys[0]) {
       const nkeysObj: Record<string, string> = { viewKey: keys[0] };
-      if (keys[1]) {
-        nkeysObj.editKey = keys[1];
-      }
+      if (keys[1]) nkeysObj.editKey = keys[1];
       path = `/doc/${naddr}#${encodeNKeys(nkeysObj)}`;
     }
 
@@ -90,9 +88,7 @@ export default function DocumentList({
         const pubkey = await signer.getPublicKey();
         await fetchAllDocuments(
           relays,
-          (doc: Event) => {
-            addDocument(doc);
-          },
+          (doc: Event) => addDocument(doc),
           pubkey,
         );
         await fetchDeleteRequests(relays, addDeletionRequest);
@@ -104,97 +100,201 @@ export default function DocumentList({
     })();
   }, [user, relays]);
 
-  if (loading) {
-    return (
-      <Box sx={{ p: 2 }}>
-        <Button
-          color="secondary"
-          variant="contained"
-          style={{ marginTop: 30 }}
-          onClick={() => {
-            setSelectedDocumentId(null);
-            onEdit(null);
-            navigate("/");
-          }}
-        >
-          Create a new private page
-        </Button>
-      </Box>
-    );
-  }
-  const docsToShow = view === "personal" ? visibleDocuments : sharedDocuments;
+  const handleNewDoc = () => {
+    setSelectedDocumentId(null);
+    onEdit(null);
+    navigate("/");
+  };
+
+  const docsToShow = tab === "personal" ? visibleDocuments : sharedDocuments;
+  const personalCount = visibleDocuments.size;
+  const sharedCount = sharedDocuments.size;
 
   return (
-    <Box sx={{ maxWidth: "800px", width: "100%", p: 2 }}>
-      {/* Toggle between personal and shared */}
-      <FormControl fullWidth sx={{ mb: 2 }}>
-        <InputLabel id="doc-view-label">View</InputLabel>
-        <Select
-          labelId="doc-view-label"
-          value={view}
-          label="View"
-          onChange={(e) => setView(e.target.value as "personal" | "shared")}
+    <Box
+      sx={{
+        width: "100%",
+        height: "100%",
+        display: "flex",
+        flexDirection: "column",
+        overflow: "hidden",
+      }}
+    >
+      {/* New document button */}
+      <Box sx={{ px: 2, pt: 1.5, pb: 1, flexShrink: 0 }}>
+        <Button
+          fullWidth
+          variant="contained"
+          color="secondary"
+          startIcon={<AddIcon />}
+          onClick={handleNewDoc}
+          sx={{ fontWeight: 700, borderRadius: 2 }}
         >
-          <MenuItem value="personal">Personal Pages</MenuItem>
-          <MenuItem value="shared">Shared Documents</MenuItem>
-        </Select>
-      </FormControl>
+          New Document
+        </Button>
+      </Box>
 
-      <Button
-        color="secondary"
-        variant="contained"
-        style={{ marginBottom: 20 }}
-        onClick={() => {
-          setSelectedDocumentId(null);
-          onEdit(null);
-          navigate("/");
-        }}
+      {/* Tab switcher */}
+      <Tabs
+        value={tab}
+        onChange={(_, v) => setTab(v)}
+        variant="fullWidth"
+        sx={{ flexShrink: 0, borderBottom: "1px solid", borderColor: "divider" }}
+        textColor="secondary"
+        indicatorColor="secondary"
       >
-        Create a new {view === "personal" ? "private" : "shared"} page
-      </Button>
+        <Tab
+          value="personal"
+          label={
+            <Box sx={{ display: "flex", alignItems: "center", gap: 0.75 }}>
+              My Pages
+              {personalCount > 0 && (
+                <Chip
+                  label={personalCount}
+                  size="small"
+                  color="secondary"
+                  sx={{ height: 18, fontSize: "0.65rem" }}
+                />
+              )}
+            </Box>
+          }
+        />
+        <Tab
+          value="shared"
+          label={
+            <Box sx={{ display: "flex", alignItems: "center", gap: 0.75 }}>
+              Shared
+              {sharedCount > 0 && (
+                <Chip
+                  label={sharedCount}
+                  size="small"
+                  color="secondary"
+                  sx={{ height: 18, fontSize: "0.65rem" }}
+                />
+              )}
+            </Box>
+          }
+        />
+      </Tabs>
 
-      {docsToShow.size === 0 ? (
-        <Typography>
-          No {view === "personal" ? "personal" : "shared"} documents found.
-        </Typography>
-      ) : (
-        <Paper elevation={0} sx={{ p: 1, bgcolor: "transparent" }}>
-          <List>
-            {Array.from(docsToShow.entries()).map(([address, history]) => {
+      {/* List area */}
+      <Box sx={{ flex: 1, overflowY: "auto", px: 1.5, py: 1 }}>
+        {loading ? (
+          /* Skeleton placeholders */
+          <Box sx={{ display: "flex", flexDirection: "column", gap: 1, pt: 1 }}>
+            {[1, 2, 3, 4].map((i) => (
+              <Box key={i} sx={{ px: 1 }}>
+                <Skeleton variant="text" width="80%" height={20} />
+                <Skeleton variant="text" width="50%" height={14} />
+              </Box>
+            ))}
+          </Box>
+        ) : docsToShow.size === 0 ? (
+          <Box
+            sx={{
+              pt: 4,
+              display: "flex",
+              flexDirection: "column",
+              alignItems: "center",
+              gap: 1,
+            }}
+          >
+            <Typography
+              variant="body2"
+              color="text.secondary"
+              textAlign="center"
+            >
+              {tab === "personal"
+                ? "No documents yet.\nCreate your first page!"
+                : "No shared documents found."}
+            </Typography>
+            {tab === "personal" && (
+              <Button
+                variant="outlined"
+                color="secondary"
+                size="small"
+                startIcon={<AddIcon />}
+                onClick={handleNewDoc}
+                sx={{ mt: 1 }}
+              >
+                Create page
+              </Button>
+            )}
+          </Box>
+        ) : (
+          <List disablePadding>
+            {Array.from(docsToShow.entries()).map(([address, history], idx) => {
               const latest = history.versions.at(-1);
               if (!latest) return null;
 
               const { event, decryptedContent } = latest;
+              const isSelected = selectedDocumentId === address;
+
+              // Extract a title-like preview from the first line
+              const firstLine =
+                (decryptedContent ?? "").split("\n").find((l) => l.trim()) ??
+                "Untitled";
+              const title = firstLine
+                .replace(/^#+\s*/, "") // strip heading markers
+                .slice(0, 42)
+                .trim();
+              const displayTitle = title || "Untitled";
 
               return (
-                <ListItemButton
-                  key={address}
-                  onClick={() => handleDocumentSelect(event)}
-                  sx={{
-                    borderRadius: 2,
-                    mb: 1,
-                    bgcolor:
-                      selectedDocumentId === address
-                        ? "rgba(255, 165, 0, 0.3)"
-                        : "rgba(255,255,255,0.03)",
-                    "&:hover": { bgcolor: "rgba(255,255,255,0.08)" },
-                  }}
-                >
-                  <ListItemText
-                    primary={
-                      (decryptedContent ?? "").slice(0, 40) +
-                      ((decryptedContent ?? "").length > 40 ? "..." : "")
-                    }
-                    secondary={new Date(
-                      event.created_at * 1000,
-                    ).toLocaleString()}
-                  />
-                </ListItemButton>
+                <Box key={address}>
+                  {idx > 0 && (
+                    <Divider
+                      sx={{ my: 0.25, borderColor: "rgba(255,255,255,0.05)" }}
+                    />
+                  )}
+                  <ListItemButton
+                    onClick={() => handleDocumentSelect(event)}
+                    sx={{
+                      borderRadius: 2,
+                      py: 1,
+                      bgcolor: isSelected
+                        ? (t) => alpha(t.palette.secondary.main, 0.12)
+                        : "transparent",
+                      borderLeft: "3px solid",
+                      borderLeftColor: isSelected
+                        ? "secondary.main"
+                        : "transparent",
+                      "&:hover": {
+                        bgcolor: (t) =>
+                          alpha(
+                            t.palette.secondary.main,
+                            isSelected ? 0.18 : 0.06,
+                          ),
+                      },
+                      transition: "background-color 0.15s",
+                    }}
+                  >
+                    <ListItemText
+                      primary={displayTitle}
+                      secondary={new Date(
+                        event.created_at * 1000,
+                      ).toLocaleDateString(undefined, {
+                        month: "short",
+                        day: "numeric",
+                        year: "numeric",
+                      })}
+                      primaryTypographyProps={{
+                        variant: "body2",
+                        fontWeight: isSelected ? 700 : 400,
+                        noWrap: true,
+                      }}
+                      secondaryTypographyProps={{
+                        variant: "caption",
+                        sx: { opacity: 0.6 },
+                      }}
+                    />
+                  </ListItemButton>
+                </Box>
               );
             })}
           </List>
-        </Paper>
-      )}
+        )}
+      </Box>
     </Box>
   );
 }

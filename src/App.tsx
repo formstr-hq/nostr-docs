@@ -1,4 +1,5 @@
 import React from "react";
+import "./App.css";
 import {
   CssBaseline,
   Box,
@@ -8,7 +9,6 @@ import {
   Toolbar,
   Typography,
   useMediaQuery,
-  Switch,
 } from "@mui/material";
 import MenuIcon from "@mui/icons-material/Menu";
 import { ThemeProvider } from "@mui/material/styles";
@@ -89,18 +89,16 @@ export default function App() {
                   </Box>
 
                   <Box sx={{ display: "flex", alignItems: "center", gap: 2 }}>
-                    <Switch
-                      checked={darkMode}
-                      onChange={() => setDarkMode((prev) => !prev)}
-                      color="secondary"
+                    <UserMenu
+                      darkMode={darkMode}
+                      onToggleDarkMode={() => setDarkMode((prev) => !prev)}
                     />
-                    <UserMenu />
                   </Box>
                 </Toolbar>
               </AppBar>
 
               {/* ===== SIDEBAR + MAIN CONTENT ===== */}
-              <Box sx={{ display: "flex" }}>
+              <Box sx={{ display: "flex", height: "100%", overflow: "hidden" }}>
                 {/* MOBILE DRAWER */}
                 {!isDesktop && (
                   <Drawer
@@ -110,12 +108,20 @@ export default function App() {
                       "& .MuiDrawer-paper": {
                         width: drawerWidth,
                         bgcolor: "background.paper",
+                        display: "flex",
+                        flexDirection: "column",
                       },
                     }}
                   >
-                    <Box sx={{ mt: 8 }}>
-                      {" "}
-                      {/* <-- add this */}
+                    <Box
+                      sx={{
+                        mt: "64px",
+                        flex: 1,
+                        overflow: "hidden",
+                        display: "flex",
+                        flexDirection: "column",
+                      }}
+                    >
                       <DocumentList onEdit={() => setMobileOpen(false)} />
                     </Box>
                   </Drawer>
@@ -128,14 +134,25 @@ export default function App() {
                     open
                     sx={{
                       width: drawerWidth,
+                      flexShrink: 0,
                       "& .MuiDrawer-paper": {
                         width: drawerWidth,
                         boxSizing: "border-box",
                         bgcolor: "background.paper",
+                        display: "flex",
+                        flexDirection: "column",
                       },
                     }}
                   >
-                    <Box sx={{ mt: 8 }}>
+                    <Box
+                      sx={{
+                        mt: "64px",
+                        flex: 1,
+                        overflow: "hidden",
+                        display: "flex",
+                        flexDirection: "column",
+                      }}
+                    >
                       <DocumentList onEdit={() => {}} />
                     </Box>
                   </Drawer>
@@ -144,7 +161,14 @@ export default function App() {
                 {/* MAIN CONTENT */}
                 <Box
                   component="main"
-                  sx={{ flexGrow: 1, p: 4, mt: 8, minHeight: "100vh" }}
+                  sx={{
+                    flexGrow: 1,
+                    p: 3,
+                    mt: "64px",
+                    height: "calc(100% - 64px)",
+                    overflow: "hidden",
+                    boxSizing: "border-box",
+                  }}
                 >
                   <Routes>
                     <Route path="/" element={<HomePage />} />
