@@ -12,7 +12,12 @@ import {
 } from "@mui/material";
 import MenuIcon from "@mui/icons-material/Menu";
 import { ThemeProvider } from "@mui/material/styles";
-import { BrowserRouter, Routes, Route, useLocation } from "react-router-dom";
+import {
+  createBrowserRouter,
+  RouterProvider,
+  Outlet,
+  useLocation,
+} from "react-router-dom";
 
 import DocumentList from "./components/DocumentList";
 import UserMenu from "./components/UserMenu";
@@ -26,166 +31,7 @@ import { RelayProvider } from "./contexts/RelayContext";
 
 const drawerWidth = 320;
 
-export default function App() {
-  const [mobileOpen, setMobileOpen] = React.useState(false);
-  const [darkMode, setDarkMode] = React.useState(true);
-  const isDesktop = useMediaQuery("(min-width:900px)");
-
-  const theme = darkMode ? darkTheme : lightTheme;
-
-  return (
-    <ThemeProvider theme={theme}>
-      <UserProvider>
-        <RelayProvider>
-        <DocumentProvider>
-          <SharedPagesProvider>
-            <CssBaseline />
-            <BrowserRouter>
-              {/* ===== TOP BAR ===== */}
-              <AppBar
-                position="fixed"
-                elevation={3}
-                sx={{
-                  zIndex: (theme) => theme.zIndex.drawer + 1,
-                  bgcolor: "background.paper",
-                  color: "text.primary",
-                  borderBottom: "1px solid rgba(0,0,0,0.08)",
-                }}
-              >
-                <Toolbar
-                  sx={{ display: "flex", justifyContent: "space-between" }}
-                >
-                  <Box sx={{ display: "flex", alignItems: "center", gap: 2 }}>
-                    {!isDesktop && (
-                      <IconButton
-                        color="inherit"
-                        edge="start"
-                        onClick={() => setMobileOpen((prev) => !prev)}
-                      >
-                        <MenuIcon />
-                      </IconButton>
-                    )}
-
-                    <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
-                      <img
-                        src={FormstrLogo}
-                        alt="Formstr Pages"
-                        style={{ height: 32, width: "auto", borderRadius: 8 }}
-                      />
-                      <Typography
-                        variant="h6"
-                        sx={{
-                          fontWeight: 900,
-                          letterSpacing: 1,
-                          background:
-                            "linear-gradient(90deg, #c7aa1aff 0%, #FFA751 100%)",
-                          WebkitBackgroundClip: "text",
-                          WebkitTextFillColor: "transparent",
-                        }}
-                      >
-                        pages
-                      </Typography>
-                    </Box>
-                  </Box>
-
-                  <Box sx={{ display: "flex", alignItems: "center", gap: 2 }}>
-                    <UserMenu
-                      darkMode={darkMode}
-                      onToggleDarkMode={() => setDarkMode((prev) => !prev)}
-                    />
-                  </Box>
-                </Toolbar>
-              </AppBar>
-
-              {/* ===== SIDEBAR + MAIN CONTENT ===== */}
-              <Box sx={{ display: "flex", height: "100%", overflow: "hidden" }}>
-                {/* MOBILE DRAWER */}
-                {!isDesktop && (
-                  <Drawer
-                    open={mobileOpen}
-                    onClose={() => setMobileOpen(false)}
-                    sx={{
-                      "& .MuiDrawer-paper": {
-                        width: drawerWidth,
-                        bgcolor: "background.paper",
-                        display: "flex",
-                        flexDirection: "column",
-                      },
-                    }}
-                  >
-                    <Box
-                      sx={{
-                        mt: "64px",
-                        flex: 1,
-                        overflow: "hidden",
-                        display: "flex",
-                        flexDirection: "column",
-                      }}
-                    >
-                      <DocumentList onEdit={() => setMobileOpen(false)} />
-                    </Box>
-                  </Drawer>
-                )}
-
-                {/* DESKTOP DRAWER */}
-                {isDesktop && (
-                  <Drawer
-                    variant="permanent"
-                    open
-                    sx={{
-                      width: drawerWidth,
-                      flexShrink: 0,
-                      "& .MuiDrawer-paper": {
-                        width: drawerWidth,
-                        boxSizing: "border-box",
-                        bgcolor: "background.paper",
-                        display: "flex",
-                        flexDirection: "column",
-                      },
-                    }}
-                  >
-                    <Box
-                      sx={{
-                        mt: "64px",
-                        flex: 1,
-                        overflow: "hidden",
-                        display: "flex",
-                        flexDirection: "column",
-                      }}
-                    >
-                      <DocumentList onEdit={() => {}} />
-                    </Box>
-                  </Drawer>
-                )}
-
-                {/* MAIN CONTENT */}
-                <Box
-                  component="main"
-                  sx={{
-                    flexGrow: 1,
-                    p: 3,
-                    mt: "64px",
-                    height: "calc(100% - 64px)",
-                    overflow: "hidden",
-                    boxSizing: "border-box",
-                  }}
-                >
-                  <Routes>
-                    <Route path="/" element={<HomePage />} />
-                    <Route path="/doc/:naddr" element={<DocPageWrapper />} />
-                    <Route path="/about" element={<AboutPage />} />
-                    <Route path="*" element={<NotFoundPage />} />
-                  </Routes>
-                </Box>
-              </Box>
-            </BrowserRouter>
-          </SharedPagesProvider>
-        </DocumentProvider>
-        </RelayProvider>
-      </UserProvider>
-    </ThemeProvider>
-  );
-}
+/* ── Route components ───────────────────────────────────── */
 
 function DocPageWrapper() {
   const location = useLocation();
@@ -202,4 +48,185 @@ export function AboutPage() {
 
 export function NotFoundPage() {
   return <Typography variant="h3">404 - Page Not Found</Typography>;
+}
+
+/* ── Router ─────────────────────────────────────────────── */
+// createBrowserRouter (a "data router") is required for useBlocker to work.
+// AppLayout wraps all routes via <Outlet /> so the shell renders once.
+const router = createBrowserRouter([
+  {
+    path: "/",
+    element: <AppLayout />,
+    children: [
+      { index: true, element: <HomePage /> },
+      { path: "doc/:naddr", element: <DocPageWrapper /> },
+      { path: "about", element: <AboutPage /> },
+      { path: "*", element: <NotFoundPage /> },
+    ],
+  },
+]);
+
+/* ── App root — providers only, no router JSX ───────────── */
+export default function App() {
+  return (
+    <UserProvider>
+      <RelayProvider>
+        <DocumentProvider>
+          <SharedPagesProvider>
+            <RouterProvider router={router} />
+          </SharedPagesProvider>
+        </DocumentProvider>
+      </RelayProvider>
+    </UserProvider>
+  );
+}
+
+/* ── Layout shell ───────────────────────────────────────── */
+// Lives inside the router so hooks like useLocation / useBlocker work here
+// and in any descendant. ThemeProvider + CssBaseline also live here because
+// darkMode state needs to be co-located with the toggle handler.
+function AppLayout() {
+  const [mobileOpen, setMobileOpen] = React.useState(false);
+  const [darkMode, setDarkMode] = React.useState(true);
+  const isDesktop = useMediaQuery("(min-width:900px)");
+
+  const theme = darkMode ? darkTheme : lightTheme;
+
+  return (
+    <ThemeProvider theme={theme}>
+      <CssBaseline />
+
+      {/* ===== TOP BAR ===== */}
+      <AppBar
+        position="fixed"
+        elevation={3}
+        sx={{
+          zIndex: (theme) => theme.zIndex.drawer + 1,
+          bgcolor: "background.paper",
+          color: "text.primary",
+          borderBottom: "1px solid rgba(0,0,0,0.08)",
+        }}
+      >
+        <Toolbar sx={{ display: "flex", justifyContent: "space-between" }}>
+          <Box sx={{ display: "flex", alignItems: "center", gap: 2 }}>
+            {!isDesktop && (
+              <IconButton
+                color="inherit"
+                edge="start"
+                onClick={() => setMobileOpen((prev) => !prev)}
+              >
+                <MenuIcon />
+              </IconButton>
+            )}
+
+            <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+              <img
+                src={FormstrLogo}
+                alt="Formstr Pages"
+                style={{ height: 32, width: "auto", borderRadius: 8 }}
+              />
+              <Typography
+                variant="h6"
+                sx={{
+                  fontWeight: 900,
+                  letterSpacing: 1,
+                  background:
+                    "linear-gradient(90deg, #c7aa1aff 0%, #FFA751 100%)",
+                  WebkitBackgroundClip: "text",
+                  WebkitTextFillColor: "transparent",
+                }}
+              >
+                pages
+              </Typography>
+            </Box>
+          </Box>
+
+          <Box sx={{ display: "flex", alignItems: "center", gap: 2 }}>
+            <UserMenu
+              darkMode={darkMode}
+              onToggleDarkMode={() => setDarkMode((prev) => !prev)}
+            />
+          </Box>
+        </Toolbar>
+      </AppBar>
+
+      {/* ===== SIDEBAR + MAIN CONTENT ===== */}
+      <Box sx={{ display: "flex", height: "100%", overflow: "hidden" }}>
+        {/* MOBILE DRAWER */}
+        {!isDesktop && (
+          <Drawer
+            open={mobileOpen}
+            onClose={() => setMobileOpen(false)}
+            keepMounted
+            sx={{
+              "& .MuiDrawer-paper": {
+                width: drawerWidth,
+                bgcolor: "background.paper",
+                display: "flex",
+                flexDirection: "column",
+              },
+            }}
+          >
+            <Box
+              sx={{
+                mt: "64px",
+                flex: 1,
+                overflow: "hidden",
+                display: "flex",
+                flexDirection: "column",
+              }}
+            >
+              <DocumentList onEdit={() => setMobileOpen(false)} />
+            </Box>
+          </Drawer>
+        )}
+
+        {/* DESKTOP DRAWER */}
+        {isDesktop && (
+          <Drawer
+            variant="permanent"
+            open
+            sx={{
+              width: drawerWidth,
+              flexShrink: 0,
+              "& .MuiDrawer-paper": {
+                width: drawerWidth,
+                boxSizing: "border-box",
+                bgcolor: "background.paper",
+                display: "flex",
+                flexDirection: "column",
+              },
+            }}
+          >
+            <Box
+              sx={{
+                mt: "64px",
+                flex: 1,
+                overflow: "hidden",
+                display: "flex",
+                flexDirection: "column",
+              }}
+            >
+              <DocumentList onEdit={() => {}} />
+            </Box>
+          </Drawer>
+        )}
+
+        {/* MAIN CONTENT */}
+        <Box
+          component="main"
+          sx={{
+            flexGrow: 1,
+            p: 3,
+            mt: "64px",
+            height: "calc(100% - 64px)",
+            overflow: "hidden",
+            boxSizing: "border-box",
+          }}
+        >
+          <Outlet />
+        </Box>
+      </Box>
+    </ThemeProvider>
+  );
 }

@@ -7,7 +7,7 @@ import {
   useMediaQuery,
   Typography,
 } from "@mui/material";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useBlocker } from "react-router-dom";
 import { finalizeEvent, getPublicKey, nip19, type Event } from "nostr-tools";
 import { hexToBytes } from "nostr-tools/utils";
 import { useEditor } from "@tiptap/react";
@@ -58,6 +58,8 @@ export function DocumentEditorController({
 
   const isDraft = selectedDocumentId === null;
   const isMobile = useMediaQuery("(max-width:900px)");
+  // viewKey present but no editKey = shared read-only link
+  const isViewOnly = !!viewKey && !editKey;
   const history = selectedDocumentId ? documents.get(selectedDocumentId) : null;
 
   const versions =
@@ -70,8 +72,13 @@ export function DocumentEditorController({
   const initialContent = activeVersion?.decryptedContent ?? "";
 
   const [md, setMd] = useState(initialContent);
-  const [mode, setMode] = useState<EditorMode>(isDraft ? "edit" : "preview");
+  const [mode, setMode] = useState<EditorMode>(
+    isViewOnly || !isDraft ? "preview" : "edit",
+  );
   const [saving, setSaving] = useState(false);
+  const [lastSavedAt, setLastSavedAt] = useState<Date | null>(
+    activeVersion ? new Date(activeVersion.event.created_at * 1000) : null,
+  );
   const [focusMode, setFocusMode] = useState(false);
   const [wordCount, setWordCount] = useState(0);
   const [charCount, setCharCount] = useState(0);
@@ -88,8 +95,13 @@ export function DocumentEditorController({
   const lastSavedMdRef = useRef<string>(initialContent);
   // Always-current markdown — avoids stale closures in effects/save
   const mdRef = useRef<string>(initialContent);
+  // Always-current mode — used in onUpdate to guard against split-mode clobber
+  const modeRef = useRef<EditorMode>(mode);
   // Track whether first-mount effect has run (skip re-setting content on init)
   const isFirstMount = useRef(true);
+
+  // Keep modeRef in sync every render (no effect needed, runs synchronously)
+  modeRef.current = mode;
 
   /* ── TipTap editor instance ────────────────────────────── */
   const editor = useEditor({
@@ -108,6 +120,11 @@ export function DocumentEditorController({
     content: initialContent,
     editable: mode !== "preview",
     onUpdate: ({ editor }) => {
+      // Only trust TipTap as the source of truth in WYSIWYG mode. Spurious
+      // onUpdate calls fire during mode transitions (EditorContent remount,
+      // setEditable dispatch) and would clobber textarea content with TipTap's
+      // stale internal document.
+      if (modeRef.current !== "edit") return;
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const newMd = (editor.storage as any).markdown.getMarkdown() as string;
       mdRef.current = newMd;
@@ -129,21 +146,52 @@ export function DocumentEditorController({
   useEffect(() => {
     if (!editor) return;
     editor.setEditable(mode !== "preview");
-    // When switching back to WYSIWYG, sync with the latest markdown
-    // (user may have edited raw markdown in split mode)
+    // Switching back to WYSIWYG: sync TipTap with whatever was typed in the
+    // split textarea. Pass `false` (not a truthy object) so onUpdate doesn't
+    // fire and clobber mdRef with a re-serialized version.
     if (mode === "edit") {
       editor.commands.setContent(mdRef.current, { emitUpdate: false });
+      setWordCount(editor.storage.characterCount.words());
+      setCharCount(editor.storage.characterCount.characters());
     }
   }, [mode, editor]);
 
-  /* ── Escape key to exit focus mode ─────────────────────── */
+  /* ── Keyboard shortcuts ─────────────────────────────────── */
+  // Use a ref so the keydown listener always calls the latest handleSave
+  // without needing to re-register on every render.
+  const handleSaveRef = useRef<(silent?: boolean) => Promise<void>>(
+    async () => {},
+  );
+
   useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
+    const onKeyDown = (e: KeyboardEvent) => {
       if (e.key === "Escape" && focusMode) setFocusMode(false);
+      if ((e.ctrlKey || e.metaKey) && e.key === "s") {
+        e.preventDefault();
+        handleSaveRef.current();
+      }
     };
-    window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
   }, [focusMode]);
+
+  /* ── Warn on browser close / refresh ───────────────────── */
+  const hasUnsavedChanges = md !== lastSavedMdRef.current;
+
+  useEffect(() => {
+    const onBeforeUnload = (e: BeforeUnloadEvent) => {
+      if (hasUnsavedChanges) e.preventDefault();
+    };
+    window.addEventListener("beforeunload", onBeforeUnload);
+    return () => window.removeEventListener("beforeunload", onBeforeUnload);
+  }, [hasUnsavedChanges]);
+
+  /* ── Block in-app navigation when there are unsaved changes  */
+  // useBlocker intercepts React Router navigations (sidebar clicks, back
+  // button, navigate() calls) before they happen. When blocked we show a
+  // confirmation modal; the user can then call blocker.proceed() to allow
+  // the navigation or blocker.reset() to stay on the page.
+  const blocker = useBlocker(hasUnsavedChanges);
 
   /* ── Resync when active version changes (relay updates) ── */
   useEffect(() => {
@@ -279,6 +327,7 @@ export function DocumentEditorController({
         await saveExistingDocument(selectedDocumentId!, mdToSave);
       }
       lastSavedMdRef.current = mdToSave;
+      setLastSavedAt(new Date());
       if (!silent) {
         setToast({ open: true, message: "Saved", severity: "success" });
       }
@@ -293,6 +342,10 @@ export function DocumentEditorController({
       setSaving(false);
     }
   };
+
+  // Keep the ref pointing at the latest handleSave so the keydown listener
+  // always calls the current version without going stale.
+  handleSaveRef.current = handleSave;
 
   const handleDelete = async (skipPrompt = false) => {
     if (isDraft) return;
@@ -312,7 +365,6 @@ export function DocumentEditorController({
   };
 
   /* ── Render ────────────────────────────────────────────── */
-  const hasUnsavedChanges = md !== lastSavedMdRef.current;
 
   return (
     <Box
@@ -331,19 +383,29 @@ export function DocumentEditorController({
         }),
       }}
     >
-      <EditorToolbar
-        saving={saving}
-        mode={mode}
-        onSetMode={setMode}
-        onSave={() => handleSave(false)}
-        handleDelete={handleDelete}
-        onShare={() => setShareOpen(true)}
-        versions={versions}
-        onSelectVersion={handleSelectVersion}
-        editor={editor}
-        focusMode={focusMode}
-        onToggleFocusMode={() => setFocusMode((f) => !f)}
-      />
+      {!isViewOnly && (
+        <EditorToolbar
+          saving={saving}
+          mode={mode}
+          onSetMode={(newMode) => {
+            // Pre-sync TipTap before the re-render so that if onUpdate fires
+            // during EditorContent remount it fires with the correct content.
+            if (newMode === "edit" && editor) {
+              editor.commands.setContent(mdRef.current, { emitUpdate: false });
+            }
+            setMode(newMode);
+          }}
+          onSave={() => handleSave(false)}
+          handleDelete={handleDelete}
+          onShare={() => setShareOpen(true)}
+          versions={versions}
+          onSelectVersion={handleSelectVersion}
+          editor={editor}
+          focusMode={focusMode}
+          onToggleFocusMode={() => setFocusMode((f) => !f)}
+          isViewOnly={isViewOnly}
+        />
+      )}
 
       <Paper
         sx={{
@@ -365,6 +427,7 @@ export function DocumentEditorController({
           }}
           onToggleMode={() => setMode("edit")}
           isMobile={isMobile}
+          canEdit={!isViewOnly}
         />
       </Paper>
 
@@ -379,11 +442,15 @@ export function DocumentEditorController({
           flexShrink: 0,
         }}
       >
-        {hasUnsavedChanges && (
-          <Typography variant="caption" color="warning.main">
-            Unsaved changes
+        {hasUnsavedChanges ? (
+          <Typography variant="caption" color="error.main" sx={{ fontWeight: 600 }}>
+            ● Unsaved changes
           </Typography>
-        )}
+        ) : lastSavedAt ? (
+          <Typography variant="caption" color="text.secondary">
+            Saved {lastSavedAt.toLocaleTimeString()}
+          </Typography>
+        ) : null}
         <Typography variant="caption" color="text.secondary">
           {wordCount} {wordCount === 1 ? "word" : "words"} ·{" "}
           {charCount.toLocaleString()} chars
@@ -429,6 +496,16 @@ export function DocumentEditorController({
           setHistoryConfirmOpen(false);
           setPendingVersionId(null);
         }}
+      />
+      {/* ── Unsaved navigation warning ────────────────────── */}
+      <ConfirmModal
+        open={blocker.state === "blocked"}
+        title="Leave without saving?"
+        description="You have unsaved changes that will be lost if you leave this page."
+        confirmText="Leave"
+        cancelText="Stay"
+        onConfirm={() => blocker.proceed?.()}
+        onCancel={() => blocker.reset?.()}
       />
       <ShareModal
         open={shareOpen}

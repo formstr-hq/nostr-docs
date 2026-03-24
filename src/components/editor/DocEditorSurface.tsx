@@ -1,5 +1,6 @@
 import { Box, Typography, useTheme, Fab } from "@mui/material";
 import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import { EditorContent } from "@tiptap/react";
 import type { Editor } from "@tiptap/react";
 import EditIcon from "@mui/icons-material/Edit";
@@ -11,6 +12,7 @@ type Props = {
   onChange: (value: string) => void;
   onToggleMode: () => void;
   isMobile: boolean;
+  canEdit: boolean;
 };
 
 const markdownSxBase = {
@@ -50,6 +52,7 @@ export function DocEditorSurface({
   onChange,
   onToggleMode,
   isMobile,
+  canEdit,
 }: Props) {
   const theme = useTheme();
 
@@ -69,19 +72,21 @@ export function DocEditorSurface({
           },
         }}
       >
-        {/* Sticky edit button */}
-        <Fab
-          size="small"
-          color="secondary"
-          onClick={onToggleMode}
-          title="Edit document"
-          sx={{ position: "sticky", top: 0, float: "right", mb: 1, ml: 1 }}
-        >
-          <EditIcon fontSize="small" />
-        </Fab>
+        {/* Sticky edit button — hidden for view-only shared links */}
+        {canEdit && (
+          <Fab
+            size="small"
+            color="secondary"
+            onClick={onToggleMode}
+            title="Edit document"
+            sx={{ position: "sticky", top: 0, float: "right", mb: 1, ml: 1 }}
+          >
+            <EditIcon fontSize="small" />
+          </Fab>
+        )}
 
         {value.trim() ? (
-          <ReactMarkdown>{value}</ReactMarkdown>
+          <ReactMarkdown remarkPlugins={[remarkGfm]}>{value}</ReactMarkdown>
         ) : (
           <Typography color="text.secondary">
             Nothing to preview yet —{" "}
@@ -93,39 +98,42 @@ export function DocEditorSurface({
     );
   }
 
-  /* ── Split mode — plain markdown textarea + rendered preview ── */
+  /* ── Split mode — markdown only on mobile, split on desktop ── */
   if (mode === "split") {
+    const markdownPane = (
+      <Box
+        component="textarea"
+        value={value}
+        onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) =>
+          onChange(e.target.value)
+        }
+        spellCheck={false}
+        placeholder="Start writing Markdown here…"
+        sx={{
+          flex: 1,
+          resize: "none",
+          border: "none",
+          borderRight: isMobile ? "none" : "1px solid",
+          borderColor: "divider",
+          outline: "none",
+          background: "transparent",
+          color: "text.primary",
+          fontSize: "14px",
+          lineHeight: 1.7,
+          fontFamily:
+            '"Fira Code", "Cascadia Code", ui-monospace, "Menlo", monospace',
+          p: 3,
+          boxSizing: "border-box",
+          "&::placeholder": { color: "text.secondary", opacity: 0.5 },
+        }}
+      />
+    );
+
+    if (isMobile) return markdownPane;
+
     return (
       <Box sx={{ display: "flex", flex: 1, overflow: "hidden" }}>
-        {/* Left: raw markdown textarea */}
-        <Box
-          component="textarea"
-          value={value}
-          onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) =>
-            onChange(e.target.value)
-          }
-          spellCheck={false}
-          placeholder="Start writing Markdown here…"
-          sx={{
-            flex: 1,
-            resize: "none",
-            border: "none",
-            borderRight: "1px solid",
-            borderColor: "divider",
-            outline: "none",
-            background: "transparent",
-            color: "text.primary",
-            fontSize: "14px",
-            lineHeight: 1.7,
-            fontFamily:
-              '"Fira Code", "Cascadia Code", ui-monospace, "Menlo", monospace',
-            p: 3,
-            boxSizing: "border-box",
-            "&::placeholder": { color: "text.secondary", opacity: 0.5 },
-          }}
-        />
-
-        {/* Right: rendered preview */}
+        {markdownPane}
         <Box
           sx={{
             flex: 1,
@@ -140,7 +148,7 @@ export function DocEditorSurface({
           }}
         >
           {value.trim() ? (
-            <ReactMarkdown>{value}</ReactMarkdown>
+            <ReactMarkdown remarkPlugins={[remarkGfm]}>{value}</ReactMarkdown>
           ) : (
             <Typography color="text.secondary" fontStyle="italic">
               Preview will appear here as you type…

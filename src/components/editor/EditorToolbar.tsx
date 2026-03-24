@@ -15,7 +15,7 @@ import {
 } from "@mui/material";
 import EditIcon from "@mui/icons-material/Edit";
 import VisibilityIcon from "@mui/icons-material/Visibility";
-import ViewColumnIcon from "@mui/icons-material/ViewColumn";
+import EditNoteIcon from "@mui/icons-material/EditNote";
 import MoreVertIcon from "@mui/icons-material/MoreVert";
 import DeleteIcon from "@mui/icons-material/Delete";
 import ShareIcon from "@mui/icons-material/Share";
@@ -51,6 +51,7 @@ type Props = {
   editor: Editor | null;
   focusMode: boolean;
   onToggleFocusMode: () => void;
+  isViewOnly: boolean;
 };
 
 export function EditorToolbar({
@@ -65,6 +66,7 @@ export function EditorToolbar({
   editor,
   focusMode,
   onToggleFocusMode,
+  isViewOnly,
 }: Props) {
   const { user, loginModal } = useUser();
   const [menuAnchor, setMenuAnchor] = useState<null | HTMLElement>(null);
@@ -104,28 +106,31 @@ export function EditorToolbar({
           gap: 1,
         }}
       >
-        {/* Left: mode toggle */}
-        <ToggleButtonGroup
-          value={mode}
-          exclusive
-          size="small"
-          onChange={(_, val) => val && onSetMode(val as EditorMode)}
-          sx={{ "& .MuiToggleButton-root": { px: 1.5 } }}
-        >
-          <ToggleButton value="edit" title="WYSIWYG editor">
-            <EditIcon fontSize="small" />
-          </ToggleButton>
-          <ToggleButton value="split" title="Split: markdown + preview">
-            <ViewColumnIcon fontSize="small" />
-          </ToggleButton>
-          <ToggleButton value="preview" title="Rendered preview">
-            <VisibilityIcon fontSize="small" />
-          </ToggleButton>
-        </ToggleButtonGroup>
+        {/* Left: mode toggle — hidden for view-only shared links */}
+        {!isViewOnly && (
+          <ToggleButtonGroup
+            value={mode}
+            exclusive
+            size="small"
+            onChange={(_, val) => val && onSetMode(val as EditorMode)}
+            sx={{ "& .MuiToggleButton-root": { px: 1.5 } }}
+          >
+            <ToggleButton value="edit" title="WYSIWYG editor">
+              <EditIcon fontSize="small" />
+            </ToggleButton>
+            <ToggleButton value="split" title="Markdown source">
+              <EditNoteIcon fontSize="small" />
+            </ToggleButton>
+            <ToggleButton value="preview" title="Rendered preview">
+              <VisibilityIcon fontSize="small" />
+            </ToggleButton>
+          </ToggleButtonGroup>
+        )}
+        {isViewOnly && <Box />}
 
         {/* Right: save + focus + overflow menu */}
         <Box sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
-          {user ? (
+          {!isViewOnly && (user ? (
             <Button
               variant="contained"
               color="secondary"
@@ -145,7 +150,7 @@ export function EditorToolbar({
             >
               Login to Save
             </Button>
-          )}
+          ))}
 
           <Tooltip title={focusMode ? "Exit focus mode" : "Focus mode"}>
             <IconButton size="small" onClick={onToggleFocusMode}>
