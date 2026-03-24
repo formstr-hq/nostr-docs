@@ -14,6 +14,7 @@ import MenuIcon from "@mui/icons-material/Menu";
 import { ThemeProvider } from "@mui/material/styles";
 import {
   createBrowserRouter,
+  createHashRouter,
   RouterProvider,
   Outlet,
   useLocation,
@@ -53,7 +54,10 @@ export function NotFoundPage() {
 /* ── Router ─────────────────────────────────────────────── */
 // createBrowserRouter (a "data router") is required for useBlocker to work.
 // AppLayout wraps all routes via <Outlet /> so the shell renders once.
-const router = createBrowserRouter([
+// In Tauri (desktop), use createHashRouter since file:// doesn't support history API.
+const isTauri = typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
+const createRouter = isTauri ? createHashRouter : createBrowserRouter;
+const router = createRouter([
   {
     path: "/",
     element: <AppLayout />,

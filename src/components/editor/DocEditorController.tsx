@@ -320,18 +320,20 @@ export function DocumentEditorController({
     if (mdToSave === lastSavedMdRef.current) return;
 
     setSaving(true);
+    const prevSavedMd = lastSavedMdRef.current;
+    lastSavedMdRef.current = mdToSave; // update before navigate() fires in saveNewDocument
     try {
       if (isDraft) {
         await saveNewDocument(mdToSave);
       } else {
         await saveExistingDocument(selectedDocumentId!, mdToSave);
       }
-      lastSavedMdRef.current = mdToSave;
       setLastSavedAt(new Date());
       if (!silent) {
         setToast({ open: true, message: "Saved", severity: "success" });
       }
     } catch (err) {
+      lastSavedMdRef.current = prevSavedMd; // restore so unsaved indicator reappears
       console.error("Save failed:", err);
       setToast({
         open: true,
