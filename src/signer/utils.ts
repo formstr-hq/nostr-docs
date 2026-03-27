@@ -2,13 +2,14 @@ import { generateSecretKey } from "nostr-tools";
 import { bytesToHex, hexToBytes } from "@noble/hashes/utils";
 
 const LOCAL_APP_SECRET_KEY = "formstr:client-secret";
+const LOCAL_NSEC_FLAG = "formstr:nsec-stored";
 const LOCAL_BUNKER_URI = "formstr:bunkerUri";
 const LOCAL_STORAGE_KEYS = "formstr:keys";
 const LOCAL_STORAGE_GUEST_KEY = "formstr:guest-secret";
 
 type BunkerUri = { bunkerUri: string };
 
-type Keys = { pubkey: string; secret?: string };
+type Keys = { pubkey: string };
 
 export const getAppSecretKeyFromLocalStorage = () => {
   let hexSecretKey = localStorage.getItem(LOCAL_APP_SECRET_KEY);
@@ -35,8 +36,8 @@ export const setBunkerUriInLocalStorage = (bunkerUri: string) => {
   localStorage.setItem(LOCAL_BUNKER_URI, JSON.stringify({ bunkerUri }));
 };
 
-export const setKeysInLocalStorage = (pubkey: string, secret?: string) => {
-  localStorage.setItem(LOCAL_STORAGE_KEYS, JSON.stringify({ pubkey, secret }));
+export const setKeysInLocalStorage = (pubkey: string) => {
+  localStorage.setItem(LOCAL_STORAGE_KEYS, JSON.stringify({ pubkey }));
 };
 
 export const removeKeysFromLocalStorage = () => {
@@ -61,4 +62,30 @@ export const getGuestSecretFromSession = (): string | null => {
 
 export const removeGuestSecretFromSession = () => {
   localStorage.removeItem(LOCAL_STORAGE_GUEST_KEY);
+};
+
+const LOCAL_NIP55_PACKAGE = "formstr:nip55-package";
+
+export const setNip55Package = (packageName: string) => {
+  localStorage.setItem(LOCAL_NIP55_PACKAGE, packageName);
+};
+
+export const getNip55Package = (): string | null => {
+  return localStorage.getItem(LOCAL_NIP55_PACKAGE);
+};
+
+export const removeNip55Package = () => {
+  localStorage.removeItem(LOCAL_NIP55_PACKAGE);
+};
+
+export const setNsecFlag = () => {
+  localStorage.setItem(LOCAL_NSEC_FLAG, "1");
+};
+
+export const getNsecFlag = (): boolean => {
+  return localStorage.getItem(LOCAL_NSEC_FLAG) === "1";
+};
+
+export const removeNsecFlag = () => {
+  localStorage.removeItem(LOCAL_NSEC_FLAG);
 };

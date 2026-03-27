@@ -1,10 +1,19 @@
 import type { Event, EventTemplate } from "nostr-tools";
 import type { NostrSigner } from "./types"; // Adjust the path as needed
 
+let cachedPubKey: string | undefined;
+
+export function clearNip07PubKeyCache() {
+  cachedPubKey = undefined;
+}
+
 export const nip07Signer: NostrSigner = {
   getPublicKey: async (): Promise<string> => {
     if (!window.nostr) throw new Error("NIP-07 signer not found");
-    return window.nostr.getPublicKey();
+    if (!cachedPubKey) {
+      cachedPubKey = await window.nostr.getPublicKey();
+    }
+    return cachedPubKey;
   },
 
   signEvent: async (event: EventTemplate): Promise<Event> => {

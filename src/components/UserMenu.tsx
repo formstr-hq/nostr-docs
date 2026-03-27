@@ -2,34 +2,43 @@
 import React, { useState } from "react";
 import {
   Avatar,
+  Box,
+  Collapse,
   Menu,
   MenuItem,
   Typography,
   Divider,
   ListItemIcon,
   ListItemText,
-  Switch,
 } from "@mui/material";
-import LightModeIcon from "@mui/icons-material/LightMode";
-import DarkModeIcon from "@mui/icons-material/DarkMode";
+import CheckIcon from "@mui/icons-material/Check";
+import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
+import ExpandLessIcon from "@mui/icons-material/ExpandLess";
+import PaletteIcon from "@mui/icons-material/Palette";
 import LoginIcon from "@mui/icons-material/Login";
 import LogoutIcon from "@mui/icons-material/Logout";
 import { useUser } from "../contexts/UserContext";
 import LoginModal from "./LoginModal";
+import { themes } from "../theme";
+import type { ThemeId, ThemeDefinition } from "../theme";
 
 type Props = {
-  darkMode: boolean;
-  onToggleDarkMode: () => void;
+  themeId: ThemeId;
+  onSelectTheme: (id: ThemeId) => void;
 };
 
-export default function UserMenu({ darkMode, onToggleDarkMode }: Props) {
+export default function UserMenu({ themeId, onSelectTheme }: Props) {
   const { user, logout } = useUser();
   const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
   const [loginOpen, setLoginOpen] = useState(false);
+  const [themeOpen, setThemeOpen] = useState(false);
 
   const handleOpen = (e: React.MouseEvent<HTMLElement>) =>
     setAnchorEl(e.currentTarget);
-  const handleClose = () => setAnchorEl(null);
+  const handleClose = () => {
+    setAnchorEl(null);
+    setThemeOpen(false);
+  };
 
   const displayName = user
     ? user.name || user.pubkey?.slice(0, 6) + "..."
@@ -67,28 +76,62 @@ export default function UserMenu({ darkMode, onToggleDarkMode }: Props) {
 
         <Divider />
 
-        {/* Dark mode toggle */}
-        <MenuItem
-          onClick={(e) => {
-            e.stopPropagation();
-            onToggleDarkMode();
-          }}
-        >
+        {/* Theme accordion trigger */}
+        <MenuItem onClick={() => setThemeOpen((p) => !p)}>
           <ListItemIcon>
-            {darkMode ? (
-              <LightModeIcon fontSize="small" />
-            ) : (
-              <DarkModeIcon fontSize="small" />
-            )}
+            <PaletteIcon fontSize="small" />
           </ListItemIcon>
-          <ListItemText primary={darkMode ? "Light mode" : "Dark mode"} />
-          <Switch
-            checked={darkMode}
-            size="small"
-            color="secondary"
-            sx={{ ml: 1 }}
+          <ListItemText
+            primary="Theme"
+            secondary={themes[themeId].label}
+            secondaryTypographyProps={{ variant: "caption" }}
           />
+          {themeOpen ? (
+            <ExpandLessIcon fontSize="small" sx={{ ml: 1, opacity: 0.6 }} />
+          ) : (
+            <ExpandMoreIcon fontSize="small" sx={{ ml: 1, opacity: 0.6 }} />
+          )}
         </MenuItem>
+
+        {/* Collapsible theme list */}
+        <Collapse in={themeOpen}>
+          <Box sx={{ pl: 1 }}>
+            {(Object.entries(themes) as [ThemeId, ThemeDefinition][]).map(
+              ([id, def]) => (
+                <MenuItem
+                  key={id}
+                  selected={themeId === id}
+                  onClick={() => {
+                    onSelectTheme(id);
+                    handleClose();
+                  }}
+                >
+                  <ListItemIcon>
+                    {/* Two-tone swatch: background | accent */}
+                    <Box
+                      sx={{
+                        width: 24,
+                        height: 16,
+                        borderRadius: "4px",
+                        overflow: "hidden",
+                        border: "1.5px solid rgba(128,128,128,0.3)",
+                        display: "flex",
+                        flexShrink: 0,
+                      }}
+                    >
+                      <Box sx={{ flex: 1, bgcolor: def.swatch }} />
+                      <Box sx={{ flex: 1, bgcolor: def.accentSwatch }} />
+                    </Box>
+                  </ListItemIcon>
+                  <ListItemText primary={def.label} />
+                  {themeId === id && (
+                    <CheckIcon fontSize="small" sx={{ ml: 1, opacity: 0.7 }} />
+                  )}
+                </MenuItem>
+              )
+            )}
+          </Box>
+        </Collapse>
 
         <Divider />
 

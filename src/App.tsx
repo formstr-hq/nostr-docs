@@ -24,8 +24,9 @@ import DocumentList from "./components/DocumentList";
 import UserMenu from "./components/UserMenu";
 import { DocumentProvider } from "./contexts/DocumentContext";
 import { UserProvider } from "./contexts/UserContext";
-import { darkTheme, lightTheme } from "./theme";
-import FormstrLogo from "./assets/formstr.svg";
+import { themes } from "./theme";
+import type { ThemeId } from "./theme";
+import FormstrLogo from "./assets/formstr-pages-logo.png";
 import DocPage from "./components/DocPage";
 import { SharedPagesProvider } from "./contexts/SharedDocsContext";
 import { RelayProvider } from "./contexts/RelayContext";
@@ -56,7 +57,8 @@ export function NotFoundPage() {
 // AppLayout wraps all routes via <Outlet /> so the shell renders once.
 // In Tauri (desktop), use createHashRouter since file:// doesn't support history API.
 const isTauri = typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
-const createRouter = isTauri ? createHashRouter : createBrowserRouter;
+const isCapacitor = typeof window !== "undefined" && "Capacitor" in window;
+const createRouter = (isTauri || isCapacitor) ? createHashRouter : createBrowserRouter;
 const router = createRouter([
   {
     path: "/",
@@ -91,10 +93,17 @@ export default function App() {
 // darkMode state needs to be co-located with the toggle handler.
 function AppLayout() {
   const [mobileOpen, setMobileOpen] = React.useState(false);
-  const [darkMode, setDarkMode] = React.useState(true);
+  const [themeId, setThemeId] = React.useState<ThemeId>(
+    () => (localStorage.getItem("formstr:theme") as ThemeId | null) ?? "candlelit"
+  );
   const isDesktop = useMediaQuery("(min-width:900px)");
 
-  const theme = darkMode ? darkTheme : lightTheme;
+  const theme = themes[themeId].theme;
+
+  const handleSelectTheme = (id: ThemeId) => {
+    setThemeId(id);
+    localStorage.setItem("formstr:theme", id);
+  };
 
   return (
     <ThemeProvider theme={theme}>
@@ -123,32 +132,17 @@ function AppLayout() {
               </IconButton>
             )}
 
-            <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
-              <img
-                src={FormstrLogo}
-                alt="Formstr Pages"
-                style={{ height: 32, width: "auto", borderRadius: 8 }}
-              />
-              <Typography
-                variant="h6"
-                sx={{
-                  fontWeight: 900,
-                  letterSpacing: 1,
-                  background:
-                    "linear-gradient(90deg, #c7aa1aff 0%, #FFA751 100%)",
-                  WebkitBackgroundClip: "text",
-                  WebkitTextFillColor: "transparent",
-                }}
-              >
-                pages
-              </Typography>
-            </Box>
+            <img
+              src={FormstrLogo}
+              alt="Formstr Pages"
+              style={{ height: 36, width: "auto", borderRadius: 10 }}
+            />
           </Box>
 
           <Box sx={{ display: "flex", alignItems: "center", gap: 2 }}>
             <UserMenu
-              darkMode={darkMode}
-              onToggleDarkMode={() => setDarkMode((prev) => !prev)}
+              themeId={themeId}
+              onSelectTheme={handleSelectTheme}
             />
           </Box>
         </Toolbar>

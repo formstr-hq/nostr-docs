@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Pages by Form*</string>
+    <string name="title_activity_main">Pages by Form*</string>
+    <string name="package_name">com.formstr.pages</string>
+    <string name="custom_url_scheme">com.formstr.pages</string>
+</resources>

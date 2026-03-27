@@ -1,0 +1,26 @@
+repository: https://github.com/formstr-hq/nostr-docs
+name: Pages by Form*
+summary: Your notes aren’t just text — they’re your thoughts at 2AM, your plans for the future, your half-formed ideas that might become something real. Why should anyone else have access to that?
+tags:
+  - Pages
+  - Form*
+  - decentralized
+  - notes
+  - documents
+  - Nostr
+  - protocol.
+  - write
+  - encrypted
+  - relays
+homepage: https://pages.formstr.app
+images:
+  - Screenshots/1.png
+  - Screenshots/2.png
+  - Screenshots/3.png
+license: MIT
+blossom_servers:
+  - https://cdn.zapstore.dev
+  - https://blossom.band
+release_source: ./android/app/build/outputs/apk/release/app-release.apk
+metadata_sources:
+  - github
