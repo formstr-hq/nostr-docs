@@ -68,10 +68,12 @@ function EncryptedFileNodeView({ node, editor, updateAttributes, deleteNode, sel
   const [deleting, setDeleting] = useState(false);
   // Live width during drag (avoids committing every mousemove to the doc)
   const [liveWidth, setLiveWidth] = useState<number | null>(null);
-  const imgRef = useRef<HTMLImageElement>(null);
+  const mediaRef = useRef<HTMLImageElement & HTMLVideoElement>(null);
 
   const isEditable = editor.isEditable;
   const isImage = renderAs === "image";
+  const isVideo = renderAs === "video";
+  const isResizable = (isImage || isVideo) && !!blobUrl;
   const displayWidth = liveWidth ?? width ?? null;
   // Show controls on hover (desktop) OR when the node is selected (tap on mobile)
   const showControls = hovered || selected;
@@ -98,7 +100,7 @@ function EncryptedFileNodeView({ node, editor, updateAttributes, deleteNode, sel
 
   // ── Resize ──────────────────────────────────────────────
   const startResize = (startX: number) => {
-    const startWidth = imgRef.current?.offsetWidth ?? (width ?? 400);
+    const startWidth = mediaRef.current?.offsetWidth ?? (width ?? 400);
 
     const onMouseMove = (e: MouseEvent) => {
       setLiveWidth(Math.max(80, startWidth + (e.clientX - startX)));
@@ -121,7 +123,7 @@ function EncryptedFileNodeView({ node, editor, updateAttributes, deleteNode, sel
   const handleResizeTouchStart = (e: React.TouchEvent) => {
     e.preventDefault();
     const startX = e.touches[0].clientX;
-    const startWidth = imgRef.current?.offsetWidth ?? (width ?? 400);
+    const startWidth = mediaRef.current?.offsetWidth ?? (width ?? 400);
 
     const onTouchMove = (e: TouchEvent) => {
       setLiveWidth(Math.max(80, startWidth + (e.touches[0].clientX - startX)));
@@ -137,7 +139,7 @@ function EncryptedFileNodeView({ node, editor, updateAttributes, deleteNode, sel
   };
 
   return (
-    <NodeViewWrapper>
+    <NodeViewWrapper as="span" style={{ display: "inline-block", maxWidth: "100%", verticalAlign: "bottom" }}>
       <Box
         sx={{ my: 1, position: "relative", display: "inline-block", maxWidth: "100%" }}
         onMouseEnter={() => setHovered(true)}
@@ -158,7 +160,7 @@ function EncryptedFileNodeView({ node, editor, updateAttributes, deleteNode, sel
         {/* ── Image ── */}
         {blobUrl && isImage && (
           <img
-            ref={imgRef}
+            ref={mediaRef}
             src={blobUrl}
             alt={filename}
             style={{
@@ -174,13 +176,18 @@ function EncryptedFileNodeView({ node, editor, updateAttributes, deleteNode, sel
         )}
 
         {/* ── Video ── */}
-        {blobUrl && renderAs === "video" && (
-          <EncryptedFilePreview
-            src={src}
-            decryptionKey={decryptionKey}
-            decryptionNonce={decryptionNonce}
-            mimeType={mimeType}
-            filename={filename}
+        {blobUrl && isVideo && (
+          <video
+            ref={mediaRef}
+            src={blobUrl}
+            controls
+            style={{
+              width: displayWidth ? `${displayWidth}px` : "100%",
+              maxWidth: "100%",
+              borderRadius: 8,
+              display: "block",
+              outline: showControls && isEditable ? "2px solid rgba(128,128,128,0.3)" : "none",
+            }}
           />
         )}
 
@@ -218,8 +225,8 @@ function EncryptedFileNodeView({ node, editor, updateAttributes, deleteNode, sel
               </IconButton>
             </Tooltip>
 
-            {/* Resize handle — only when an image has loaded */}
-            {isImage && blobUrl && (
+            {/* Resize handle — images and videos once loaded */}
+            {isResizable && (
               <ResizeHandle
                 onMouseDown={handleResizeMouseDown}
                 onTouchStart={handleResizeTouchStart}
@@ -261,7 +268,8 @@ function EncryptedFileNodeView({ node, editor, updateAttributes, deleteNode, sel
 
 export const EncryptedFileNode = Node.create({
   name: "encryptedFile",
-  group: "block",
+  group: "inline",
+  inline: true,
   atom: true,
   draggable: true,
 

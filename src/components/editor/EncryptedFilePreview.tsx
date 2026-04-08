@@ -144,7 +144,7 @@ export function EncryptedFilePreview(attrs: EncryptedFileAttrs) {
   const { blobUrl, loading, error, renderAs, mimeMismatch } = useDecryptedBlob(attrs);
 
   return (
-    <Box sx={{ my: 1, maxWidth: "100%" }}>
+    <Box sx={{ display: "inline-block", verticalAlign: "bottom", maxWidth: "100%" }}>
       {loading && (
         <Box sx={{ display: "flex", alignItems: "center", gap: 1, p: 1 }}>
           <CircularProgress size={14} />
@@ -190,7 +190,12 @@ export function EncryptedFilePreview(attrs: EncryptedFileAttrs) {
         <video
           src={blobUrl}
           controls
-          style={{ maxWidth: "100%", borderRadius: 8, display: "block" }}
+          style={{
+            width: width ? `${width}px` : "100%",
+            maxWidth: "100%",
+            borderRadius: 8,
+            display: "block",
+          }}
         />
       )}
 

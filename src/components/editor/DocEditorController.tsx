@@ -401,26 +401,22 @@ export function DocumentEditorController({
         await encryptFile(file);
       const url = await uploadToBlossom(blossomServers, encryptedData, x);
 
-      // Move cursor to the end of whatever is currently selected before
-      // inserting. Without this, if a file node is selected (NodeSelection)
-      // insertContent replaces it instead of appending after it.
+      // Move cursor to end of current selection first — prevents replacing a
+      // selected file node when the user uploads another while one is selected.
       const insertPos = editor.state.selection.to;
       editor.chain()
         .setTextSelection(insertPos)
-        .insertContent([
-          {
-            type: "encryptedFile",
-            attrs: {
-              src: url,
-              decryptionKey,
-              decryptionNonce,
-              mimeType: file.type || "application/octet-stream",
-              filename: file.name,
-              x,
-            },
+        .insertContent({
+          type: "encryptedFile",
+          attrs: {
+            src: url,
+            decryptionKey,
+            decryptionNonce,
+            mimeType: file.type || "application/octet-stream",
+            filename: file.name,
+            x,
           },
-          { type: "paragraph" },
-        ])
+        })
         .run();
     } catch (err) {
       console.error("File upload failed:", err);
