@@ -1,9 +1,12 @@
 import { Box, Typography, useTheme, Fab } from "@mui/material";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import rehypeRaw from "rehype-raw";
 import { EditorContent } from "@tiptap/react";
 import type { Editor } from "@tiptap/react";
 import EditIcon from "@mui/icons-material/Edit";
+import { EncryptedFilePreview } from "./EncryptedFilePreview";
+import type { EncryptedFileAttrs } from "./EncryptedFilePreview";
 
 type Props = {
   value: string;
@@ -42,6 +45,27 @@ const markdownSxBase = {
     paddingLeft: "1em",
     margin: "0.5em 0",
     opacity: 0.85,
+  },
+};
+
+// Custom component map for ReactMarkdown — handles <encrypted-file> HTML elements
+// that tiptap-markdown serializes into the document markdown.
+// Cast to any: react-markdown's Components type only covers known HTML tags,
+// but rehype-raw passes custom elements through as-is.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const markdownComponents: any = {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  "encrypted-file": (props: any) => {
+    const attrs: EncryptedFileAttrs = {
+      src: props["data-src"] ?? "",
+      decryptionKey: props["data-key"] ?? "",
+      decryptionNonce: props["data-nonce"] ?? "",
+      mimeType: props["data-mime"] ?? "",
+      filename: decodeURIComponent(props["data-filename"] ?? "file"),
+      width: props["data-width"] ? Number(props["data-width"]) : null,
+    };
+    if (!attrs.src || !attrs.decryptionKey) return null;
+    return <EncryptedFilePreview {...attrs} />;
   },
 };
 
@@ -91,7 +115,7 @@ export function DocEditorSurface({
         )}
 
         {value.trim() ? (
-          <ReactMarkdown remarkPlugins={[remarkGfm]}>{value}</ReactMarkdown>
+          <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeRaw]} components={markdownComponents}>{value}</ReactMarkdown>
         ) : (
           <Typography color="text.secondary">
             Nothing to preview yet —{" "}
@@ -150,7 +174,7 @@ export function DocEditorSurface({
           }}
         >
           {value.trim() ? (
-            <ReactMarkdown remarkPlugins={[remarkGfm]}>{value}</ReactMarkdown>
+            <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeRaw]} components={markdownComponents}>{value}</ReactMarkdown>
           ) : (
             <Typography color="text.secondary" fontStyle="italic">
               Preview will appear here as you type…

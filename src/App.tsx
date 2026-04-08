@@ -32,6 +32,7 @@ import DocPage from "./components/DocPage";
 import { SharedPagesProvider } from "./contexts/SharedDocsContext";
 import { RelayProvider } from "./contexts/RelayContext";
 import { DocMetadataProvider } from "./contexts/DocMetadataContext";
+import { BlossomProvider } from "./contexts/BlossomContext";
 
 const drawerWidth = 320;
 
@@ -79,13 +80,15 @@ export default function App() {
   return (
     <UserProvider>
       <RelayProvider>
-        <DocumentProvider>
-          <SharedPagesProvider>
-            <DocMetadataProvider>
-              <RouterProvider router={router} />
-            </DocMetadataProvider>
-          </SharedPagesProvider>
-        </DocumentProvider>
+        <BlossomProvider>
+          <DocumentProvider>
+            <SharedPagesProvider>
+              <DocMetadataProvider>
+                <RouterProvider router={router} />
+              </DocMetadataProvider>
+            </SharedPagesProvider>
+          </DocumentProvider>
+        </BlossomProvider>
       </RelayProvider>
     </UserProvider>
   );
