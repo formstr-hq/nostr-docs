@@ -32,7 +32,8 @@ import UndoIcon from "@mui/icons-material/Undo";
 import RedoIcon from "@mui/icons-material/Redo";
 import FormatIndentIncreaseIcon from "@mui/icons-material/FormatIndentIncrease";
 import FormatIndentDecreaseIcon from "@mui/icons-material/FormatIndentDecrease";
-import { useState } from "react";
+import AttachFileIcon from "@mui/icons-material/AttachFile";
+import { useState, useRef } from "react";
 import { useUser } from "../../contexts/UserContext";
 import type { Editor } from "@tiptap/react";
 
@@ -56,6 +57,8 @@ type Props = {
   focusMode: boolean;
   onToggleFocusMode: () => void;
   isViewOnly: boolean;
+  onAttachFile?: (files: FileList) => void;
+  uploading?: boolean;
 };
 
 export function EditorToolbar({
@@ -71,10 +74,13 @@ export function EditorToolbar({
   focusMode,
   onToggleFocusMode,
   isViewOnly,
+  onAttachFile,
+  uploading,
 }: Props) {
   const { user, loginModal } = useUser();
   const [menuAnchor, setMenuAnchor] = useState<null | HTMLElement>(null);
   const [historyAnchor, setHistoryAnchor] = useState<null | HTMLElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const menuOpen = Boolean(menuAnchor);
   const historyOpen = Boolean(historyAnchor);
@@ -440,6 +446,38 @@ export function EditorToolbar({
                 {"</>"}
               </ButtonBase>
             </Tooltip>
+
+            {/* Attach file */}
+            {onAttachFile && (
+              <>
+                <Divider orientation="vertical" flexItem sx={{ mx: 0.5 }} />
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="*/*"
+                  multiple
+                  style={{ display: "none" }}
+                  onChange={(e) => {
+                    if (e.target.files?.length) {
+                      onAttachFile(e.target.files);
+                      e.target.value = "";
+                    }
+                  }}
+                />
+                <Tooltip title={uploading ? "Uploading…" : "Attach file"}>
+                  <span>
+                    <IconButton
+                      size="small"
+                      onClick={() => fileInputRef.current?.click()}
+                      disabled={uploading}
+                      color="default"
+                    >
+                      <AttachFileIcon fontSize="small" />
+                    </IconButton>
+                  </span>
+                </Tooltip>
+              </>
+            )}
           </Box>
         </>
       )}

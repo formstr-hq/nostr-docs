@@ -8,7 +8,9 @@ import {
   Typography,
   Chip,
   InputBase,
+  CircularProgress,
 } from "@mui/material";
+import InsertDriveFileIcon from "@mui/icons-material/InsertDriveFile";
 import LabelOutlinedIcon from "@mui/icons-material/LabelOutlined";
 import { useDocMetadata } from "../../contexts/DocMetadataContext";
 import { useNavigate, useBlocker } from "react-router-dom";
@@ -20,6 +22,7 @@ import { Markdown } from "tiptap-markdown";
 import Link from "@tiptap/extension-link";
 import Placeholder from "@tiptap/extension-placeholder";
 import CharacterCount from "@tiptap/extension-character-count";
+import { EncryptedFileNode } from "./extensions/EncryptedFileNode";
 
 import { useDocumentContext } from "../../contexts/DocumentContext";
 import { useUser } from "../../contexts/UserContext";
@@ -41,6 +44,9 @@ import ConfirmModal from "../common/ConfirmModal";
 import ShareModal from "../ShareModal";
 import { handleGeneratePrivateLink, handleSharePublic } from "./utils";
 import { encryptContent } from "../../utils/encryption";
+import { encryptFile } from "../../utils/fileEncryption";
+import { uploadToBlossom } from "../../blossom/client";
+import { useBlossomServers } from "../../contexts/BlossomContext";
 import { KIND_FILE } from "../../nostr/kinds";
 import { getLatestVersion } from "../../utils/helpers";
 import { encodeNKeys } from "../../utils/nkeys";
@@ -174,6 +180,13 @@ export function DocumentEditorController({
   }>({ open: false, message: "", severity: "success" });
   const [shareOpen, setShareOpen] = useState(false);
 
+  const { servers: blossomServers } = useBlossomServers();
+
+  // Each in-flight upload gets a unique entry so multiple concurrent uploads
+  // are all visible and the button stays disabled until all finish.
+  const [uploadQueue, setUploadQueue] = useState<{ id: string; filename: string }[]>([]);
+  const uploading = uploadQueue.length > 0;
+
   const lastSavedMdRef = useRef<string>(initialContent);
   // Always-current markdown — avoids stale closures in effects/save
   const mdRef = useRef<string>(initialContent);
@@ -190,19 +203,38 @@ export function DocumentEditorController({
   isDraftRef.current = isDraft;
   isViewOnlyRef.current = isViewOnly;
 
+  // Always-current upload function — avoids stale closures in editorProps handlers
+  const uploadFileRef = useRef<(file: File) => Promise<void>>(async () => {});
+
   /* ── TipTap editor instance ────────────────────────────── */
   const editor = useEditor({
     extensions: [
       StarterKit,
-      Markdown.configure({ html: false, tightLists: true }),
+      // html: true so <encrypted-file> tags round-trip through markdown storage
+      Markdown.configure({ html: true, tightLists: true }),
       Link.configure({ openOnClick: false }),
       Placeholder.configure({
         placeholder: "Start writing your page here…",
       }),
       CharacterCount,
+      EncryptedFileNode,
     ],
     editorProps: {
       attributes: { class: "tiptap" },
+      handlePaste(_view, event) {
+        if (isViewOnlyRef.current) return false;
+        const files = event.clipboardData?.files;
+        if (!files?.length) return false;
+        Array.from(files).forEach((f) => uploadFileRef.current(f));
+        return true;
+      },
+      handleDrop(_view, event, _slice, moved) {
+        if (moved || isViewOnlyRef.current) return false;
+        const files = (event as DragEvent).dataTransfer?.files;
+        if (!files?.length) return false;
+        Array.from(files).forEach((f) => uploadFileRef.current(f));
+        return true;
+      },
     },
     content: initialContent,
     editable: mode !== "preview",
@@ -350,6 +382,60 @@ export function DocumentEditorController({
     setHistoryConfirmOpen(false);
     setPendingVersionId(null);
   };
+
+  /* ── File upload ───────────────────────────────────────── */
+
+  const handleFileUpload = async (file: File) => {
+    if (!editor) return;
+
+    if (blossomServers.length === 0) {
+      setToast({ open: true, message: "No blossom servers configured", severity: "error" });
+      return;
+    }
+
+    const uploadId = Math.random().toString(36).slice(2);
+    setUploadQueue((q) => [...q, { id: uploadId, filename: file.name }]);
+
+    try {
+      const { encryptedData, decryptionKey, decryptionNonce, x } =
+        await encryptFile(file);
+      const url = await uploadToBlossom(blossomServers, encryptedData, x);
+
+      // Move cursor to the end of whatever is currently selected before
+      // inserting. Without this, if a file node is selected (NodeSelection)
+      // insertContent replaces it instead of appending after it.
+      const insertPos = editor.state.selection.to;
+      editor.chain()
+        .setTextSelection(insertPos)
+        .insertContent([
+          {
+            type: "encryptedFile",
+            attrs: {
+              src: url,
+              decryptionKey,
+              decryptionNonce,
+              mimeType: file.type || "application/octet-stream",
+              filename: file.name,
+              x,
+            },
+          },
+          { type: "paragraph" },
+        ])
+        .run();
+    } catch (err) {
+      console.error("File upload failed:", err);
+      setToast({
+        open: true,
+        message: `Upload failed: ${err instanceof Error ? err.message : String(err)}`,
+        severity: "error",
+      });
+    } finally {
+      setUploadQueue((q) => q.filter((item) => item.id !== uploadId));
+    }
+  };
+
+  // Keep ref current so paste/drop handlers always call the latest version
+  uploadFileRef.current = handleFileUpload;
 
   /* ── Save helpers ──────────────────────────────────────── */
 
@@ -546,6 +632,8 @@ export function DocumentEditorController({
           focusMode={focusMode}
           onToggleFocusMode={() => setFocusMode((f) => !f)}
           isViewOnly={isViewOnly}
+          onAttachFile={(files) => Array.from(files).forEach(handleFileUpload)}
+          uploading={uploading}
         />
       )}
 
@@ -657,6 +745,39 @@ export function DocumentEditorController({
         onConfirm={() => blocker.proceed?.()}
         onCancel={() => blocker.reset?.()}
       />
+      {/* ── Upload queue ─────────────────────────────────── */}
+      {uploadQueue.length > 0 && (
+        <Paper
+          elevation={4}
+          sx={{
+            position: "fixed",
+            bottom: 24,
+            right: 24,
+            zIndex: 1400,
+            p: 1.5,
+            minWidth: 220,
+            maxWidth: 300,
+            borderRadius: 2,
+            display: "flex",
+            flexDirection: "column",
+            gap: 0.75,
+          }}
+        >
+          <Typography variant="caption" fontWeight={600} color="text.secondary">
+            Uploading {uploadQueue.length} file{uploadQueue.length > 1 ? "s" : ""}…
+          </Typography>
+          {uploadQueue.map((item) => (
+            <Box key={item.id} sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+              <CircularProgress size={14} thickness={5} />
+              <InsertDriveFileIcon sx={{ fontSize: 14, opacity: 0.5 }} />
+              <Typography variant="caption" noWrap sx={{ flex: 1 }}>
+                {item.filename}
+              </Typography>
+            </Box>
+          ))}
+        </Paper>
+      )}
+
       <ShareModal
         open={shareOpen}
         onClose={() => setShareOpen(false)}
