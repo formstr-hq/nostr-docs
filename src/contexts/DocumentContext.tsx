@@ -27,6 +27,7 @@ interface DocumentContextValue {
 
   removeDocument: (id: string) => void;
   addDeletionRequest: (delEvent: Event) => void;
+  clearDeletionRecord: (address: string) => void;
 
   deletedEventIds: Set<string>;
 
@@ -84,10 +85,18 @@ export const DocumentProvider: React.FC<{ children: React.ReactNode }> = ({
   );
   const addDeletionRequest = (delEvent: Event) => {
     const eTags = delEvent.tags.filter((t) => t[0] === "e").map((t) => t[1]);
-
     const aTags = delEvent.tags.filter((t) => t[0] === "a").map((t) => t[1]);
-
     setDeletedEventIds((prev) => new Set([...prev, ...eTags, ...aTags]));
+  };
+
+  // Removes a specific address from deletedEventIds so a restored document
+  // becomes visible again in the current session.
+  const clearDeletionRecord = (address: string) => {
+    setDeletedEventIds((prev) => {
+      const next = new Set(prev);
+      next.delete(address);
+      return next;
+    });
   };
 
   const removeDocument = (id: string) => {
@@ -163,6 +172,7 @@ export const DocumentProvider: React.FC<{ children: React.ReactNode }> = ({
         removeDocument,
         deletedEventIds,
         addDeletionRequest,
+        clearDeletionRecord,
         visibleDocuments,
       }}
     >

@@ -35,6 +35,7 @@ import {
   storeLocalEvent,
   markBroadcast,
   removeLocalEvent,
+  trashLocalEvent,
 } from "../../lib/localStore";
 
 import { EditorToolbar } from "./EditorToolbar";
@@ -729,7 +730,7 @@ export function DocumentEditorController({
             // Still remove locally so the document isn't stuck in a half-deleted state.
           }
           removeDocument(address);
-          removeLocalEvent(address).catch(() => {});
+          await trashLocalEvent(address).catch(() => {});
           navigate("/");
         }}
         onCancel={() => {

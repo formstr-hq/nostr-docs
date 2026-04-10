@@ -4,6 +4,7 @@ import { alpha } from "@mui/material/styles";
 import { fetchAllDocuments } from "../nostr/fetchFile.ts";
 import {
   loadAllLocalEvents,
+  loadTrashedEvents,
   storeLocalEvent,
   markBroadcast,
 } from "../lib/localStore.ts";
@@ -23,6 +24,7 @@ import {
   Tooltip,
 } from "@mui/material";
 import AddIcon from "@mui/icons-material/Add";
+import DeleteForeverIcon from "@mui/icons-material/DeleteForever";
 import { useDocumentContext } from "../contexts/DocumentContext.tsx";
 import { signerManager } from "../signer/index.ts";
 import { useRelays } from "../contexts/RelayContext.tsx";
@@ -31,6 +33,7 @@ import { fetchDeleteRequests } from "../nostr/fetchDelete.ts";
 import { useUser } from "../contexts/UserContext.tsx";
 import { useNavigate } from "react-router-dom";
 import { useSharedPages } from "../contexts/SharedDocsContext.tsx";
+import TrashDialog from "./TrashDialog.tsx";
 import { encodeNKeys } from "../utils/nkeys.ts";
 import { getEventAddress } from "../utils/helpers.ts";
 import { useDocMetadata } from "../contexts/DocMetadataContext.tsx";
@@ -105,6 +108,8 @@ export default function DocumentList({
   const { docTags, allTags, selectedTag, setSelectedTag } = useDocMetadata();
   const [loading, setLoading] = useState(true);
   const [tab, setTab] = useState<"personal" | "shared">("personal");
+  const [trashOpen, setTrashOpen] = useState(false);
+  const [trashCount, setTrashCount] = useState(0);
   const { user } = useUser();
   const { relays } = useRelays();
   const navigate = useNavigate();
@@ -116,6 +121,7 @@ export default function DocumentList({
       alert("Invalid Doc");
       return;
     }
+
 
     const naddr = nip19.naddrEncode({
       identifier: dTag!,
@@ -203,6 +209,12 @@ export default function DocumentList({
       }
     })();
   }, [user, relays]);
+
+  // Load trash count on mount and after the dialog closes
+  const refreshTrashCount = () => {
+    loadTrashedEvents().then((items) => setTrashCount(items.length)).catch(() => {});
+  };
+  useEffect(() => { refreshTrashCount(); }, []);
 
   const handleNewDoc = () => {
     setSelectedDocumentId(null);
@@ -323,7 +335,7 @@ export default function DocumentList({
       )}
 
       {/* List area */}
-      <Box sx={{ flex: 1, overflowY: "auto", px: 1.5, py: 1 }}>
+      <Box sx={{ flex: 1, overflowY: "auto", px: 1.5, py: 1, pb: 0 }}>
         {loading ? (
           <Box sx={{ display: "flex", flexDirection: "column", gap: 1, pt: 1 }}>
             {[1, 2, 3, 4].map((i) => (
@@ -490,6 +502,46 @@ export default function DocumentList({
         )}
       </Box>
 
+      {/* Trash link */}
+      <Box
+        sx={{
+          px: 2,
+          py: 1,
+          borderTop: "1px solid",
+          borderColor: "divider",
+          flexShrink: 0,
+        }}
+      >
+        <Button
+          size="small"
+          startIcon={<DeleteForeverIcon sx={{ fontSize: 15 }} />}
+          onClick={() => setTrashOpen(true)}
+          sx={{
+            color: "text.disabled",
+            fontWeight: 400,
+            fontSize: "0.75rem",
+            textTransform: "none",
+            "&:hover": { color: "text.secondary" },
+          }}
+        >
+          Trash
+          {trashCount > 0 && (
+            <Chip
+              label={trashCount}
+              size="small"
+              sx={{ ml: 0.75, height: 16, fontSize: "0.6rem", "& .MuiChip-label": { px: 0.75 } }}
+            />
+          )}
+        </Button>
+      </Box>
+
+      <TrashDialog
+        open={trashOpen}
+        onClose={() => {
+          setTrashOpen(false);
+          refreshTrashCount();
+        }}
+      />
     </Box>
   );
 }

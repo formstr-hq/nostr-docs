@@ -11,6 +11,7 @@ export interface LocalStoredEvent {
   editKey?: string; // For signing future updates
   pendingBroadcast: boolean; // true = not yet confirmed published to relays
   savedAt: number; // Unix ms timestamp
+  trashedAt?: number; // Unix ms — set when moved to trash, absent when active
 }
 
 function openDB(): Promise<IDBDatabase> {
@@ -52,14 +53,28 @@ export async function storeLocalEvent(entry: LocalStoredEvent): Promise<void> {
   });
 }
 
-/** Load every stored event. Called on app start for offline-first hydration. */
+/** Load all active (non-trashed) events. Called on app start for offline-first hydration. */
 export async function loadAllLocalEvents(): Promise<LocalStoredEvent[]> {
   const db = await openDB();
   return new Promise((resolve, reject) => {
     const tx = db.transaction(STORE_NAME, "readonly");
     const store = tx.objectStore(STORE_NAME);
     const req = store.getAll();
-    req.onsuccess = () => resolve(req.result as LocalStoredEvent[]);
+    req.onsuccess = () =>
+      resolve((req.result as LocalStoredEvent[]).filter((e) => !e.trashedAt));
+    req.onerror = () => reject(req.error);
+  });
+}
+
+/** Load all trashed events for the Trash view. */
+export async function loadTrashedEvents(): Promise<LocalStoredEvent[]> {
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(STORE_NAME, "readonly");
+    const store = tx.objectStore(STORE_NAME);
+    const req = store.getAll();
+    req.onsuccess = () =>
+      resolve((req.result as LocalStoredEvent[]).filter((e) => !!e.trashedAt));
     req.onerror = () => reject(req.error);
   });
 }
@@ -86,7 +101,45 @@ export async function markBroadcast(address: string): Promise<void> {
   });
 }
 
-/** Remove a stored event (call this when the user deletes a document). */
+/** Move a document to trash (sets trashedAt). The NIP-09 relay deletion is handled separately. */
+export async function trashLocalEvent(address: string): Promise<void> {
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(STORE_NAME, "readwrite");
+    const store = tx.objectStore(STORE_NAME);
+    const getReq = store.get(address);
+    getReq.onsuccess = () => {
+      const entry = getReq.result as LocalStoredEvent | undefined;
+      if (!entry) { resolve(); return; }
+      entry.trashedAt = Date.now();
+      const putReq = store.put(entry);
+      putReq.onsuccess = () => resolve();
+      putReq.onerror = () => reject(putReq.error);
+    };
+    getReq.onerror = () => reject(getReq.error);
+  });
+}
+
+/** Restore a trashed document by clearing trashedAt. */
+export async function restoreLocalEvent(address: string): Promise<void> {
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(STORE_NAME, "readwrite");
+    const store = tx.objectStore(STORE_NAME);
+    const getReq = store.get(address);
+    getReq.onsuccess = () => {
+      const entry = getReq.result as LocalStoredEvent | undefined;
+      if (!entry) { resolve(); return; }
+      delete entry.trashedAt;
+      const putReq = store.put(entry);
+      putReq.onsuccess = () => resolve();
+      putReq.onerror = () => reject(putReq.error);
+    };
+    getReq.onerror = () => reject(getReq.error);
+  });
+}
+
+/** Permanently remove a stored event from IndexedDB. */
 export async function removeLocalEvent(address: string): Promise<void> {
   const db = await openDB();
   return new Promise((resolve, reject) => {
