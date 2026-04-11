@@ -19,6 +19,7 @@ import EditNoteIcon from "@mui/icons-material/EditNote";
 import MoreVertIcon from "@mui/icons-material/MoreVert";
 import DeleteIcon from "@mui/icons-material/Delete";
 import ShareIcon from "@mui/icons-material/Share";
+import ChatBubbleOutlineIcon from "@mui/icons-material/ChatBubbleOutline";
 import FullscreenIcon from "@mui/icons-material/Fullscreen";
 import FullscreenExitIcon from "@mui/icons-material/FullscreenExit";
 import FormatBoldIcon from "@mui/icons-material/FormatBold";
@@ -59,6 +60,8 @@ type Props = {
   isViewOnly: boolean;
   onAttachFile?: (files: FileList) => void;
   uploading?: boolean;
+  showComments?: boolean;
+  onToggleComments?: () => void;
 };
 
 export function EditorToolbar({
@@ -76,6 +79,8 @@ export function EditorToolbar({
   isViewOnly,
   onAttachFile,
   uploading,
+  showComments,
+  onToggleComments,
 }: Props) {
   const { user, loginModal } = useUser();
   const [menuAnchor, setMenuAnchor] = useState<null | HTMLElement>(null);
@@ -161,6 +166,18 @@ export function EditorToolbar({
               Login to Save
             </Button>
           ))}
+
+          {onToggleComments && (
+            <Tooltip title={showComments ? "Hide comments" : "Show comments"}>
+              <IconButton
+                size="small"
+                onClick={onToggleComments}
+                color={showComments ? "secondary" : "default"}
+              >
+                <ChatBubbleOutlineIcon fontSize="small" />
+              </IconButton>
+            </Tooltip>
+          )}
 
           <Tooltip title={focusMode ? "Exit focus mode" : "Focus mode"}>
             <IconButton size="small" onClick={onToggleFocusMode}>
