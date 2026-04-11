@@ -7,6 +7,8 @@ import type { Editor } from "@tiptap/react";
 import EditIcon from "@mui/icons-material/Edit";
 import { EncryptedFilePreview } from "./EncryptedFilePreview";
 import type { EncryptedFileAttrs } from "./EncryptedFilePreview";
+import { CommentComposer } from "../comments/CommentComposer";
+import { CommentSidebar } from "../comments/CommentSidebar";
 
 type Props = {
   value: string;
@@ -16,6 +18,10 @@ type Props = {
   onToggleMode: () => void;
   isMobile: boolean;
   canEdit: boolean;
+  commentsEnabled: boolean;
+  showComments: boolean;
+  onCloseComments: () => void;
+  docEventId: string;
 };
 
 const markdownSxBase = {
@@ -77,6 +83,10 @@ export function DocEditorSurface({
   onToggleMode,
   isMobile,
   canEdit,
+  commentsEnabled,
+  showComments,
+  onCloseComments,
+  docEventId,
 }: Props) {
   const theme = useTheme();
 
@@ -91,38 +101,41 @@ export function DocEditorSurface({
   /* ── Preview mode ─────────────────────────────────────── */
   if (mode === "preview") {
     return (
-      <Box
-        sx={{
-          flex: 1,
-          overflowY: "auto",
-          p: 3,
-          ...markdownSxBase,
-          ...linkSx,
-          color: theme.palette.text.primary,
-        }}
-      >
-        {/* Sticky edit button — hidden for view-only shared links */}
-        {canEdit && (
-          <Fab
-            size="small"
-            color="secondary"
-            onClick={onToggleMode}
-            title="Edit document"
-            sx={{ position: "sticky", top: 0, float: "right", mb: 1, ml: 1 }}
-          >
-            <EditIcon fontSize="small" />
-          </Fab>
-        )}
+      <Box sx={{ display: "flex", flex: 1, overflow: "hidden" }}>
+        <Box
+          sx={{
+            flex: 1,
+            overflowY: "auto",
+            p: 3,
+            ...markdownSxBase,
+            ...linkSx,
+            color: theme.palette.text.primary,
+          }}
+        >
+          {/* Sticky edit button — hidden for view-only shared links */}
+          {canEdit && (
+            <Fab
+              size="small"
+              color="secondary"
+              onClick={onToggleMode}
+              title="Edit document"
+              sx={{ position: "sticky", top: 0, float: "right", mb: 1, ml: 1 }}
+            >
+              <EditIcon fontSize="small" />
+            </Fab>
+          )}
 
-        {value.trim() ? (
-          <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeRaw]} components={markdownComponents}>{value}</ReactMarkdown>
-        ) : (
-          <Typography color="text.secondary">
-            Nothing to preview yet —{" "}
-            {isMobile ? "tap the edit button" : "click the edit button"} to
-            start writing.
-          </Typography>
-        )}
+          {value.trim() ? (
+            <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeRaw]} components={markdownComponents}>{value}</ReactMarkdown>
+          ) : (
+            <Typography color="text.secondary">
+              Nothing to preview yet —{" "}
+              {isMobile ? "tap the edit button" : "click the edit button"} to
+              start writing.
+            </Typography>
+          )}
+        </Box>
+        {showComments && <CommentSidebar onClose={onCloseComments} />}
       </Box>
     );
   }
@@ -181,22 +194,24 @@ export function DocEditorSurface({
             </Typography>
           )}
         </Box>
+        {showComments && <CommentSidebar onClose={onCloseComments} />}
       </Box>
     );
   }
 
   /* ── Edit mode — TipTap WYSIWYG ───────────────────────── */
   return (
-    <Box
-      sx={{
-        flex: 1,
-        overflowY: "auto",
-        p: 3,
-        cursor: "text",
-      }}
-      onClick={() => editor?.commands.focus()}
-    >
-      <EditorContent editor={editor} />
+    <Box sx={{ display: "flex", flex: 1, overflow: "hidden" }}>
+      <Box
+        sx={{ flex: 1, overflowY: "auto", p: 3, cursor: "text" }}
+        onClick={() => editor?.commands.focus()}
+      >
+        <EditorContent editor={editor} />
+        {commentsEnabled && (
+          <CommentComposer editor={editor} docEventId={docEventId} />
+        )}
+      </Box>
+      {showComments && <CommentSidebar onClose={onCloseComments} />}
     </Box>
   );
 }
