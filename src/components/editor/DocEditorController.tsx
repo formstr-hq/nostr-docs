@@ -30,6 +30,7 @@ import { EncryptedFileNode } from "./extensions/EncryptedFileNode";
 import { useDocumentContext } from "../../contexts/DocumentContext";
 import { useUser } from "../../contexts/UserContext";
 import { useSharedPages } from "../../contexts/SharedDocsContext";
+import { CommentProvider } from "../../contexts/CommentContext";
 import { signerManager } from "../../signer";
 import { useRelays } from "../../contexts/RelayContext";
 import { publishEvent } from "../../nostr/publish";
@@ -161,6 +162,7 @@ export function DocumentEditorController({
   const history = selectedDocumentId ? documents.get(selectedDocumentId) : null;
   const isOwner = !!user?.pubkey && !!history?.versions[0]?.event.pubkey && user.pubkey === history.versions[0].event.pubkey;
   const isViewOnly = !!viewKey && !editKey && !isOwner;
+  const commentsEnabled = !!viewKey && !!selectedDocumentId;
 
   const versions =
     history?.versions.map((v) => ({
@@ -205,6 +207,7 @@ export function DocumentEditorController({
   const [localOnlyConfirmOpen, setLocalOnlyConfirmOpen] = useState(false);
   // Capture isLocalOnly at delete-click time so the modal always uses the right value
   const pendingDeleteLocalOnlyRef = useRef<boolean>(false);
+  const [showComments, setShowComments] = useState(false);
 
   const { servers: blossomServers } = useBlossomServers();
 
@@ -693,7 +696,7 @@ export function DocumentEditorController({
 
   /* ── Render ────────────────────────────────────────────── */
 
-  return (
+  const editorJsx = (
     <Box
       sx={{
         height: "100%",
@@ -741,6 +744,8 @@ export function DocumentEditorController({
           onExportPlainText={handleExportPlainText}
           onExportPdf={handleExportPdf}
           onExportDoc={handleExportDoc}
+          showComments={commentsEnabled ? showComments : undefined}
+          onToggleComments={commentsEnabled ? () => setShowComments((s) => !s) : undefined}
         />
       )}
 
@@ -769,6 +774,10 @@ export function DocumentEditorController({
           onToggleMode={() => setMode("edit")}
           isMobile={isMobile}
           canEdit={!isViewOnly}
+          commentsEnabled={commentsEnabled}
+          showComments={commentsEnabled && showComments}
+          onCloseComments={() => setShowComments(false)}
+          docEventId={activeVersion?.event.id ?? ""}
         />
       </Paper>
 
@@ -1005,4 +1014,14 @@ export function DocumentEditorController({
       />
     </Box>
   );
+
+  if (commentsEnabled) {
+    return (
+      <CommentProvider viewKey={viewKey!} docAddress={selectedDocumentId!}>
+        {editorJsx}
+      </CommentProvider>
+    );
+  }
+
+  return editorJsx;
 }
