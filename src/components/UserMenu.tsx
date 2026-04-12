@@ -18,6 +18,7 @@ import PaletteIcon from "@mui/icons-material/Palette";
 import LoginIcon from "@mui/icons-material/Login";
 import LogoutIcon from "@mui/icons-material/Logout";
 import CloudUploadIcon from "@mui/icons-material/CloudUpload";
+import BugReportIcon from "@mui/icons-material/BugReport";
 import { useUser } from "../contexts/UserContext";
 import LoginModal from "./LoginModal";
 import BlossomServersModal from "./BlossomServersModal";
@@ -87,7 +88,7 @@ export default function UserMenu({ themeId, onSelectTheme }: Props) {
           <ListItemText
             primary="Theme"
             secondary={themes[themeId].label}
-            secondaryTypographyProps={{ variant: "caption" }}
+            slotProps={{ secondary: { variant: "caption" } }}
           />
           {themeOpen ? (
             <ExpandLessIcon fontSize="small" sx={{ ml: 1, opacity: 0.6 }} />
@@ -141,7 +142,28 @@ export default function UserMenu({ themeId, onSelectTheme }: Props) {
           <ListItemIcon>
             <CloudUploadIcon fontSize="small" />
           </ListItemIcon>
-          <ListItemText primary="Blossom Servers" secondary="File upload servers" secondaryTypographyProps={{ variant: "caption" }} />
+          <ListItemText
+            primary="Blossom Servers"
+            secondary="File upload servers"
+            slotProps={{ secondary: { variant: "caption" } }}
+          />
+        </MenuItem>
+
+        <MenuItem
+          component="a"
+          href="https://formstr.app/i/formstr-bugs"
+          target="_blank"
+          rel="noopener noreferrer"
+          onClick={handleClose}
+        >
+          <ListItemIcon>
+            <BugReportIcon fontSize="small" />
+          </ListItemIcon>
+          <ListItemText
+            primary="Report a Bug"
+            secondary="Open Formstr bug report form"
+            slotProps={{ secondary: { variant: "caption" } }}
+          />
         </MenuItem>
 
         <Divider />
