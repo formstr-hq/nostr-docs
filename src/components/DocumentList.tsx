@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useTheme } from "@mui/material/styles";
 import { alpha } from "@mui/material/styles";
 import { fetchAllDocuments } from "../nostr/fetchFile.ts";
@@ -98,6 +98,7 @@ export default function DocumentList({
   const {
     setSelectedDocumentId,
     visibleDocuments,
+    visitedDocuments,
     addDocument,
     addDeletionRequest,
     selectedDocumentId,
@@ -107,7 +108,7 @@ export default function DocumentList({
   const { sharedDocuments, getKeys } = useSharedPages();
   const { docTags, allTags, selectedTag, setSelectedTag } = useDocMetadata();
   const [loading, setLoading] = useState(true);
-  const [tab, setTab] = useState<"personal" | "shared">("personal");
+  const [tab, setTab] = useState<"personal" | "shared" | "visited">("personal");
   const [trashOpen, setTrashOpen] = useState(false);
   const [trashCount, setTrashCount] = useState(0);
   const { user } = useUser();
@@ -222,7 +223,25 @@ export default function DocumentList({
     navigate("/");
   };
 
-  const allDocs = tab === "personal" ? visibleDocuments : sharedDocuments;
+  // Visited docs that aren't already in the explicit shared list
+  const visitedOnlyDocs = useMemo(
+    () => new Map([...visitedDocuments.entries()].filter(([addr]) => !sharedDocuments.has(addr))),
+    [visitedDocuments, sharedDocuments],
+  );
+
+  const allDocs =
+    tab === "personal" ? visibleDocuments
+    : tab === "shared"  ? sharedDocuments
+    :                     visitedOnlyDocs;
+
+  // Auto-switch to the tab that owns the currently selected doc
+  useEffect(() => {
+    if (!selectedDocumentId) return;
+    if (visibleDocuments.has(selectedDocumentId)) setTab("personal");
+    else if (sharedDocuments.has(selectedDocumentId)) setTab("shared");
+    else if (visitedOnlyDocs.has(selectedDocumentId)) setTab("visited");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedDocumentId]);
 
   const docsToShow = selectedTag
     ? new Map(
@@ -234,6 +253,7 @@ export default function DocumentList({
 
   const personalCount = visibleDocuments.size;
   const sharedCount = sharedDocuments.size;
+  const visitedCount = visitedOnlyDocs.size;
 
   return (
     <Box
@@ -292,6 +312,22 @@ export default function DocumentList({
               {sharedCount > 0 && (
                 <Chip
                   label={sharedCount}
+                  size="small"
+                  color="secondary"
+                  sx={{ height: 18, fontSize: "0.65rem" }}
+                />
+              )}
+            </Box>
+          }
+        />
+        <Tab
+          value="visited"
+          label={
+            <Box sx={{ display: "flex", alignItems: "center", gap: 0.75 }}>
+              Visited
+              {visitedCount > 0 && (
+                <Chip
+                  label={visitedCount}
                   size="small"
                   color="secondary"
                   sx={{ height: 18, fontSize: "0.65rem" }}
@@ -362,6 +398,8 @@ export default function DocumentList({
             >
               {tab === "personal"
                 ? "No documents yet.\nCreate your first page!"
+                : tab === "visited"
+                ? "No visited pages yet.\nOpen a shared link to see it here."
                 : "No shared documents found."}
             </Typography>
             {tab === "personal" && (

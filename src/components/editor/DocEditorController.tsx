@@ -12,6 +12,8 @@ import {
 } from "@mui/material";
 import InsertDriveFileIcon from "@mui/icons-material/InsertDriveFile";
 import LabelOutlinedIcon from "@mui/icons-material/LabelOutlined";
+import VisibilityOutlinedIcon from "@mui/icons-material/VisibilityOutlined";
+import EditOutlinedIcon from "@mui/icons-material/EditOutlined";
 import { useDocMetadata } from "../../contexts/DocMetadataContext";
 import { useNavigate, useBlocker } from "react-router-dom";
 import { finalizeEvent, getPublicKey, nip19, type Event } from "nostr-tools";
@@ -680,6 +682,26 @@ export function DocumentEditorController({
           flexShrink: 0,
         }}
       >
+        {!isDraft && !isOwner && !!user && (
+          <Box
+            sx={{
+              display: "flex",
+              alignItems: "center",
+              gap: 0.5,
+              mr: "auto",
+              color: "info.main",
+            }}
+          >
+            {editKey ? (
+              <EditOutlinedIcon sx={{ fontSize: 12 }} />
+            ) : (
+              <VisibilityOutlinedIcon sx={{ fontSize: 12 }} />
+            )}
+            <Typography variant="caption" sx={{ fontWeight: 600 }}>
+              Shared page · {editKey ? "edit access" : "view only"}
+            </Typography>
+          </Box>
+        )}
         {hasUnsavedChanges ? (
           <Typography variant="caption" color="error.main" sx={{ fontWeight: 600 }}>
             ● Unsaved changes

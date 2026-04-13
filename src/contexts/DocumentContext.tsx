@@ -31,7 +31,10 @@ interface DocumentContextValue {
 
   deletedEventIds: Set<string>;
 
+  /** Docs authored by the current user (not deleted). */
   visibleDocuments: Map<string, DocumentHistory>;
+  /** Docs opened by the user but authored by someone else (not deleted). */
+  visitedDocuments: Map<string, DocumentHistory>;
 }
 
 const DocumentContext = createContext<DocumentContextValue | undefined>(
@@ -112,7 +115,11 @@ export const DocumentProvider: React.FC<{ children: React.ReactNode }> = ({
   const visibleDocuments = useMemo(() => {
     return new Map(
       [...documents.entries()]
-        .filter(([address]) => !deletedEventIds.has(address))
+        .filter(([address, history]) => {
+          if (deletedEventIds.has(address)) return false;
+          const pubkey = history.versions[0]?.event.pubkey;
+          return pubkey === user?.pubkey;
+        })
         .map(([address, history]): [string, DocumentHistory] => [
           address,
           {
@@ -123,7 +130,27 @@ export const DocumentProvider: React.FC<{ children: React.ReactNode }> = ({
         ])
         .filter(([, h]) => h.versions.length > 0),
     );
-  }, [documents, deletedEventIds]);
+  }, [documents, deletedEventIds, user?.pubkey]);
+
+  const visitedDocuments = useMemo(() => {
+    return new Map(
+      [...documents.entries()]
+        .filter(([address, history]) => {
+          if (deletedEventIds.has(address)) return false;
+          const pubkey = history.versions[0]?.event.pubkey;
+          return pubkey !== user?.pubkey;
+        })
+        .map(([address, history]): [string, DocumentHistory] => [
+          address,
+          {
+            versions: history.versions.filter(
+              (v) => !deletedEventIds.has(v.event.id),
+            ),
+          },
+        ])
+        .filter(([, h]) => h.versions.length > 0),
+    );
+  }, [documents, deletedEventIds, user?.pubkey]);
 
   const addDocument = async (
     document: Event,
@@ -174,6 +201,7 @@ export const DocumentProvider: React.FC<{ children: React.ReactNode }> = ({
         addDeletionRequest,
         clearDeletionRecord,
         visibleDocuments,
+        visitedDocuments,
       }}
     >
       {children}
