@@ -23,7 +23,7 @@ import { signerManager } from "../signer";
 import { generateSecretKey } from "nostr-tools";
 import { isNativePlatform, isCapacitor } from "../signer/secureStorage";
 import type { AppInfo as SignerAppInfo } from "nostr-signer-capacitor-plugin";
-import FormstrLogo from "../assets/formstr-pages-logo.png";
+import FormstrLogo from "../assets/formstr.svg";
 
 export default function LoginModal({
   open,
@@ -137,7 +137,7 @@ export default function LoginModal({
           <img
             src={FormstrLogo}
             alt="Pages by Form*"
-            style={{ width: 56, height: 56, borderRadius: 14 }}
+            style={{ width: 80, height: 80, borderRadius: 14 }}
           />
           <Box textAlign="center">
             <Typography variant="h6" fontWeight={700}>

@@ -27,7 +27,7 @@ import { DocumentProvider } from "./contexts/DocumentContext";
 import { UserProvider } from "./contexts/UserContext";
 import { themes } from "./theme";
 import type { ThemeId } from "./theme";
-import FormstrLogo from "./assets/formstr-pages-logo.png";
+import FormstrLogo from "./assets/formstr.svg";
 import DocPage from "./components/DocPage";
 import { SharedPagesProvider } from "./contexts/SharedDocsContext";
 import { RelayProvider } from "./contexts/RelayContext";
