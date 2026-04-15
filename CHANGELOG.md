@@ -1,3 +1,7 @@
+# 0.9.1
+
+= Fix Sharing urls
+
 # 0.9.0
 
 - Add device only pages when you don't wish to sync with relays.
