@@ -9,12 +9,15 @@ import {
   Chip,
   InputBase,
   CircularProgress,
+  IconButton,
+  Tooltip,
 } from "@mui/material";
 import InsertDriveFileIcon from "@mui/icons-material/InsertDriveFile";
 import LabelOutlinedIcon from "@mui/icons-material/LabelOutlined";
 import VisibilityOutlinedIcon from "@mui/icons-material/VisibilityOutlined";
 import EditOutlinedIcon from "@mui/icons-material/EditOutlined";
 import SmartphoneIcon from "@mui/icons-material/Smartphone";
+import ChatBubbleOutlineIcon from "@mui/icons-material/ChatBubbleOutline";
 import { useDocMetadata } from "../../contexts/DocMetadataContext";
 import { useNavigate, useBlocker } from "react-router-dom";
 import { finalizeEvent, getPublicKey, getEventHash, nip19, type Event } from "nostr-tools";
@@ -747,6 +750,19 @@ export function DocumentEditorController({
           showComments={commentsEnabled ? showComments : undefined}
           onToggleComments={commentsEnabled ? () => setShowComments((s) => !s) : undefined}
         />
+      )}
+      {isViewOnly && commentsEnabled && (
+        <Box sx={{ display: "flex", justifyContent: "flex-end", p: 1 }}>
+          <Tooltip title={showComments ? "Hide comments" : "Show comments"}>
+            <IconButton
+              size="small"
+              onClick={() => setShowComments((s) => !s)}
+              color={showComments ? "secondary" : "default"}
+            >
+              <ChatBubbleOutlineIcon fontSize="small" />
+            </IconButton>
+          </Tooltip>
+        </Box>
       )}
 
       <Paper

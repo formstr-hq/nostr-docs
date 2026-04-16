@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import {
   Box,
   Paper,
@@ -13,10 +13,81 @@ import { useComments } from "../../contexts/CommentContext";
 
 type Props = {
   editor: Editor | null;
+  containerRef?: React.RefObject<HTMLElement | null>;
   docEventId: string;
 };
 
-export function CommentComposer({ editor, docEventId }: Props) {
+function extractContext(range: Range, count: number) {
+  let prefix = "";
+  let suffix = "";
+
+  // ── prefix: text before the selection start ──
+  const preRange = range.cloneRange();
+  preRange.collapse(true);
+  const startContainer = preRange.startContainer;
+  const startOffset = preRange.startOffset;
+
+  if (startContainer.nodeType === Node.TEXT_NODE) {
+    const textBefore = (startContainer.textContent ?? "").slice(0, startOffset);
+    prefix = textBefore.slice(-count);
+  }
+
+  if (prefix.length < count) {
+    const remaining = count - prefix.length;
+    // TreeWalker has no previousNode from the initial position, so collect
+    // preceding nodes into an array and walk it in reverse.
+    const nodesBeforeStart: Text[] = [];
+    const walker = document.createTreeWalker(
+      range.commonAncestorContainer.parentElement ?? document.body,
+      NodeFilter.SHOW_TEXT,
+    );
+    while (walker.nextNode()) {
+      if (walker.currentNode === startContainer) break;
+      nodesBeforeStart.push(walker.currentNode as Text);
+    }
+    const parts: string[] = [];
+    let collected = 0;
+    for (let i = nodesBeforeStart.length - 1; i >= 0 && collected < remaining; i--) {
+      const t = nodesBeforeStart[i].textContent ?? "";
+      parts.unshift(t);
+      collected += t.length;
+    }
+    prefix = (parts.join("") + prefix).slice(-count);
+  }
+
+  // ── suffix: text after the selection end ──
+  const postRange = range.cloneRange();
+  postRange.collapse(false);
+  const endContainer = postRange.endContainer;
+  const endOffset = postRange.endOffset;
+
+  if (endContainer.nodeType === Node.TEXT_NODE) {
+    const textAfter = (endContainer.textContent ?? "").slice(endOffset);
+    suffix = textAfter.slice(0, count);
+  }
+
+  if (suffix.length < count) {
+    const remaining = count - suffix.length;
+    const walker = document.createTreeWalker(
+      range.commonAncestorContainer.parentElement ?? document.body,
+      NodeFilter.SHOW_TEXT,
+    );
+    while (walker.nextNode()) {
+      if (walker.currentNode === endContainer) break;
+    }
+    let collected = 0;
+    while (walker.nextNode() && collected < remaining) {
+      const t = (walker.currentNode as Text).textContent ?? "";
+      suffix += t;
+      collected += t.length;
+    }
+    suffix = suffix.slice(0, count);
+  }
+
+  return { prefix, suffix };
+}
+
+export function CommentComposer({ editor, containerRef, docEventId }: Props) {
   const { addComment } = useComments();
 
   const [anchorRect, setAnchorRect] = useState<DOMRect | null>(null);
@@ -33,6 +104,7 @@ export function CommentComposer({ editor, docEventId }: Props) {
   const prefixRef = useRef("");
   const suffixRef = useRef("");
 
+  /* ── TipTap selection mode ───────────────────────────────── */
   useEffect(() => {
     if (!editor) return;
 
@@ -74,6 +146,50 @@ export function CommentComposer({ editor, docEventId }: Props) {
     editor.on("selectionUpdate", handleSelectionUpdate);
     return () => { editor.off("selectionUpdate", handleSelectionUpdate); };
   }, [editor]);
+
+  /* ── Native DOM selection mode (preview) ─────────────────── */
+  const handleNativeSelection = useCallback(() => {
+    if (composingRef.current) return;
+
+    const sel = window.getSelection();
+    if (!sel || sel.isCollapsed || sel.rangeCount === 0) {
+      setAnchorRect(null);
+      return;
+    }
+
+    const container = containerRef?.current;
+    if (!container) return;
+
+    // Only handle selections within our container
+    const range = sel.getRangeAt(0);
+    if (!container.contains(range.commonAncestorContainer)) {
+      setAnchorRect(null);
+      return;
+    }
+
+    const selectedText = sel.toString();
+    if (!selectedText.trim()) {
+      setAnchorRect(null);
+      return;
+    }
+
+    quoteRef.current = selectedText;
+    const ctx = extractContext(range, 32);
+    prefixRef.current = ctx.prefix;
+    suffixRef.current = ctx.suffix;
+
+    const rect = range.getBoundingClientRect();
+    if (rect.width === 0 && rect.height === 0) return;
+    setAnchorRect(rect);
+  }, [containerRef]);
+
+  useEffect(() => {
+    // Only activate native mode when there's no editor and a container is provided
+    if (editor || !containerRef?.current) return;
+
+    document.addEventListener("selectionchange", handleNativeSelection);
+    return () => document.removeEventListener("selectionchange", handleNativeSelection);
+  }, [editor, containerRef, handleNativeSelection]);
 
   const handleOpen = () => {
     composingRef.current = true;

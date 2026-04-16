@@ -9,10 +9,10 @@ import { KIND_COMMENT } from "./kinds";
 export type CommentType = "comment" | "suggestion";
 
 export interface CommentPayload {
-  content: string; // comment body (plain remark) or proposed replacement text (suggestion)
+  content: string;
   type: CommentType;
-  quote?: string; // TextQuoteSelector exact field — omit for doc-level comments
-  context?: { prefix: string; suffix: string }; // up to 32 chars before/after — omit for doc-level
+  quote?: string;
+  context?: { prefix: string; suffix: string };
 }
 
 export function viewKeyConversationKey(viewKey: string): Uint8Array {
@@ -71,10 +71,8 @@ export function fetchComments(
   docAddress: string,
   relays: string[],
   onEvent: (event: Event) => void,
-  onEose?: () => void,
 ): SubCloser {
   const seenIds = new Set<string>();
-  let eoseCount = 0;
 
   return pool.subscribeMany(
     relays,
@@ -84,12 +82,6 @@ export function fetchComments(
         if (!seenIds.has(event.id)) {
           seenIds.add(event.id);
           onEvent(event);
-        }
-      },
-      oneose() {
-        eoseCount++;
-        if (eoseCount >= relays.length) {
-          onEose?.();
         }
       },
     },

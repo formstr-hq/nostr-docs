@@ -177,7 +177,6 @@ export const CommentProvider: React.FC<{
       relays,
     );
 
-    // Build decryptedTags from payload directly — no need to re-decrypt
     const decryptedTags: string[][] = [
       ["content", payload.content],
       ["type", payload.type],
@@ -201,9 +200,18 @@ export const CommentProvider: React.FC<{
       savedAt: Date.now(),
     });
 
-    const result = decryptCommentEvent(event, viewKey);
-    if (!result) return;
-    setComments((prev) => insertSorted(prev, result.comment));
+    const comment: DecryptedComment = {
+      id: event.id,
+      pubkey: event.pubkey,
+      createdAt: event.created_at,
+      docEventId,
+      content: payload.content,
+      type: payload.type,
+      quote: payload.quote,
+      context: payload.context,
+      event,
+    };
+    setComments((prev) => insertSorted(prev, comment));
   };
 
   return (

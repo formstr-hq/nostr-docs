@@ -1,3 +1,4 @@
+import { useRef } from "react";
 import { Box, Typography, useTheme, Fab } from "@mui/material";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -89,6 +90,7 @@ export function DocEditorSurface({
   docEventId,
 }: Props) {
   const theme = useTheme();
+  const previewRef = useRef<HTMLElement>(null);
 
   const linkSx = {
     "& a": {
@@ -103,6 +105,7 @@ export function DocEditorSurface({
     return (
       <Box sx={{ display: "flex", flex: 1, overflow: "hidden" }}>
         <Box
+          ref={previewRef}
           sx={{
             flex: 1,
             overflowY: "auto",
@@ -135,6 +138,9 @@ export function DocEditorSurface({
             </Typography>
           )}
         </Box>
+        {commentsEnabled && (
+          <CommentComposer editor={null} containerRef={previewRef} docEventId={docEventId} />
+        )}
         {showComments && <CommentSidebar onClose={onCloseComments} />}
       </Box>
     );
