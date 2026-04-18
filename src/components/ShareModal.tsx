@@ -18,6 +18,8 @@ import {
   MenuItem,
 } from "@mui/material";
 import ContentCopyIcon from "@mui/icons-material/ContentCopy";
+import { useACL } from "../hooks/useACL";
+import CloseIcon from "@mui/icons-material/Close";
 import { useState } from "react";
 import { shareDocumentToNpub } from "../nostr/shareDocument";
 import { nip19 } from "nostr-tools";
@@ -28,10 +30,20 @@ type Props = {
   onPublicPost?: () => void;
   onPrivateLink?: (canEdit: boolean) => Promise<string | void>;
   docTitle?: string;
+  documentAddress?: string;
+  onCloneAndRevoke?: (revokedNpub: string, remainingAcl: Array<{npub: string, role: "view"|"edit"}>) => Promise<void>;
 };
 
-export default function ShareModal({ open, onClose, onPrivateLink, docTitle = "Untitled" }: Props) {
+export default function ShareModal({ 
+  open, 
+  onClose, 
+  onPrivateLink, 
+  docTitle = "Untitled",
+  documentAddress,
+  onCloneAndRevoke
+}: Props) {
   const [canEdit, setCanEdit] = useState(false);
+  const { acl, grantAccess } = useACL(documentAddress);
   const [privateLink, setPrivateLink] = useState<string>("");
   const [loading, setLoading] = useState(false);
   const [inviteRole, setInviteRole] = useState<"view" | "edit">("view");
@@ -93,6 +105,9 @@ export default function ShareModal({ open, onClose, onPrivateLink, docTitle = "U
       // Send the DM
       await shareDocumentToNpub(targetPubkey, url, docTitle);
       
+      // Log the grant explicitly into our zero-server ACL engine
+      grantAccess(targetPubkey, inviteRole);
+      
       setToastMessage("Invite sent successfully via Nostr DM!");
       setToastOpen(true);
       setInviteNpub("");
@@ -122,6 +137,59 @@ export default function ShareModal({ open, onClose, onPrivateLink, docTitle = "U
         <DialogContent
           sx={{ display: "flex", flexDirection: "column", gap: 2, pt: 2 }}
         >
+          {/* PEOPLE WITH ACCESS */}
+          {(acl.length > 0) && (
+            <Paper variant="outlined" sx={{ p: 2, bgcolor: "background.paper" }}>
+              <Typography variant="h6" fontWeight={800} sx={{ mb: 2 }}>
+                People with access
+              </Typography>
+              <Box sx={{ display: "flex", flexDirection: "column", gap: 2 }}>
+                {acl.map((record) => {
+                  let prettyTarget = record.npub;
+                  try {
+                    prettyTarget = nip19.npubEncode(record.npub);
+                  } catch {}
+                  
+                  return (
+                    <Box key={record.npub} sx={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                      <Box sx={{ display: "flex", flexDirection: "column" }}>
+                        <Typography variant="body2" sx={{ fontFamily: "monospace" }}>
+                          {prettyTarget.slice(0, 12)}...{prettyTarget.slice(-6)}
+                        </Typography>
+                        <Typography variant="caption" color="text.secondary">
+                          {record.role === "edit" ? "Editor" : "Viewer"}
+                        </Typography>
+                      </Box>
+                      {onCloneAndRevoke && (
+                        <IconButton 
+                          size="small" 
+                          color="error" 
+                          onClick={async () => {
+                            if (window.confirm("REVOKING ACCESS:\n\nBecause Nostr handles encryption natively, revoking access physically creates a clone of the document under a new cryptographic key, deletes the old document, and resends the new link to the remaining members.\n\nAre you sure you want to proceed?")) {
+                              setLoading(true);
+                              try {
+                                const remaining = acl.filter(r => r.npub !== record.npub);
+                                await onCloneAndRevoke(record.npub, remaining);
+                              } catch (err) {
+                                console.error(err);
+                                alert("Failed to revoke: " + err);
+                              } finally {
+                                setLoading(false);
+                              }
+                            }
+                          }}
+                          disabled={loading}
+                        >
+                          <CloseIcon fontSize="small"/>
+                        </IconButton>
+                      )}
+                    </Box>
+                  );
+                })}
+              </Box>
+            </Paper>
+          )}
+
           {/* PRIVATE LINK */}
           <Paper variant="outlined" sx={{ p: 2 }}>
             <Typography variant="h6" fontWeight={800}>

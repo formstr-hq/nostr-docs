@@ -947,6 +947,63 @@ export function DocumentEditorController({
         open={shareOpen}
         onClose={() => setShareOpen(false)}
         docTitle={getDocTitle()}
+        documentAddress={selectedDocumentId || undefined}
+        onCloneAndRevoke={async (revokedNpub, remainingAcl) => {
+          if (!selectedDocumentId) return;
+
+          // 1. Generate NEW keys by explicitly omitting viewKey and editKey
+          const result = await handleGeneratePrivateLink(
+            !!editKey, // keep edit capabilities if the current user had them
+            selectedDocumentId,
+            md,
+            relays,
+            undefined, // Force rotation of viewKey
+            undefined, // Force rotation of editKey
+            makeTag(6), // Force rotation of Address / dTag!
+          );
+
+          // 2. Migrate the ACL
+          const { migrateACL, removeACLRecord } = await import("../../lib/ACLStore");
+          migrateACL(selectedDocumentId, result.address);
+          removeACLRecord(result.address, revokedNpub); // actually rip out the revoked user
+
+          // 3. Burn the old one
+          try {
+            await deleteEvent({
+              address: selectedDocumentId,
+              relays,
+              reason: "ACL Revocation Key Rotation",
+              eventIds: history?.versions.map((v) => v.event.id) ?? [],
+            });
+            
+            // Explicitly wipe the old document from local IndexedDB & React state!
+            // If we don't do this, clicking the old URL will load the cached version.
+            const { removeLocalEvent } = await import("../../lib/localStore");
+            removeDocument(selectedDocumentId);
+            removeLocalEvent(selectedDocumentId).catch(() => {});
+            
+            // eslint-disable-next-line @typescript-eslint/no-unused-vars
+          } catch(e) {}
+
+          // 4. Re-DM the remaining members with the new url
+          const { shareDocumentToNpub } = await import("../../nostr/shareDocument");
+          for (const r of remainingAcl) {
+            try {
+              await shareDocumentToNpub(r.npub, result.url, getDocTitle());
+            // eslint-disable-next-line @typescript-eslint/no-unused-vars
+            } catch(e) {}
+          }
+
+          // 5. Instantly jump the creator to the new secured document!
+          setShareOpen(false);
+          const sharedDocTag = [
+            result.address,
+            result.viewKey,
+            ...(result.editKey ? [result.editKey] : []),
+          ];
+          await addSharedDoc(sharedDocTag);
+          navigate(result.url, { replace: true });
+        }}
         onPublicPost={() => handleSharePublic()}
         onPrivateLink={async (canEdit) => {
           const result = await handleGeneratePrivateLink(

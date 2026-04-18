@@ -5,7 +5,6 @@ import {
   finalizeEvent,
 } from "nostr-tools";
 import type { EventTemplate, UnsignedEvent } from "nostr-tools";
-import { hexToBytes, bytesToHex } from "nostr-tools/utils";
 import { publishEvent } from "./publish";
 import { DEFAULT_RELAYS } from "./relayPool";
 import { signerManager } from "../signer";
@@ -55,7 +54,6 @@ export async function shareDocumentToNpub(recipientPubkey: string, url: string, 
 
     // 3. Wrap in Ephemeral Gift Wrap (Kind 1059)
     const ephemeralKey = generateSecretKey();
-    const ephemeralPubkey = getPublicKey(ephemeralKey);
 
     const sealJson = JSON.stringify(seal);
     const conversationKey = nip44.getConversationKey(ephemeralKey, recipientPubkey);
@@ -66,7 +64,6 @@ export async function shareDocumentToNpub(recipientPubkey: string, url: string, 
         created_at: randomTimestamp(),
         tags: [["p", recipientPubkey]],
         content: encryptedSeal,
-        pubkey: ephemeralPubkey,
     }, ephemeralKey);
 
   } else if (signer.encrypt) {
