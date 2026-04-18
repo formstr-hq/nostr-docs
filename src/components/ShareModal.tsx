@@ -14,22 +14,31 @@ import {
   Alert,
   InputAdornment,
   IconButton,
+  Select,
+  MenuItem,
 } from "@mui/material";
 import ContentCopyIcon from "@mui/icons-material/ContentCopy";
 import { useState } from "react";
+import { shareDocumentToNpub } from "../nostr/shareDocument";
+import { nip19 } from "nostr-tools";
 
 type Props = {
   open: boolean;
   onClose: () => void;
   onPublicPost?: () => void;
   onPrivateLink?: (canEdit: boolean) => Promise<string | void>;
+  docTitle?: string;
 };
 
-export default function ShareModal({ open, onClose, onPrivateLink }: Props) {
+export default function ShareModal({ open, onClose, onPrivateLink, docTitle = "Untitled" }: Props) {
   const [canEdit, setCanEdit] = useState(false);
   const [privateLink, setPrivateLink] = useState<string>("");
   const [loading, setLoading] = useState(false);
+  const [inviteRole, setInviteRole] = useState<"view" | "edit">("view");
+  const [inviteLoading, setInviteLoading] = useState(false);
+  const [inviteNpub, setInviteNpub] = useState("");
   const [toastOpen, setToastOpen] = useState(false);
+  const [toastMessage, setToastMessage] = useState("");
   const [error, setError] = useState<string>("");
 
   const handlePrivateLink = async () => {
@@ -54,13 +63,53 @@ export default function ShareModal({ open, onClose, onPrivateLink }: Props) {
   const handleCopy = () => {
     if (!privateLink) return;
     navigator.clipboard.writeText(privateLink);
+    setToastMessage("Link copied to clipboard!");
     setToastOpen(true);
+  };
+
+  const handleInvite = async () => {
+    if (!inviteNpub.trim() || !onPrivateLink) return;
+    setInviteLoading(true);
+    setError("");
+    
+    try {
+      // Decode npub to hex
+      let targetPubkey = inviteNpub.trim();
+      if (targetPubkey.startsWith("npub")) {
+        const decoded = nip19.decode(targetPubkey);
+        if (decoded.type !== "npub") throw new Error("Invalid npub");
+        targetPubkey = decoded.data as string;
+      } else if (targetPubkey.length !== 64) {
+        throw new Error("Invalid npub or public key");
+      }
+
+      // Always securely generate the specific permission key before sending.
+      // We don't reuse `privateLink` casually here because the user might have
+      // clicked 'Viewer' up there, but 'Editor' down here!
+      const newUrl = await onPrivateLink(inviteRole === "edit");
+      if (typeof newUrl !== "string") throw new Error("Failed to generate link");
+      const url = newUrl;
+
+      // Send the DM
+      await shareDocumentToNpub(targetPubkey, url, docTitle);
+      
+      setToastMessage("Invite sent successfully via Nostr DM!");
+      setToastOpen(true);
+      setInviteNpub("");
+    } catch (err) {
+      console.error("Invite failed:", err);
+      setError(err instanceof Error ? err.message : "Failed to send invite");
+    } finally {
+      setInviteLoading(false);
+    }
   };
 
   const handleClose = () => {
     setPrivateLink("");
+    setInviteNpub("");
     setCanEdit(false);
     setLoading(false);
+    setInviteLoading(false);
     setError("");
     onClose();
   };
@@ -137,6 +186,43 @@ export default function ShareModal({ open, onClose, onPrivateLink }: Props) {
               />
             )}
           </Paper>
+
+          {/* INVITE BY NPUB */}
+          <Paper variant="outlined" sx={{ p: 2, mt: 1 }}>
+            <Typography variant="h6" fontWeight={800}>
+              Nostr Connect
+            </Typography>
+            <Typography color="text.secondary" sx={{ mb: 2 }}>
+              Send an invite directly to a friend's Nostr inbox (NIP-17 DM).
+            </Typography>
+            <Box sx={{ display: "flex", gap: 1 }}>
+              <TextField 
+                fullWidth 
+                size="small" 
+                placeholder="npub1..." 
+                value={inviteNpub} 
+                onChange={(e) => setInviteNpub(e.target.value)}
+              />
+              <Select
+                size="small"
+                value={inviteRole}
+                onChange={(e) => setInviteRole(e.target.value as "view" | "edit")}
+                sx={{ minWidth: "110px" }}
+              >
+                <MenuItem value="view">Viewer</MenuItem>
+                <MenuItem value="edit">Editor</MenuItem>
+              </Select>
+              <Button 
+                variant="contained" 
+                color="primary"
+                onClick={handleInvite}
+                disabled={inviteLoading || !inviteNpub.trim()}
+                sx={{ minWidth: "120px" }}
+              >
+                {inviteLoading ? <CircularProgress size={20} color="inherit" /> : "Send Invite"}
+              </Button>
+            </Box>
+          </Paper>
         </DialogContent>
 
         <DialogActions>
@@ -146,7 +232,6 @@ export default function ShareModal({ open, onClose, onPrivateLink }: Props) {
         </DialogActions>
       </Dialog>
 
-      {/* Snackbar for Copy Confirmation */}
       <Snackbar
         open={toastOpen}
         autoHideDuration={3000}
@@ -154,7 +239,7 @@ export default function ShareModal({ open, onClose, onPrivateLink }: Props) {
         anchorOrigin={{ vertical: "bottom", horizontal: "center" }}
       >
         <Alert severity="success" sx={{ width: "100%" }}>
-          Link copied to clipboard!
+          {toastMessage}
         </Alert>
       </Snackbar>
     </>

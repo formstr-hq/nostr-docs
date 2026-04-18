@@ -651,8 +651,17 @@ export function DocumentEditorController({
     setConfirmOpen(true);
   };
 
-  /* ── Render ────────────────────────────────────────────── */
+  /* ── Export helpers ──────────────────────────────────────── */
 
+  const getDocTitle = () => {
+    const firstLine = mdRef.current.split("\n").find((l) => l.trim());
+    return firstLine
+      ? firstLine.replace(/^#+\s*/, "").trim().slice(0, 60) || "Untitled"
+      : "Untitled";
+  };
+
+  /* ── Render ────────────────────────────────────────────── */
+  
   return (
     <Box
       sx={{
@@ -934,9 +943,10 @@ export function DocumentEditorController({
         </Paper>
       )}
 
-      <ShareModal
+    <ShareModal
         open={shareOpen}
         onClose={() => setShareOpen(false)}
+        docTitle={getDocTitle()}
         onPublicPost={() => handleSharePublic()}
         onPrivateLink={async (canEdit) => {
           const result = await handleGeneratePrivateLink(
