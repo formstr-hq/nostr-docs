@@ -55,6 +55,13 @@ import { useBlossomServers } from "../../contexts/BlossomContext";
 import { KIND_FILE } from "../../nostr/kinds";
 import { getLatestVersion } from "../../utils/helpers";
 import { encodeNKeys } from "../../utils/nkeys";
+import {
+  exportAsMarkdown,
+  exportAsHtml,
+  exportAsPlainText,
+  exportAsPdf,
+  exportAsDocx,
+} from "../../utils/exportDocument";
 
 // Delay after the last edit before auto-save fires (ms)
 const AUTO_SAVE_DELAY_MS = 30_000;
@@ -651,6 +658,39 @@ export function DocumentEditorController({
     setConfirmOpen(true);
   };
 
+  /* ── Export helpers ──────────────────────────────────────── */
+
+  const getDocTitle = () => {
+    const firstLine = mdRef.current.split("\n").find((l) => l.trim());
+    return firstLine
+      ? firstLine.replace(/^#+\s*/, "").trim().slice(0, 60) || "Untitled"
+      : "Untitled";
+  };
+
+  const handleExportMarkdown = () => {
+    exportAsMarkdown(mdRef.current);
+  };
+
+  const handleExportHtml = () => {
+    if (!editor) return;
+    const html = editor.getHTML();
+    exportAsHtml(html, getDocTitle());
+  };
+
+  const handleExportPlainText = () => {
+    exportAsPlainText(mdRef.current);
+  };
+
+  const handleExportPdf = () => {
+    if (!editor) return;
+    exportAsPdf(editor.getHTML(), getDocTitle());
+  };
+
+  const handleExportDocx = () => {
+    if (!editor) return;
+    exportAsDocx(editor.getHTML(), getDocTitle());
+  };
+
   /* ── Render ────────────────────────────────────────────── */
 
   return (
@@ -696,6 +736,11 @@ export function DocumentEditorController({
           isLocalOnly={isLocalOnly}
           onToggleLocalOnly={handleToggleLocalOnly}
           showLocalOnlyToggle={!viewKey && !editKey}
+          onExportMarkdown={handleExportMarkdown}
+          onExportHtml={handleExportHtml}
+          onExportPlainText={handleExportPlainText}
+          onExportPdf={handleExportPdf}
+          onExportDocx={handleExportDocx}
         />
       )}
 

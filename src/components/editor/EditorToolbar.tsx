@@ -12,6 +12,7 @@ import {
   ToggleButtonGroup,
   ToggleButton,
   Tooltip,
+  Typography,
 } from "@mui/material";
 import EditIcon from "@mui/icons-material/Edit";
 import VisibilityIcon from "@mui/icons-material/Visibility";
@@ -35,6 +36,12 @@ import RedoIcon from "@mui/icons-material/Redo";
 import FormatIndentIncreaseIcon from "@mui/icons-material/FormatIndentIncrease";
 import FormatIndentDecreaseIcon from "@mui/icons-material/FormatIndentDecrease";
 import AttachFileIcon from "@mui/icons-material/AttachFile";
+import FileDownloadIcon from "@mui/icons-material/FileDownload";
+import DescriptionIcon from "@mui/icons-material/Description";
+import HtmlIcon from "@mui/icons-material/Html";
+import TextSnippetIcon from "@mui/icons-material/TextSnippet";
+import PictureAsPdfIcon from "@mui/icons-material/PictureAsPdf";
+import ArticleOutlinedIcon from "@mui/icons-material/ArticleOutlined";
 import { useState, useRef } from "react";
 import { useUser } from "../../contexts/UserContext";
 import type { Editor } from "@tiptap/react";
@@ -64,6 +71,11 @@ type Props = {
   isLocalOnly?: boolean;
   onToggleLocalOnly?: () => void;
   showLocalOnlyToggle?: boolean;
+  onExportMarkdown?: () => void;
+  onExportHtml?: () => void;
+  onExportPlainText?: () => void;
+  onExportPdf?: () => void;
+  onExportDocx?: () => void;
 };
 
 export function EditorToolbar({
@@ -84,10 +96,31 @@ export function EditorToolbar({
   isLocalOnly = false,
   onToggleLocalOnly,
   showLocalOnlyToggle = false,
+  onExportMarkdown,
+  onExportHtml,
+  onExportPlainText,
+  onExportPdf,
+  onExportDocx,
 }: Props) {
   const { user, loginModal } = useUser();
   const [menuAnchor, setMenuAnchor] = useState<null | HTMLElement>(null);
   const [historyAnchor, setHistoryAnchor] = useState<null | HTMLElement>(null);
+
+  const exportButtonRef = useRef<HTMLLIElement>(null);
+  const hideExportTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const [exportOpen, setExportOpen] = useState(false);
+
+  const handleExportEnter = () => {
+    clearTimeout(hideExportTimer.current);
+    setExportOpen(true);
+  };
+
+  const handleExportLeave = () => {
+    hideExportTimer.current = setTimeout(() => {
+      setExportOpen(false);
+    }, 200);
+  };
+
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const menuOpen = Boolean(menuAnchor);
@@ -220,6 +253,28 @@ export function EditorToolbar({
               <ListItemText primary="History" />
             </MenuItem>
 
+            <MenuItem
+              ref={exportButtonRef}
+              onMouseEnter={handleExportEnter}
+              onMouseLeave={handleExportLeave}
+              onClick={(e) => {
+                e.stopPropagation();
+                // For mobile, a click can toggle it too if hover isn't available
+                setExportOpen(!exportOpen); 
+              }}
+              sx={{ display: "flex", justifyContent: "space-between" }}
+            >
+              <Box sx={{ display: "flex", alignItems: "center" }}>
+                <ListItemIcon>
+                  <FileDownloadIcon fontSize="small" />
+                </ListItemIcon>
+                <ListItemText primary="Export" />
+              </Box>
+              <Typography variant="body2" color="text.secondary" sx={{ ml: 2 }}>
+                ▸
+              </Typography>
+            </MenuItem>
+
             {showLocalOnlyToggle && (
               <MenuItem
                 onClick={() => {
@@ -251,6 +306,107 @@ export function EditorToolbar({
                 <DeleteIcon fontSize="small" />
               </ListItemIcon>
               <ListItemText primary="Delete" />
+            </MenuItem>
+          </Menu>
+
+          <Menu
+            anchorEl={exportButtonRef.current}
+            open={exportOpen}
+            onClose={() => setExportOpen(false)}
+            anchorOrigin={{ vertical: "top", horizontal: "right" }}
+            transformOrigin={{ vertical: "top", horizontal: "left" }}
+            MenuListProps={{
+              onMouseEnter: handleExportEnter,
+              onMouseLeave: handleExportLeave,
+            }}
+            slotProps={{
+              paper: {
+                style: {
+                  pointerEvents: "auto",
+                },
+              },
+            }}
+          >
+            <MenuItem
+              onClick={() => {
+                onExportPdf?.();
+                setExportOpen(false);
+                setMenuAnchor(null);
+              }}
+            >
+              <ListItemIcon>
+                <PictureAsPdfIcon fontSize="small" />
+              </ListItemIcon>
+              <ListItemText
+                primary="PDF"
+                secondary="Print / Save as PDF"
+                secondaryTypographyProps={{ sx: { fontSize: "0.7rem" } }}
+              />
+            </MenuItem>
+            <MenuItem
+              onClick={() => {
+                onExportDocx?.();
+                setExportOpen(false);
+                setMenuAnchor(null);
+              }}
+            >
+              <ListItemIcon>
+                <ArticleOutlinedIcon fontSize="small" />
+              </ListItemIcon>
+              <ListItemText
+                primary="Word (.doc)"
+                secondary="Microsoft Word / Google Docs"
+                secondaryTypographyProps={{ sx: { fontSize: "0.7rem" } }}
+              />
+            </MenuItem>
+            <Divider />
+            <MenuItem
+              onClick={() => {
+                onExportMarkdown?.();
+                setExportOpen(false);
+                setMenuAnchor(null);
+              }}
+            >
+              <ListItemIcon>
+                <DescriptionIcon fontSize="small" />
+              </ListItemIcon>
+              <ListItemText
+                primary="Markdown (.md)"
+                secondary="Raw markdown source"
+                secondaryTypographyProps={{ sx: { fontSize: "0.7rem" } }}
+              />
+            </MenuItem>
+            <MenuItem
+              onClick={() => {
+                onExportHtml?.();
+                setExportOpen(false);
+                setMenuAnchor(null);
+              }}
+            >
+              <ListItemIcon>
+                <HtmlIcon fontSize="small" />
+              </ListItemIcon>
+              <ListItemText
+                primary="HTML (.html)"
+                secondary="Styled web page"
+                secondaryTypographyProps={{ sx: { fontSize: "0.7rem" } }}
+              />
+            </MenuItem>
+            <MenuItem
+              onClick={() => {
+                onExportPlainText?.();
+                setExportOpen(false);
+                setMenuAnchor(null);
+              }}
+            >
+              <ListItemIcon>
+                <TextSnippetIcon fontSize="small" />
+              </ListItemIcon>
+              <ListItemText
+                primary="Plain Text (.txt)"
+                secondary="No formatting"
+                secondaryTypographyProps={{ sx: { fontSize: "0.7rem" } }}
+              />
             </MenuItem>
           </Menu>
 
