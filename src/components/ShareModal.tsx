@@ -28,7 +28,7 @@ type Props = {
   open: boolean;
   onClose: () => void;
   onPublicPost?: () => void;
-  onPrivateLink?: (canEdit: boolean) => Promise<string | void>;
+  onPrivateLink?: (canEdit: boolean) => Promise<any | void>;
   docTitle?: string;
   documentAddress?: string;
   onCloneAndRevoke?: (revokedNpub: string, remainingAcl: Array<{npub: string, role: "view"|"edit"}>) => Promise<void>;
@@ -58,8 +58,18 @@ export default function ShareModal({
     setLoading(true);
     setError("");
     try {
-      const url = await onPrivateLink(canEdit);
-      if (typeof url === "string") {
+      const result = await onPrivateLink(canEdit);
+      if (result && result.address) {
+        // Build the URL here for the copy-paste box
+        const naddr = nip19.naddrEncode({
+          identifier: result.address.split(":")[2],
+          pubkey: result.address.split(":")[1],
+          kind: parseInt(result.address.split(":")[0]),
+        });
+        const nkeysObj: Record<string, string> = { viewKey: result.viewKey };
+        if (result.editKey) nkeysObj.editKey = result.editKey;
+        const encodeNKeys = (await import("../utils/nkeys")).encodeNKeys;
+        const url = `${window.location.origin}/doc/${naddr}#${encodeNKeys(nkeysObj)}`;
         setPrivateLink(url);
       } else {
         setError("Failed to generate link. Please try again.");
@@ -95,20 +105,33 @@ export default function ShareModal({
         throw new Error("Invalid npub or public key");
       }
 
+      // Block self-sharing
+      const signer = await import("../signer").then(m => m.signerManager.getSigner());
+      const myPubkey = await signer.getPublicKey();
+      if (targetPubkey === myPubkey) {
+        throw new Error("You cannot send an invite to yourself.");
+      }
+
       // Always securely generate the specific permission key before sending.
       // We don't reuse `privateLink` casually here because the user might have
       // clicked 'Viewer' up there, but 'Editor' down here!
-      const newUrl = await onPrivateLink(inviteRole === "edit");
-      if (typeof newUrl !== "string") throw new Error("Failed to generate link");
-      const url = newUrl;
+      // Generate the keys and metadata payload
+      const result = await onPrivateLink(inviteRole === "edit");
+      if (!result || typeof result !== "object") throw new Error("Failed to generate link");
 
-      // Send the DM
-      await shareDocumentToNpub(targetPubkey, url, docTitle);
+      // Send the high-level invite (NIP-17 rumor kind 211234)
+      await shareDocumentToNpub(targetPubkey, {
+        type: "share",
+        address: result.address,
+        viewKey: result.viewKey,
+        ...(result.editKey && { editKey: result.editKey }),
+        title: docTitle,
+      });
       
       // Log the grant explicitly into our zero-server ACL engine
       grantAccess(targetPubkey, inviteRole);
       
-      setToastMessage("Invite sent successfully via Nostr DM!");
+      setToastMessage("Invite sent directly to account!");
       setToastOpen(true);
       setInviteNpub("");
     } catch (err) {
@@ -258,10 +281,10 @@ export default function ShareModal({
           {/* INVITE BY NPUB */}
           <Paper variant="outlined" sx={{ p: 2, mt: 1 }}>
             <Typography variant="h6" fontWeight={800}>
-              Nostr Connect
+              Share to Account
             </Typography>
             <Typography color="text.secondary" sx={{ mb: 2 }}>
-              Send an invite directly to a friend's Nostr inbox (NIP-17 DM).
+              Share directly to a Nostr account. They'll be notified in-app.
             </Typography>
             <Box sx={{ display: "flex", gap: 1 }}>
               <TextField 

@@ -985,11 +985,17 @@ export function DocumentEditorController({
             // eslint-disable-next-line @typescript-eslint/no-unused-vars
           } catch(e) {}
 
-          // 4. Re-DM the remaining members with the new url
+          // 4. Send new encrypted invites to the remaining members
           const { shareDocumentToNpub } = await import("../../nostr/shareDocument");
           for (const r of remainingAcl) {
             try {
-              await shareDocumentToNpub(r.npub, result.url, getDocTitle());
+              await shareDocumentToNpub(r.npub, {
+                type: "share",
+                address: result.address,
+                viewKey: result.viewKey,
+                ...(result.editKey ? { editKey: result.editKey } : {}),
+                title: getDocTitle(),
+              }, relays);
             // eslint-disable-next-line @typescript-eslint/no-unused-vars
             } catch(e) {}
           }
@@ -1015,14 +1021,7 @@ export function DocumentEditorController({
             editKey,
           );
 
-          const sharedDocTag = [
-            result.address,
-            result.viewKey,
-            ...(result.editKey ? [result.editKey] : []),
-          ];
-          await addSharedDoc(sharedDocTag);
-
-          return result.url;
+          return result;
         }}
       />
     </Box>

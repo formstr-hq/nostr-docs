@@ -22,9 +22,13 @@ import {
   Chip,
   Divider,
   Tooltip,
+  Badge,
+  Snackbar,
+  Alert,
 } from "@mui/material";
+import CheckCircleIcon from "@mui/icons-material/CheckCircle";
+import NotificationsActiveIcon from "@mui/icons-material/NotificationsActive";
 import AddIcon from "@mui/icons-material/Add";
-import DeleteForeverIcon from "@mui/icons-material/DeleteForever";
 import SmartphoneIcon from "@mui/icons-material/Smartphone";
 import { useDocumentContext } from "../contexts/DocumentContext.tsx";
 import { signerManager } from "../signer/index.ts";
@@ -90,7 +94,6 @@ function TagChip({
   );
 }
 
-
 export default function DocumentList({
   onEdit,
 }: {
@@ -108,7 +111,13 @@ export default function DocumentList({
   } = useDocumentContext();
   const [docRelays, setDocRelays] = useState<Map<string, string[]>>(new Map());
 
-  const { sharedDocuments, getKeys } = useSharedPages();
+  const { 
+    sharedDocuments, 
+    getKeys, 
+    pendingInvites, 
+    acceptInvite, 
+    rejectInvite 
+  } = useSharedPages();
   const { docTags, allTags, selectedTag, setSelectedTag } = useDocMetadata();
   const [loading, setLoading] = useState(true);
   const [tab, setTab] = useState<"personal" | "shared" | "visited">("personal");
@@ -117,6 +126,19 @@ export default function DocumentList({
   const { user } = useUser();
   const { relays } = useRelays();
   const navigate = useNavigate();
+
+  const [lastInviteCount, setLastInviteCount] = useState(pendingInvites.length);
+  const [snackbarOpen, setSnackbarOpen] = useState(false);
+  const [latestInvite, setLatestInvite] = useState<any>(null);
+
+  useEffect(() => {
+    if (pendingInvites.length > lastInviteCount) {
+        const newInvite = pendingInvites[pendingInvites.length - 1];
+        setLatestInvite(newInvite);
+        setSnackbarOpen(true);
+    }
+    setLastInviteCount(pendingInvites.length);
+  }, [pendingInvites.length, lastInviteCount]);
 
   const handleDocumentSelect = (doc: Event) => {
     const dTag = doc.tags.find((t) => t[0] === "d")?.[1];
@@ -203,8 +225,6 @@ export default function DocumentList({
 
         // ── Phase 3: re-broadcast any events saved while offline ──
         for (const entry of localEntries) {
-          // Never re-broadcast device-only events. They are stored unsigned
-          // (sig: "") so relays would reject them anyway, but skip explicitly.
           if (entry.pendingBroadcast && !entry.localOnly) {
             publishEvent(entry.event, relays)
               .then(() => markBroadcast(entry.address))
@@ -219,7 +239,6 @@ export default function DocumentList({
     })();
   }, [user, relays]);
 
-  // Load trash count on mount and after the dialog closes
   const refreshTrashCount = () => {
     loadTrashedEvents().then((items) => setTrashCount(items.length)).catch(() => {});
   };
@@ -236,13 +255,11 @@ export default function DocumentList({
     : tab === "shared"  ? sharedDocuments
     :                     visitedDocuments;
 
-  // Auto-switch to the tab that owns the currently selected doc
   useEffect(() => {
     if (!selectedDocumentId) return;
     if (visibleDocuments.has(selectedDocumentId)) setTab("personal");
     else if (sharedDocuments.has(selectedDocumentId)) setTab("shared");
     else if (visitedDocuments.has(selectedDocumentId)) setTab("visited");
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedDocumentId]);
 
   const docsToShow = selectedTag
@@ -267,7 +284,6 @@ export default function DocumentList({
         overflow: "hidden",
       }}
     >
-      {/* New document button */}
       <Box sx={{ px: 2, pt: 1.5, pb: 1, flexShrink: 0 }}>
         <Button
           fullWidth
@@ -281,7 +297,6 @@ export default function DocumentList({
         </Button>
       </Box>
 
-      {/* Tab switcher */}
       <Tabs
         value={tab}
         onChange={(_, v) => setTab(v)}
@@ -297,31 +312,19 @@ export default function DocumentList({
           label={
             <Box sx={{ display: "flex", alignItems: "center", gap: 0.75 }}>
               My Pages
-              {personalCount > 0 && (
-                <Chip
-                  label={personalCount}
-                  size="small"
-                  color="secondary"
-                  sx={{ height: 18, fontSize: "0.65rem" }}
-                />
-              )}
+              {personalCount > 0 && <Chip label={personalCount} size="small" color="secondary" sx={{ height: 18, fontSize: "0.65rem" }} />}
             </Box>
           }
         />
         <Tab
           value="shared"
           label={
-            <Box sx={{ display: "flex", alignItems: "center", gap: 0.75 }}>
-              Shared
-              {sharedCount > 0 && (
-                <Chip
-                  label={sharedCount}
-                  size="small"
-                  color="secondary"
-                  sx={{ height: 18, fontSize: "0.65rem" }}
-                />
-              )}
-            </Box>
+            <Badge badgeContent={pendingInvites.length} color="error" sx={{ "& .MuiBadge-badge": { fontSize: '0.6rem', height: 16, minWidth: 16 } }}>
+                <Box sx={{ display: "flex", alignItems: "center", gap: 0.75 }}>
+                Shared
+                {sharedCount > 0 && <Chip label={sharedCount} size="small" color="secondary" sx={{ height: 18, fontSize: "0.65rem" }} />}
+                </Box>
+            </Badge>
           }
         />
         <Tab
@@ -329,53 +332,44 @@ export default function DocumentList({
           label={
             <Box sx={{ display: "flex", alignItems: "center", gap: 0.75 }}>
               Visited
-              {visitedCount > 0 && (
-                <Chip
-                  label={visitedCount}
-                  size="small"
-                  color="secondary"
-                  sx={{ height: 18, fontSize: "0.65rem" }}
-                />
-              )}
+              {visitedCount > 0 && <Chip label={visitedCount} size="small" color="secondary" sx={{ height: 18, fontSize: "0.65rem" }} />}
             </Box>
           }
         />
       </Tabs>
 
-      {/* Tag filter chips */}
       {allTags.length > 0 && (
-        <Box
-          sx={{
-            px: 1.5,
-            py: 0.75,
-            display: "flex",
-            gap: 0.5,
-            flexWrap: "wrap",
-            flexShrink: 0,
-            borderBottom: "1px solid",
-            borderColor: "divider",
-          }}
-        >
-          <Chip
-            label="All"
-            size="small"
-            onClick={() => setSelectedTag(null)}
-            color={selectedTag === null ? "secondary" : "default"}
-            sx={{ height: 22, fontSize: "0.72rem" }}
-          />
+        <Box sx={{ px: 1.5, py: 0.75, display: "flex", gap: 0.5, flexWrap: "wrap", flexShrink: 0, borderBottom: "1px solid", borderColor: "divider" }}>
+          <Chip label="All" size="small" onClick={() => setSelectedTag(null)} color={selectedTag === null ? "secondary" : "default"} sx={{ height: 22, fontSize: "0.72rem" }} />
           {allTags.map((tag) => (
-            <TagChip
-              key={tag}
-              tag={tag}
-              selected={selectedTag === tag}
-              onClick={() => setSelectedTag(selectedTag === tag ? null : tag)}
-            />
+            <TagChip key={tag} tag={tag} selected={selectedTag === tag} onClick={() => setSelectedTag(selectedTag === tag ? null : tag)} />
           ))}
         </Box>
       )}
 
-      {/* List area */}
       <Box sx={{ flex: 1, overflowY: "auto", px: 1.5, py: 1, pb: 0 }}>
+        {tab === "shared" && pendingInvites.length > 0 && (
+            <Box sx={{ mb: 3 }}>
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1, px: 1 }}>
+                    <NotificationsActiveIcon sx={{ fontSize: 16, color: 'error.main' }} />
+                    <Typography variant="overline" sx={{ fontWeight: 800, color: 'error.main', lineHeight: 1 }}>Pending Invites</Typography>
+                </Box>
+                <List sx={{ p: 0 }}>
+                    {pendingInvites.map((invite) => (
+                        <ListItemButton key={invite.id} sx={{ mb: 0.5, borderRadius: 1.5, bgcolor: (t) => alpha(t.palette.error.main, 0.05), border: (t) => `1px dashed ${alpha(t.palette.error.main, 0.3)}`, flexDirection: 'column', alignItems: 'flex-start', p: 1.5 }}>
+                            <Typography variant="body2" fontWeight={700} noWrap sx={{ width: '100%' }}>{invite.title || "Untitled Document"}</Typography>
+                            <Typography variant="caption" color="text.secondary" sx={{ mb: 1 }}>from {invite.senderNpub?.slice(0, 12)}...</Typography>
+                            <Box sx={{ display: 'flex', gap: 1, width: '100%' }}>
+                                <Button fullWidth size="small" variant="contained" color="success" onClick={(e) => { e.stopPropagation(); acceptInvite(invite); }} startIcon={<CheckCircleIcon />} sx={{ fontSize: '0.65rem', py: 0.2 }}>Accept</Button>
+                                <Button fullWidth size="small" variant="outlined" color="inherit" onClick={(e) => { e.stopPropagation(); rejectInvite(invite.id); }} sx={{ fontSize: '0.65rem', py: 0.2, opacity: 0.6 }}>Decline</Button>
+                            </Box>
+                        </ListItemButton>
+                    ))}
+                </List>
+                <Divider sx={{ my: 2 }} />
+            </Box>
+        )}
+
         {loading ? (
           <Box sx={{ display: "flex", flexDirection: "column", gap: 1, pt: 1 }}>
             {[1, 2, 3, 4].map((i) => (
@@ -386,178 +380,48 @@ export default function DocumentList({
             ))}
           </Box>
         ) : docsToShow.size === 0 ? (
-          <Box
-            sx={{
-              pt: 4,
-              display: "flex",
-              flexDirection: "column",
-              alignItems: "center",
-              gap: 1,
-            }}
-          >
-            <Typography
-              variant="body2"
-              color="text.secondary"
-              textAlign="center"
-            >
-              {tab === "personal"
-                ? "No documents yet.\nCreate your first page!"
-                : tab === "visited"
-                ? "No visited pages yet.\nOpen a shared link to see it here."
-                : "No shared documents found."}
+          <Box sx={{ pt: 4, display: "flex", flexDirection: "column", alignItems: "center", gap: 1 }}>
+            <Typography variant="body2" color="text.secondary" textAlign="center">
+              {tab === "personal" ? "No documents yet.\nCreate your first page!" : tab === "visited" ? "No visited pages yet.\nOpen a shared link to see it here." : "No shared documents found."}
             </Typography>
-            {tab === "personal" && (
-              <Button
-                variant="outlined"
-                color="secondary"
-                size="small"
-                startIcon={<AddIcon />}
-                onClick={handleNewDoc}
-                sx={{ mt: 1 }}
-              >
-                Create page
-              </Button>
-            )}
+            {tab === "personal" && <Button variant="outlined" color="secondary" size="small" startIcon={<AddIcon />} onClick={handleNewDoc} sx={{ mt: 1 }}>Create page</Button>}
           </Box>
         ) : (
           <List disablePadding>
             {Array.from(docsToShow.entries()).map(([address, history], idx) => {
               const latest = history.versions.at(-1);
               if (!latest) return null;
-
               const { event, decryptedContent } = latest;
               const isSelected = selectedDocumentId === address;
               const tags = docTags.get(address) ?? [];
               const relays = docRelays.get(address) ?? [];
-
-              const firstLine =
-                (decryptedContent ?? "").split("\n").find((l) => l.trim()) ??
-                "Untitled";
-              const title = firstLine
-                .replace(/^#+\s*/, "")
-                .slice(0, 42)
-                .trim();
+              const firstLine = (decryptedContent ?? "").split("\n").find((l) => l.trim()) ?? "Untitled";
+              const title = firstLine.replace(/^#+\s*/, "").slice(0, 42).trim();
               const displayTitle = title || "Untitled";
 
               return (
                 <Box key={address}>
-                  {idx > 0 && (
-                    <Divider
-                      sx={{ my: 0.25, borderColor: "rgba(255,255,255,0.05)" }}
-                    />
-                  )}
-                  <ListItemButton
-                    onClick={() => handleDocumentSelect(event)}
-                    sx={{
-                      borderRadius: 2,
-                      py: 1,
-                      pr: 0.5,
-                      bgcolor: isSelected
-                        ? (t) => alpha(t.palette.secondary.main, 0.12)
-                        : "transparent",
-                      borderLeft: "3px solid",
-                      borderLeftColor: isSelected
-                        ? "secondary.main"
-                        : "transparent",
-                      "&:hover": {
-                        bgcolor: (t) =>
-                          alpha(
-                            t.palette.secondary.main,
-                            isSelected ? 0.18 : 0.06,
-                          ),
-                      },
-                      transition: "background-color 0.15s",
-                    }}
-                  >
-                    <ListItemText
-                      primary={displayTitle}
-                      secondary={
+                  {idx > 0 && <Divider sx={{ my: 0.25, borderColor: "rgba(255,255,255,0.05)" }} />}
+                  <ListItemButton onClick={() => handleDocumentSelect(event)} sx={{ borderRadius: 2, py: 1, pr: 0.5, bgcolor: isSelected ? (t) => alpha(t.palette.secondary.main, 0.12) : "transparent", borderLeft: "3px solid", borderLeftColor: isSelected ? "secondary.main" : "transparent", "&:hover": { bgcolor: (t) => alpha(t.palette.secondary.main, isSelected ? 0.18 : 0.06) }, transition: "background-color 0.15s" }}>
+                    <ListItemText primary={displayTitle} secondary={
                         <Box component="span" sx={{ display: "block" }}>
-                          <Box component="span" sx={{ opacity: 0.6, fontSize: "0.7rem" }}>
-                            {new Date(event.created_at * 1000).toLocaleDateString(
-                              undefined,
-                              { month: "short", day: "numeric", year: "numeric" },
-                            )}
-                          </Box>
-                          {tags.length > 0 && (
-                            <Box
-                              component="span"
-                              sx={{ display: "flex", flexWrap: "wrap", gap: 0.4, mt: 0.4 }}
-                            >
-                              {tags.map((tag) => (
-                                <TagChip
-                                  key={tag}
-                                  tag={tag}
-                                  size="inline"
-                                  selected={selectedTag === tag}
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    setSelectedTag(selectedTag === tag ? null : tag);
-                                  }}
-                                />
-                              ))}
-                            </Box>
-                          )}
+                          <Box component="span" sx={{ opacity: 0.6, fontSize: "0.7rem" }}>{new Date(event.created_at * 1000).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })}</Box>
+                          {tags.length > 0 && <Box component="span" sx={{ display: "flex", flexWrap: "wrap", gap: 0.4, mt: 0.4 }}>{tags.map((tag) => <TagChip key={tag} tag={tag} size="inline" selected={selectedTag === tag} onClick={(e) => { e.stopPropagation(); setSelectedTag(selectedTag === tag ? null : tag); }} />)}</Box>}
                           {localOnlyAddresses.has(address) ? (
-                            <Box
-                              component="span"
-                              sx={{ display: "flex", alignItems: "center", gap: 0.3, mt: 0.4 }}
-                            >
+                            <Box component="span" sx={{ display: "flex", alignItems: "center", gap: 0.3, mt: 0.4 }}>
                               <SmartphoneIcon sx={{ fontSize: "0.58rem", opacity: 0.45 }} />
-                              <Box
-                                component="span"
-                                sx={{
-                                  fontSize: "0.58rem",
-                                  fontFamily: "monospace",
-                                  opacity: 0.45,
-                                  bgcolor: (t) => alpha(t.palette.text.primary, 0.07),
-                                  borderRadius: 0.75,
-                                  px: 0.6,
-                                  py: 0.1,
-                                  lineHeight: 1.6,
-                                }}
-                              >
-                                Device only
-                              </Box>
+                              <Box component="span" sx={{ fontSize: "0.58rem", fontFamily: "monospace", opacity: 0.45, bgcolor: (t) => alpha(t.palette.text.primary, 0.07), borderRadius: 0.75, px: 0.6, py: 0.1, lineHeight: 1.6 }}>Device only</Box>
                             </Box>
                           ) : relays.length > 0 && (
-                            <Box
-                              component="span"
-                              sx={{ display: "flex", flexWrap: "wrap", gap: 0.4, mt: 0.4 }}
-                            >
+                            <Box component="span" sx={{ display: "flex", flexWrap: "wrap", gap: 0.4, mt: 0.4 }}>
                               {relays.map((r) => {
                                 const host = new URL(r).hostname;
-                                return (
-                                  <Tooltip key={r} title={r}>
-                                    <Box
-                                      component="span"
-                                      sx={{
-                                        fontSize: "0.58rem",
-                                        fontFamily: "monospace",
-                                        opacity: 0.5,
-                                        bgcolor: (t) => alpha(t.palette.text.primary, 0.07),
-                                        borderRadius: 0.75,
-                                        px: 0.6,
-                                        py: 0.1,
-                                        lineHeight: 1.6,
-                                      }}
-                                    >
-                                      {host}
-                                    </Box>
-                                  </Tooltip>
-                                );
+                                return <Tooltip key={r} title={r}><Box component="span" sx={{ fontSize: "0.58rem", fontFamily: "monospace", opacity: 0.5, bgcolor: (t) => alpha(t.palette.text.primary, 0.07), borderRadius: 0.75, px: 0.6, py: 0.1, lineHeight: 1.6 }}>{host}</Box></Tooltip>;
                               })}
                             </Box>
                           )}
                         </Box>
-                      }
-                      primaryTypographyProps={{
-                        variant: "body2",
-                        fontWeight: isSelected ? 700 : 400,
-                        noWrap: true,
-                      }}
-                      secondaryTypographyProps={{ component: "span" }}
-                    />
+                      } primaryTypographyProps={{ variant: "body2", fontWeight: isSelected ? 700 : 400, noWrap: true }} secondaryTypographyProps={{ component: "span" }} />
                   </ListItemButton>
                 </Box>
               );
@@ -566,46 +430,18 @@ export default function DocumentList({
         )}
       </Box>
 
-      {/* Trash link */}
-      <Box
-        sx={{
-          px: 2,
-          py: 1,
-          borderTop: "1px solid",
-          borderColor: "divider",
-          flexShrink: 0,
-        }}
-      >
-        <Button
-          size="small"
-          startIcon={<DeleteForeverIcon sx={{ fontSize: 15 }} />}
-          onClick={() => setTrashOpen(true)}
-          sx={{
-            color: "text.disabled",
-            fontWeight: 400,
-            fontSize: "0.75rem",
-            textTransform: "none",
-            "&:hover": { color: "text.secondary" },
-          }}
-        >
-          Trash
-          {trashCount > 0 && (
-            <Chip
-              label={trashCount}
-              size="small"
-              sx={{ ml: 0.75, height: 16, fontSize: "0.6rem", "& .MuiChip-label": { px: 0.75 } }}
-            />
-          )}
-        </Button>
+      <Box sx={{ p: 1.5, borderTop: "1px solid", borderColor: "divider", flexShrink: 0, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+        <Typography variant="caption" color="text.secondary">Trash: {trashCount}</Typography>
+        <Button size="small" color="inherit" onClick={() => setTrashOpen(true)} sx={{ fontSize: "0.65rem", opacity: 0.6 }}>Open Trash</Button>
       </Box>
 
-      <TrashDialog
-        open={trashOpen}
-        onClose={() => {
-          setTrashOpen(false);
-          refreshTrashCount();
-        }}
-      />
+      <TrashDialog open={trashOpen} onClose={() => setTrashOpen(false)} />
+
+      <Snackbar open={snackbarOpen} autoHideDuration={6000} onClose={() => setSnackbarOpen(false)} anchorOrigin={{ vertical: 'bottom', horizontal: 'left' }}>
+        <Alert onClose={() => setSnackbarOpen(false)} severity="info" variant="filled" sx={{ width: '100%', cursor: 'pointer' }} onClick={() => { setSnackbarOpen(false); setTab("shared"); }}>
+            New document shared: <strong>{latestInvite?.title || "Untitled"}</strong>
+        </Alert>
+      </Snackbar>
     </Box>
   );
 }

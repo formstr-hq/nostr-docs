@@ -13,14 +13,25 @@ import { signerManager } from "../signer";
 import {
   getPublicKey,
   nip44,
+  nip19,
   type Event,
   type EventTemplate,
 } from "nostr-tools";
 import { hexToBytes } from "nostr-tools/utils";
 import { publishEvent } from "../nostr/publish";
-import { pool } from "../nostr/relayPool";
-import { KIND_FILE } from "../nostr/kinds";
+import { pool, DEFAULT_RELAYS } from "../nostr/relayPool";
+import { KIND_FILE, KIND_SHARE_INVITE } from "../nostr/kinds";
 import type { SubCloser } from "nostr-tools/abstract-pool";
+
+export interface ShareInvite {
+  id: string; // event id of the invite
+  address: string;
+  viewKey: string;
+  editKey?: string;
+  title: string;
+  senderNpub?: string;
+  timestamp: number;
+}
 
 type DocumentVersion = {
   event: Event;
@@ -38,6 +49,10 @@ interface SharedPagesContextValue {
   refresh: () => Promise<void>;
   sharedDocuments: Map<string, DocumentHistory>;
   getKeys: (id: string) => string[];
+  pendingInvites: ShareInvite[];
+  acceptInvite: (invite: ShareInvite) => Promise<void>;
+  rejectInvite: (inviteId: string) => void;
+  addPendingInvite: (invite: ShareInvite) => void;
 }
 
 const SharedPagesContext = createContext<SharedPagesContextValue | undefined>(
@@ -55,8 +70,17 @@ export const SharedPagesProvider: React.FC<{ children: React.ReactNode }> = ({
   const [sharedDocuments, setSharedDocuments] = useState<
     Map<string, DocumentHistory>
   >(new Map());
+  const [pendingInvites, setPendingInvites] = useState<ShareInvite[]>(() => {
+    const stored = localStorage.getItem("formstr:pending_invites");
+    return stored ? JSON.parse(stored) : [];
+  });
 
+  const inviteSubRef = useRef<SubCloser | null>(null);
   const subscriptionRef = useRef<SubCloser | null>(null);
+
+  useEffect(() => {
+    localStorage.setItem("formstr:pending_invites", JSON.stringify(pendingInvites));
+  }, [pendingInvites]);
 
   const getKeys = (id: string) => {
     const keys = sharedDocs.find((t) => t[0] === id);
@@ -204,6 +228,82 @@ export const SharedPagesProvider: React.FC<{ children: React.ReactNode }> = ({
     }
   };
 
+  // --- Direct Invite Listener (Kind 211234) ---
+  useEffect(() => {
+    if (inviteSubRef.current) {
+        inviteSubRef.current.close();
+        inviteSubRef.current = null;
+    }
+
+    if (!user || !user.pubkey) return;
+
+    const filter: import("nostr-tools").Filter = {
+        kinds: [KIND_SHARE_INVITE],
+        "#p": [user.pubkey],
+        since: Math.floor(Date.now() / 1000) - 60 * 60 * 24 * 30, // last 30 days
+    };
+
+    console.log("[InviteListener] Subscribing for share invites:", filter);
+
+    // Subscribe to both user relays AND default relays to ensure overlap with sender
+    const allRelays = [...new Set([...relays, ...DEFAULT_RELAYS])];
+    console.log("[InviteListener] Listening on relays:", allRelays);
+
+    inviteSubRef.current = pool.subscribeMany(allRelays, filter, {
+        onevent: async (event: Event) => {
+            console.log("[InviteListener] Received invite event:", event.id, "from:", event.pubkey);
+
+            // Skip events authored by ourselves (we are the sender, not recipient)
+            if (event.pubkey === user.pubkey) {
+                console.log("[InviteListener] Skipping own event");
+                return;
+            }
+
+            const signer = await signerManager.getSigner();
+            if (!signer || !signer.nip44Decrypt) {
+                console.warn("[InviteListener] No signer or nip44Decrypt unavailable");
+                return;
+            }
+
+            try {
+                // Decrypt the NIP-44 encrypted content
+                const decrypted = await signer.nip44Decrypt(event.pubkey, event.content);
+                if (!decrypted) {
+                    console.log("[InviteListener] Could not decrypt invite");
+                    return;
+                }
+
+                const payload = JSON.parse(decrypted);
+                if (payload.type !== "share") return;
+
+                console.log("[InviteListener] Valid share invite:", payload.title, payload.address);
+
+                setPendingInvites(prev => {
+                    // Dedup by event id
+                    if (prev.some(i => i.id === event.id)) return prev;
+
+                    const invite: ShareInvite = {
+                        id: event.id,
+                        address: payload.address,
+                        viewKey: payload.viewKey,
+                        editKey: payload.editKey,
+                        title: payload.title,
+                        senderNpub: nip19.npubEncode(event.pubkey),
+                        timestamp: event.created_at,
+                    };
+                    return [...prev, invite];
+                });
+            } catch (e) {
+                console.error("[InviteListener] Failed to process invite:", e);
+            }
+        }
+    });
+
+    return () => {
+        inviteSubRef.current?.close();
+    };
+  }, [user, relays]);
+
   useEffect(() => {
     if (user) {
       refresh();
@@ -211,6 +311,7 @@ export const SharedPagesProvider: React.FC<{ children: React.ReactNode }> = ({
       // Clear shared docs when user logs out
       setSharedDocs([]);
       setSharedDocuments(new Map());
+      setPendingInvites([]);
       setLoading(false);
     }
 
@@ -258,6 +359,27 @@ export const SharedPagesProvider: React.FC<{ children: React.ReactNode }> = ({
     fetchSharedDocuments(updatedDocs, pubkey);
   };
 
+  const acceptInvite = async (invite: ShareInvite) => {
+    const tag = [
+        invite.address,
+        invite.viewKey,
+        ...(invite.editKey ? [invite.editKey] : [])
+    ];
+    await addSharedDoc(tag);
+    setPendingInvites(prev => prev.filter(i => i.id !== invite.id));
+  };
+
+  const rejectInvite = (inviteId: string) => {
+    setPendingInvites(prev => prev.filter(i => i.id !== inviteId));
+  };
+
+  const addPendingInvite = (invite: ShareInvite) => {
+    setPendingInvites(prev => {
+      if (prev.some(i => i.id === invite.id)) return prev;
+      return [...prev, invite];
+    });
+  };
+
   return (
     <SharedPagesContext.Provider
       value={{
@@ -267,6 +389,10 @@ export const SharedPagesProvider: React.FC<{ children: React.ReactNode }> = ({
         addSharedDoc,
         refresh,
         getKeys,
+        pendingInvites,
+        acceptInvite,
+        rejectInvite,
+        addPendingInvite,
       }}
     >
       {children}
