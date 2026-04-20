@@ -18,3 +18,8 @@ export const KIND_CRDT_OP = 22457;
  * Content is NIP-44 encrypted JSON: { tags: string[] }
  */
 export const KIND_DOC_METADATA = 34579;
+/**
+ * Decentrallized Collaboration Invite.
+ * Used as a NIP-17 Rumor Kind to send document access to other accounts.
+ */
+export const KIND_SHARE_INVITE = 211234;

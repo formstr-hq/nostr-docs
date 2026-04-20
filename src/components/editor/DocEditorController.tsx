@@ -55,6 +55,8 @@ import { useBlossomServers } from "../../contexts/BlossomContext";
 import { KIND_FILE } from "../../nostr/kinds";
 import { getLatestVersion } from "../../utils/helpers";
 import { encodeNKeys } from "../../utils/nkeys";
+import { migrateACL, removeACLRecord } from "../../lib/ACLStore";
+import { shareDocumentToNpub } from "../../nostr/shareDocument";
 
 // Delay after the last edit before auto-save fires (ms)
 const AUTO_SAVE_DELAY_MS = 30_000;
@@ -142,7 +144,7 @@ export function DocumentEditorController({
     localOnlyAddresses,
     markLocalOnly,
   } = useDocumentContext();
-  const { addSharedDoc } = useSharedPages();
+  const { removeSharedDoc, replaceSharedDoc, registerOutgoingInviteId } = useSharedPages();
 
   const navigate = useNavigate();
   const { relays } = useRelays();
@@ -632,12 +634,15 @@ export function DocumentEditorController({
     const address = selectedDocumentId!;
 
     if (skipPrompt) {
-      await deleteEvent({
-        address,
-        relays,
-        reason: "User requested deletion",
-        eventIds: history?.versions.map((v) => v.event.id) ?? [],
-      });
+      if (isOwner) {
+        await deleteEvent({
+          address,
+          relays,
+          reason: "User requested deletion",
+          eventIds: history?.versions.map((v) => v.event.id) ?? [],
+        });
+      }
+      await removeSharedDoc(address);
       removeDocument(address);
       removeLocalEvent(address).catch(() => {});
       navigate("/");
@@ -651,8 +656,17 @@ export function DocumentEditorController({
     setConfirmOpen(true);
   };
 
-  /* ── Render ────────────────────────────────────────────── */
+  /* ── Export helpers ──────────────────────────────────────── */
 
+  const getDocTitle = () => {
+    const firstLine = mdRef.current.split("\n").find((l) => l.trim());
+    return firstLine
+      ? firstLine.replace(/^#+\s*/, "").trim().slice(0, 60) || "Untitled"
+      : "Untitled";
+  };
+
+  /* ── Render ────────────────────────────────────────────── */
+  
   return (
     <Box
       sx={{
@@ -816,7 +830,7 @@ export function DocumentEditorController({
           pendingDeleteAddressRef.current = null;
           pendingDeleteLocalOnlyRef.current = false;
           setConfirmOpen(false);
-          if (!wasLocalOnly) {
+          if (!wasLocalOnly && isOwner) {
             try {
               await deleteEvent({
                 address,
@@ -829,6 +843,7 @@ export function DocumentEditorController({
               setToast({ open: true, message: "Failed to delete from relays", severity: "error" });
             }
           }
+          await removeSharedDoc(address);
           removeDocument(address);
           await trashLocalEvent(address).catch(() => {});
           navigate("/");
@@ -934,9 +949,72 @@ export function DocumentEditorController({
         </Paper>
       )}
 
-      <ShareModal
+    <ShareModal
         open={shareOpen}
         onClose={() => setShareOpen(false)}
+        docTitle={getDocTitle()}
+        documentAddress={selectedDocumentId || undefined}
+        onCloneAndRevoke={async (revokedNpub, remainingAcl) => {
+          if (!selectedDocumentId) return;
+
+          // 1. Generate NEW keys by explicitly omitting viewKey and editKey
+          const result = await handleGeneratePrivateLink(
+            !!editKey, // keep edit capabilities if the current user had them
+            selectedDocumentId,
+            md,
+            relays,
+            undefined, // Force rotation of viewKey
+            undefined, // Force rotation of editKey
+            makeTag(6), // Force rotation of Address / dTag!
+          );
+
+          // 2. Migrate the ACL
+          migrateACL(selectedDocumentId, result.address);
+          removeACLRecord(result.address, revokedNpub); // actually rip out the revoked user
+
+          // 3. Burn the old one
+          try {
+            await deleteEvent({
+              address: selectedDocumentId,
+              relays,
+              reason: "ACL Revocation Key Rotation",
+              eventIds: history?.versions.map((v) => v.event.id) ?? [],
+            });
+            
+            // Explicitly wipe the old document from local IndexedDB & React state!
+            // If we don't do this, clicking the old URL will load the cached version.
+            removeDocument(selectedDocumentId);
+            removeLocalEvent(selectedDocumentId).catch(() => {});
+            
+            // eslint-disable-next-line @typescript-eslint/no-unused-vars
+          } catch(e) {}
+
+          // 4. Send new encrypted invites to the remaining members
+          for (const r of remainingAcl) {
+            try {
+              const inviteId = await shareDocumentToNpub(r.npub, {
+                type: "share",
+                address: result.address,
+                replacesAddress: selectedDocumentId,
+                viewKey: result.viewKey,
+                ...(result.editKey ? { editKey: result.editKey } : {}),
+                title: getDocTitle(),
+              }, relays);
+              registerOutgoingInviteId(inviteId);
+            // eslint-disable-next-line @typescript-eslint/no-unused-vars
+            } catch(e) {}
+          }
+
+          // 5. Instantly jump the creator to the new secured document!
+          setShareOpen(false);
+          const sharedDocTag = [
+            result.address,
+            result.viewKey,
+            ...(result.editKey ? [result.editKey] : []),
+          ];
+          await replaceSharedDoc(selectedDocumentId, sharedDocTag);
+          navigate(result.url, { replace: true });
+        }}
         onPublicPost={() => handleSharePublic()}
         onPrivateLink={async (canEdit) => {
           const result = await handleGeneratePrivateLink(
@@ -948,14 +1026,7 @@ export function DocumentEditorController({
             editKey,
           );
 
-          const sharedDocTag = [
-            result.address,
-            result.viewKey,
-            ...(result.editKey ? [result.editKey] : []),
-          ];
-          await addSharedDoc(sharedDocTag);
-
-          return result.url;
+          return result;
         }}
       />
     </Box>

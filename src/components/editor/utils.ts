@@ -49,6 +49,7 @@ export async function handleGeneratePrivateLink(
   relays: string[],
   viewKey?: string,
   editKey?: string,
+  dTagOverride?: string,
 ): Promise<ShareResult> {
   if (!selectedDocumentId) {
     throw new Error("No document selected");
@@ -57,12 +58,11 @@ export async function handleGeneratePrivateLink(
     throw new Error("Document content is empty");
   }
 
-  // Parse the address to extract components (selectedDocumentId is an a-link: "kind:pubkey:identifier")
   const parsed = parseAddress(selectedDocumentId);
   if (!parsed) {
     throw new Error("Invalid document address format");
   }
-  const { identifier: dTag } = parsed;
+  const dTag = dTagOverride || parsed.identifier;
 
   const signer = await signerManager.getSigner();
 
