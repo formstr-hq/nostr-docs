@@ -33,3 +33,33 @@ export const fetchDeleteRequests = (
     });
   });
 };
+
+export const hasDeleteRequestForAddress = (
+  relays: string[],
+  address: string,
+) => {
+  const deleteSubscriptionFilter = {
+    kinds: [5],
+    "#k": [`${KIND_FILE}`],
+    "#a": [address],
+  };
+
+  return new Promise<boolean>((resolve) => {
+    let settled = false;
+
+    const finish = (deleted: boolean) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeout);
+      sub.close();
+      resolve(deleted);
+    };
+
+    const timeout = setTimeout(() => finish(false), 6000);
+
+    const sub = pool.subscribeMany(relays, deleteSubscriptionFilter, {
+      onevent: () => finish(true),
+      oneose: () => finish(false),
+    });
+  });
+};

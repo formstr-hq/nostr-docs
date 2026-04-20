@@ -2,16 +2,19 @@ import { useEffect, useState } from "react";
 import { useParams, useLocation } from "react-router-dom";
 import { useDocumentContext } from "../contexts/DocumentContext";
 import { fetchDocumentByNaddr } from "../nostr/fetchFile";
+import { hasDeleteRequestForAddress } from "../nostr/fetchDelete";
 import { useRelays } from "../contexts/RelayContext";
 import { nip19 } from "nostr-tools";
 import { decodeNKeys } from "../utils/nkeys";
 import { DocumentEditorController } from "./editor/DocEditorController";
-import { storeLocalEvent } from "../lib/localStore";
+import { removeLocalEvent, storeLocalEvent } from "../lib/localStore";
+import { pool } from "../nostr/relayPool";
+import { KIND_FILE } from "../nostr/kinds";
 
 export default function DocPage() {
   const { naddr } = useParams<{ naddr: string }>();
   const location = useLocation();
-  const { documents, setSelectedDocumentId, addDocument } =
+  const { documents, setSelectedDocumentId, addDocument, removeDocument } =
     useDocumentContext();
   const { relays } = useRelays();
 
@@ -48,12 +51,25 @@ export default function DocPage() {
 
     const docExists = documents.get(address);
 
-    // Document already in context — no loading flash, editor stays mounted
-    if (docExists) {
-      setSelectedDocumentId(address);
-      setLoading(false);
-      return;
-    }
+    // Live guard: if this address gets deleted while the page is open,
+    // revoke access immediately without requiring a refresh.
+    const deleteSub = pool.subscribeMany(
+      relays,
+      {
+        kinds: [5],
+        "#k": [`${KIND_FILE}`],
+        "#a": [address],
+      },
+      {
+        onevent: () => {
+          removeDocument(address);
+          setSelectedDocumentId(null);
+          removeLocalEvent(address).catch(() => {});
+          setNotFound(true);
+          setLoading(false);
+        },
+      },
+    );
 
     // Not cached: fetch from relays (shows loading state)
     setLoading(true);
@@ -63,11 +79,23 @@ export default function DocPage() {
     let cancelled = false;
     (async () => {
       try {
-        const latestEvent = await fetchDocumentByNaddr(
-          relays,
-          naddr,
-          () => {},
-        );
+        // Block access for revoked/deleted addresses even if the document
+        // is already cached in memory.
+        const deletedAddress = await hasDeleteRequestForAddress(relays, address);
+        if (deletedAddress) {
+          removeDocument(address);
+          removeLocalEvent(address).catch(() => {});
+          setNotFound(true);
+          return;
+        }
+
+        // Document already in context — no fetch needed
+        if (docExists) {
+          setSelectedDocumentId(address);
+          return;
+        }
+
+        const latestEvent = await fetchDocumentByNaddr(relays, naddr, () => {});
 
         if (cancelled) return;
 
@@ -86,6 +114,13 @@ export default function DocPage() {
         }
 
         const eventAddress = `${latestEvent.kind}:${latestEvent.pubkey}:${dTag}`;
+
+        const deleted = await hasDeleteRequestForAddress(relays, eventAddress);
+        if (deleted) {
+          removeLocalEvent(eventAddress).catch(() => {});
+          setNotFound(true);
+          return;
+        }
 
         await addDocument(latestEvent, keys);
         if (cancelled) return;
@@ -112,6 +147,7 @@ export default function DocPage() {
 
     return () => {
       cancelled = true;
+      deleteSub.close();
     };
   }, [naddr, relays, location.hash]);
 

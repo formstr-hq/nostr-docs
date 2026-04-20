@@ -4,12 +4,16 @@ import { KIND_SHARE_INVITE } from "./kinds";
 import type { EventTemplate } from "nostr-tools";
 
 export interface ShareInvitePayload {
-  type: "share";
+  type: "share" | "declined";
   address: string;
+  replacesAddress?: string;
   viewKey: string;
   editKey?: string;
   title: string;
   senderNpub?: string;
+  recipientPubkey?: string;
+  recipientNpub?: string;
+  originalInviteId?: string;
 }
 
 /**
@@ -62,4 +66,6 @@ export async function shareDocumentToNpub(
       console.error("[ShareInvite] ❌ Failed on", relays[i], r.reason);
     }
   });
+
+  return signed.id;
 }

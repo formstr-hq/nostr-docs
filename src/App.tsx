@@ -4,12 +4,16 @@ import {
   CssBaseline,
   GlobalStyles,
   Box,
+  Button,
   Drawer,
   IconButton,
   AppBar,
   Toolbar,
   Typography,
   useMediaQuery,
+  Badge,
+  Snackbar,
+  Alert,
 } from "@mui/material";
 import MenuIcon from "@mui/icons-material/Menu";
 import { ThemeProvider } from "@mui/material/styles";
@@ -29,7 +33,7 @@ import { themes } from "./theme";
 import type { ThemeId } from "./theme";
 import FormstrLogo from "./assets/formstr-pages-logo.png";
 import DocPage from "./components/DocPage";
-import { SharedPagesProvider } from "./contexts/SharedDocsContext";
+import { SharedPagesProvider, useSharedPages } from "./contexts/SharedDocsContext";
 import { RelayProvider } from "./contexts/RelayContext";
 import { DocMetadataProvider } from "./contexts/DocMetadataContext";
 import { BlossomProvider } from "./contexts/BlossomContext";
@@ -104,6 +108,40 @@ function AppLayout() {
     () => (localStorage.getItem("formstr:theme") as ThemeId | null) ?? "candlelit"
   );
   const isDesktop = useMediaQuery("(min-width:900px)");
+  const {
+    pendingInvites,
+    declineNotifications,
+    resendDeclineInvite,
+  } = useSharedPages();
+  const totalNotifyCount = pendingInvites.length + declineNotifications.length;
+
+  const [globalToast, setGlobalToast] = React.useState<
+    | { kind: "invite"; title: string }
+    | { kind: "declined"; id: string; title: string }
+    | null
+  >(null);
+  const prevInviteCountRef = React.useRef(pendingInvites.length);
+  const prevDeclineCountRef = React.useRef(declineNotifications.length);
+
+  React.useEffect(() => {
+    if (pendingInvites.length > prevInviteCountRef.current) {
+      const latest = pendingInvites[pendingInvites.length - 1];
+      if (latest) {
+        setGlobalToast({ kind: "invite", title: latest.title || "Untitled" });
+      }
+    }
+    prevInviteCountRef.current = pendingInvites.length;
+  }, [pendingInvites]);
+
+  React.useEffect(() => {
+    if (declineNotifications.length > prevDeclineCountRef.current) {
+      const latest = declineNotifications[declineNotifications.length - 1];
+      if (latest) {
+        setGlobalToast({ kind: "declined", id: latest.id, title: latest.title || "Untitled" });
+      }
+    }
+    prevDeclineCountRef.current = declineNotifications.length;
+  }, [declineNotifications]);
 
   const theme = themes[themeId].theme;
 
@@ -138,7 +176,9 @@ function AppLayout() {
                 edge="start"
                 onClick={() => setMobileOpen((prev) => !prev)}
               >
-                <MenuIcon />
+                <Badge color="error" badgeContent={totalNotifyCount} max={99}>
+                  <MenuIcon />
+                </Badge>
               </IconButton>
             )}
 
@@ -157,6 +197,43 @@ function AppLayout() {
           </Box>
         </Toolbar>
       </AppBar>
+
+      <Snackbar
+        open={!!globalToast}
+        autoHideDuration={7000}
+        onClose={() => setGlobalToast(null)}
+        anchorOrigin={{ vertical: "top", horizontal: "center" }}
+      >
+        {globalToast?.kind === "invite" ? (
+          <Alert severity="info" variant="filled" onClose={() => setGlobalToast(null)}>
+            New document shared: <strong>{globalToast.title}</strong>
+          </Alert>
+        ) : globalToast?.kind === "declined" ? (
+          <Alert
+            severity="warning"
+            variant="filled"
+            onClose={() => setGlobalToast(null)}
+            action={
+              <Button
+                color="inherit"
+                size="small"
+                onClick={() => {
+                  void resendDeclineInvite(globalToast.id);
+                  setGlobalToast(null);
+                }}
+              >
+                Resend
+              </Button>
+            }
+          >
+            Invite declined: <strong>{globalToast.title}</strong>
+          </Alert>
+        ) : (
+          <Alert severity="info" variant="filled" onClose={() => setGlobalToast(null)}>
+            Notification
+          </Alert>
+        )}
+      </Snackbar>
 
       {/* ===== SIDEBAR + MAIN CONTENT ===== */}
       <Box sx={{ display: "flex", height: "100%", overflow: "hidden" }}>

@@ -55,6 +55,8 @@ import { useBlossomServers } from "../../contexts/BlossomContext";
 import { KIND_FILE } from "../../nostr/kinds";
 import { getLatestVersion } from "../../utils/helpers";
 import { encodeNKeys } from "../../utils/nkeys";
+import { migrateACL, removeACLRecord } from "../../lib/ACLStore";
+import { shareDocumentToNpub } from "../../nostr/shareDocument";
 
 // Delay after the last edit before auto-save fires (ms)
 const AUTO_SAVE_DELAY_MS = 30_000;
@@ -142,7 +144,7 @@ export function DocumentEditorController({
     localOnlyAddresses,
     markLocalOnly,
   } = useDocumentContext();
-  const { addSharedDoc } = useSharedPages();
+  const { removeSharedDoc, replaceSharedDoc, registerOutgoingInviteId } = useSharedPages();
 
   const navigate = useNavigate();
   const { relays } = useRelays();
@@ -632,12 +634,15 @@ export function DocumentEditorController({
     const address = selectedDocumentId!;
 
     if (skipPrompt) {
-      await deleteEvent({
-        address,
-        relays,
-        reason: "User requested deletion",
-        eventIds: history?.versions.map((v) => v.event.id) ?? [],
-      });
+      if (isOwner) {
+        await deleteEvent({
+          address,
+          relays,
+          reason: "User requested deletion",
+          eventIds: history?.versions.map((v) => v.event.id) ?? [],
+        });
+      }
+      await removeSharedDoc(address);
       removeDocument(address);
       removeLocalEvent(address).catch(() => {});
       navigate("/");
@@ -825,7 +830,7 @@ export function DocumentEditorController({
           pendingDeleteAddressRef.current = null;
           pendingDeleteLocalOnlyRef.current = false;
           setConfirmOpen(false);
-          if (!wasLocalOnly) {
+          if (!wasLocalOnly && isOwner) {
             try {
               await deleteEvent({
                 address,
@@ -838,6 +843,7 @@ export function DocumentEditorController({
               setToast({ open: true, message: "Failed to delete from relays", severity: "error" });
             }
           }
+          await removeSharedDoc(address);
           removeDocument(address);
           await trashLocalEvent(address).catch(() => {});
           navigate("/");
@@ -963,7 +969,6 @@ export function DocumentEditorController({
           );
 
           // 2. Migrate the ACL
-          const { migrateACL, removeACLRecord } = await import("../../lib/ACLStore");
           migrateACL(selectedDocumentId, result.address);
           removeACLRecord(result.address, revokedNpub); // actually rip out the revoked user
 
@@ -978,7 +983,6 @@ export function DocumentEditorController({
             
             // Explicitly wipe the old document from local IndexedDB & React state!
             // If we don't do this, clicking the old URL will load the cached version.
-            const { removeLocalEvent } = await import("../../lib/localStore");
             removeDocument(selectedDocumentId);
             removeLocalEvent(selectedDocumentId).catch(() => {});
             
@@ -986,16 +990,17 @@ export function DocumentEditorController({
           } catch(e) {}
 
           // 4. Send new encrypted invites to the remaining members
-          const { shareDocumentToNpub } = await import("../../nostr/shareDocument");
           for (const r of remainingAcl) {
             try {
-              await shareDocumentToNpub(r.npub, {
+              const inviteId = await shareDocumentToNpub(r.npub, {
                 type: "share",
                 address: result.address,
+                replacesAddress: selectedDocumentId,
                 viewKey: result.viewKey,
                 ...(result.editKey ? { editKey: result.editKey } : {}),
                 title: getDocTitle(),
               }, relays);
+              registerOutgoingInviteId(inviteId);
             // eslint-disable-next-line @typescript-eslint/no-unused-vars
             } catch(e) {}
           }
@@ -1007,7 +1012,7 @@ export function DocumentEditorController({
             result.viewKey,
             ...(result.editKey ? [result.editKey] : []),
           ];
-          await addSharedDoc(sharedDocTag);
+          await replaceSharedDoc(selectedDocumentId, sharedDocTag);
           navigate(result.url, { replace: true });
         }}
         onPublicPost={() => handleSharePublic()}

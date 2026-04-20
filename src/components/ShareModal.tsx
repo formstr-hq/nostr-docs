@@ -18,17 +18,29 @@ import {
   MenuItem,
 } from "@mui/material";
 import ContentCopyIcon from "@mui/icons-material/ContentCopy";
+import SendIcon from "@mui/icons-material/Send";
 import { useACL } from "../hooks/useACL";
 import CloseIcon from "@mui/icons-material/Close";
 import { useState } from "react";
 import { shareDocumentToNpub } from "../nostr/shareDocument";
 import { nip19 } from "nostr-tools";
+import ConfirmModal from "./common/ConfirmModal";
+import { signerManager } from "../signer";
+import { encodeNKeys } from "../utils/nkeys";
+import { useSharedPages } from "../contexts/SharedDocsContext";
 
 type Props = {
   open: boolean;
   onClose: () => void;
   onPublicPost?: () => void;
-  onPrivateLink?: (canEdit: boolean) => Promise<any | void>;
+  onPrivateLink?: (canEdit: boolean) => Promise<
+    | {
+        address: string;
+        viewKey: string;
+        editKey?: string;
+      }
+    | void
+  >;
   docTitle?: string;
   documentAddress?: string;
   onCloneAndRevoke?: (revokedNpub: string, remainingAcl: Array<{npub: string, role: "view"|"edit"}>) => Promise<void>;
@@ -43,15 +55,25 @@ export default function ShareModal({
   onCloneAndRevoke
 }: Props) {
   const [canEdit, setCanEdit] = useState(false);
+  const { registerOutgoingInviteId } = useSharedPages();
   const { acl, grantAccess } = useACL(documentAddress);
   const [privateLink, setPrivateLink] = useState<string>("");
   const [loading, setLoading] = useState(false);
   const [inviteRole, setInviteRole] = useState<"view" | "edit">("view");
   const [inviteLoading, setInviteLoading] = useState(false);
   const [inviteNpub, setInviteNpub] = useState("");
-  const [toastOpen, setToastOpen] = useState(false);
-  const [toastMessage, setToastMessage] = useState("");
+  const [toast, setToast] = useState<{
+    open: boolean;
+    message: string;
+    severity: "success" | "error";
+  }>({ open: false, message: "", severity: "success" });
   const [error, setError] = useState<string>("");
+  const [revokeConfirmOpen, setRevokeConfirmOpen] = useState(false);
+  const [pendingRevokeNpub, setPendingRevokeNpub] = useState<string | null>(null);
+  const [resendLoading, setResendLoading] = useState<string | null>(null);
+
+  const revokeWarningText =
+    "REVOKING ACCESS: Because Nostr handles encryption natively, revoking access physically creates a clone of the document under a new cryptographic key, deletes the old document, and resends the new link to the remaining members. Are you sure you want to proceed?";
 
   const handlePrivateLink = async () => {
     if (!onPrivateLink) return;
@@ -68,7 +90,6 @@ export default function ShareModal({
         });
         const nkeysObj: Record<string, string> = { viewKey: result.viewKey };
         if (result.editKey) nkeysObj.editKey = result.editKey;
-        const encodeNKeys = (await import("../utils/nkeys")).encodeNKeys;
         const url = `${window.location.origin}/doc/${naddr}#${encodeNKeys(nkeysObj)}`;
         setPrivateLink(url);
       } else {
@@ -82,11 +103,26 @@ export default function ShareModal({
     }
   };
 
-  const handleCopy = () => {
+  const handleCopy = async () => {
     if (!privateLink) return;
-    navigator.clipboard.writeText(privateLink);
-    setToastMessage("Link copied to clipboard!");
-    setToastOpen(true);
+    try {
+      if (!navigator.clipboard?.writeText) {
+        throw new Error("Clipboard is unavailable on this device.");
+      }
+      await navigator.clipboard.writeText(privateLink);
+      setToast({
+        open: true,
+        message: "Link copied to clipboard!",
+        severity: "success",
+      });
+    } catch (err) {
+      console.error("Failed to copy link:", err);
+      setToast({
+        open: true,
+        message: "Could not copy link. Please copy it manually.",
+        severity: "error",
+      });
+    }
   };
 
   const handleInvite = async () => {
@@ -106,7 +142,7 @@ export default function ShareModal({
       }
 
       // Block self-sharing
-      const signer = await import("../signer").then(m => m.signerManager.getSigner());
+      const signer = await signerManager.getSigner();
       const myPubkey = await signer.getPublicKey();
       if (targetPubkey === myPubkey) {
         throw new Error("You cannot send an invite to yourself.");
@@ -120,19 +156,23 @@ export default function ShareModal({
       if (!result || typeof result !== "object") throw new Error("Failed to generate link");
 
       // Send the high-level invite (NIP-17 rumor kind 211234)
-      await shareDocumentToNpub(targetPubkey, {
+      const inviteId = await shareDocumentToNpub(targetPubkey, {
         type: "share",
         address: result.address,
         viewKey: result.viewKey,
         ...(result.editKey && { editKey: result.editKey }),
         title: docTitle,
       });
+      registerOutgoingInviteId(inviteId);
       
       // Log the grant explicitly into our zero-server ACL engine
       grantAccess(targetPubkey, inviteRole);
       
-      setToastMessage("Invite sent directly to account!");
-      setToastOpen(true);
+      setToast({
+        open: true,
+        message: "Invite sent directly to account!",
+        severity: "success",
+      });
       setInviteNpub("");
     } catch (err) {
       console.error("Invite failed:", err);
@@ -148,8 +188,65 @@ export default function ShareModal({
     setCanEdit(false);
     setLoading(false);
     setInviteLoading(false);
+    setRevokeConfirmOpen(false);
+    setPendingRevokeNpub(null);
     setError("");
     onClose();
+  };
+
+  const handleConfirmRevoke = async () => {
+    if (!onCloneAndRevoke || !pendingRevokeNpub) return;
+    setRevokeConfirmOpen(false);
+    setLoading(true);
+    try {
+      const remaining = acl.filter((r) => r.npub !== pendingRevokeNpub);
+      await onCloneAndRevoke(pendingRevokeNpub, remaining);
+    } catch (err) {
+      console.error(err);
+      const reason = err instanceof Error ? err.message : String(err);
+      setToast({
+        open: true,
+        message: `Failed to revoke: ${reason}`,
+        severity: "error",
+      });
+    } finally {
+      setPendingRevokeNpub(null);
+      setLoading(false);
+    }
+  };
+
+  const handleResendInvite = async (npub: string, role: "view" | "edit") => {
+    if (!onPrivateLink) return;
+    setResendLoading(npub);
+    try {
+      const targetPubkey = nip19.decode(npub).data as string;
+      const result = await onPrivateLink(role === "edit");
+      if (!result || typeof result !== "object") throw new Error("Failed to generate link");
+
+      const inviteId = await shareDocumentToNpub(targetPubkey, {
+        type: "share",
+        address: result.address,
+        viewKey: result.viewKey,
+        ...(result.editKey && { editKey: result.editKey }),
+        title: docTitle,
+      });
+      registerOutgoingInviteId(inviteId);
+
+      setToast({
+        open: true,
+        message: `Invite resent to ${npub.slice(0, 12)}...`,
+        severity: "success",
+      });
+    } catch (err) {
+      console.error("Resend failed:", err);
+      setToast({
+        open: true,
+        message: `Failed to resend: ${err instanceof Error ? err.message : "Unknown error"}`,
+        severity: "error",
+      });
+    } finally {
+      setResendLoading(null);
+    }
   };
 
   return (
@@ -171,7 +268,9 @@ export default function ShareModal({
                   let prettyTarget = record.npub;
                   try {
                     prettyTarget = nip19.npubEncode(record.npub);
-                  } catch {}
+                  } catch {
+                    prettyTarget = record.npub;
+                  }
                   
                   return (
                     <Box key={record.npub} sx={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
@@ -183,29 +282,33 @@ export default function ShareModal({
                           {record.role === "edit" ? "Editor" : "Viewer"}
                         </Typography>
                       </Box>
-                      {onCloneAndRevoke && (
-                        <IconButton 
-                          size="small" 
-                          color="error" 
-                          onClick={async () => {
-                            if (window.confirm("REVOKING ACCESS:\n\nBecause Nostr handles encryption natively, revoking access physically creates a clone of the document under a new cryptographic key, deletes the old document, and resends the new link to the remaining members.\n\nAre you sure you want to proceed?")) {
-                              setLoading(true);
-                              try {
-                                const remaining = acl.filter(r => r.npub !== record.npub);
-                                await onCloneAndRevoke(record.npub, remaining);
-                              } catch (err) {
-                                console.error(err);
-                                alert("Failed to revoke: " + err);
-                              } finally {
-                                setLoading(false);
-                              }
-                            }
-                          }}
-                          disabled={loading}
-                        >
-                          <CloseIcon fontSize="small"/>
-                        </IconButton>
-                      )}
+                      <Box sx={{ display: "flex", gap: 0.5 }}>
+                        {onPrivateLink && (
+                          <IconButton 
+                            size="small" 
+                            color="secondary"
+                            onClick={() => void handleResendInvite(record.npub, record.role)}
+                            disabled={loading || resendLoading === record.npub}
+                            title="Resend invite"
+                          >
+                            <SendIcon fontSize="small"/>
+                          </IconButton>
+                        )}
+                        {onCloneAndRevoke && (
+                          <IconButton 
+                            size="small" 
+                            color="error" 
+                            onClick={() => {
+                              setPendingRevokeNpub(record.npub);
+                              setRevokeConfirmOpen(true);
+                            }}
+                            disabled={loading}
+                            title="Revoke access"
+                          >
+                            <CloseIcon fontSize="small"/>
+                          </IconButton>
+                        )}
+                      </Box>
                     </Box>
                   );
                 })}
@@ -324,15 +427,31 @@ export default function ShareModal({
       </Dialog>
 
       <Snackbar
-        open={toastOpen}
+        open={toast.open}
         autoHideDuration={3000}
-        onClose={() => setToastOpen(false)}
+        onClose={() => setToast((prev) => ({ ...prev, open: false }))}
         anchorOrigin={{ vertical: "bottom", horizontal: "center" }}
       >
-        <Alert severity="success" sx={{ width: "100%" }}>
-          {toastMessage}
+        <Alert
+          severity={toast.severity}
+          sx={{ width: "100%", maxWidth: 420, alignItems: "center" }}
+        >
+          {toast.message}
         </Alert>
       </Snackbar>
+
+      <ConfirmModal
+        open={revokeConfirmOpen}
+        title="Revoke Access"
+        description={revokeWarningText}
+        confirmText="Revoke"
+        cancelText="Cancel"
+        onCancel={() => {
+          setRevokeConfirmOpen(false);
+          setPendingRevokeNpub(null);
+        }}
+        onConfirm={handleConfirmRevoke}
+      />
     </>
   );
 }

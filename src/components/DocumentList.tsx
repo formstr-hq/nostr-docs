@@ -23,8 +23,6 @@ import {
   Divider,
   Tooltip,
   Badge,
-  Snackbar,
-  Alert,
 } from "@mui/material";
 import CheckCircleIcon from "@mui/icons-material/CheckCircle";
 import NotificationsActiveIcon from "@mui/icons-material/NotificationsActive";
@@ -111,12 +109,12 @@ export default function DocumentList({
   } = useDocumentContext();
   const [docRelays, setDocRelays] = useState<Map<string, string[]>>(new Map());
 
-  const { 
-    sharedDocuments, 
-    getKeys, 
-    pendingInvites, 
-    acceptInvite, 
-    rejectInvite 
+  const {
+    sharedDocuments,
+    getKeys,
+    pendingInvites,
+    acceptInvite,
+    rejectInvite,
   } = useSharedPages();
   const { docTags, allTags, selectedTag, setSelectedTag } = useDocMetadata();
   const [loading, setLoading] = useState(true);
@@ -127,18 +125,7 @@ export default function DocumentList({
   const { relays } = useRelays();
   const navigate = useNavigate();
 
-  const [lastInviteCount, setLastInviteCount] = useState(pendingInvites.length);
-  const [snackbarOpen, setSnackbarOpen] = useState(false);
-  const [latestInvite, setLatestInvite] = useState<any>(null);
 
-  useEffect(() => {
-    if (pendingInvites.length > lastInviteCount) {
-        const newInvite = pendingInvites[pendingInvites.length - 1];
-        setLatestInvite(newInvite);
-        setSnackbarOpen(true);
-    }
-    setLastInviteCount(pendingInvites.length);
-  }, [pendingInvites.length, lastInviteCount]);
 
   const handleDocumentSelect = (doc: Event) => {
     const dTag = doc.tags.find((t) => t[0] === "d")?.[1];
@@ -350,18 +337,18 @@ export default function DocumentList({
       <Box sx={{ flex: 1, overflowY: "auto", px: 1.5, py: 1, pb: 0 }}>
         {tab === "shared" && pendingInvites.length > 0 && (
             <Box sx={{ mb: 3 }}>
-                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1, px: 1 }}>
-                    <NotificationsActiveIcon sx={{ fontSize: 16, color: 'error.main' }} />
-                    <Typography variant="overline" sx={{ fontWeight: 800, color: 'error.main', lineHeight: 1 }}>Pending Invites</Typography>
+                <Box sx={{ display: "flex", alignItems: "center", gap: 1, mb: 1, px: 1 }}>
+                    <NotificationsActiveIcon sx={{ fontSize: 16, color: "error.main" }} />
+                    <Typography variant="overline" sx={{ fontWeight: 800, color: "error.main", lineHeight: 1 }}>Pending Invites</Typography>
                 </Box>
                 <List sx={{ p: 0 }}>
                     {pendingInvites.map((invite) => (
-                        <ListItemButton key={invite.id} sx={{ mb: 0.5, borderRadius: 1.5, bgcolor: (t) => alpha(t.palette.error.main, 0.05), border: (t) => `1px dashed ${alpha(t.palette.error.main, 0.3)}`, flexDirection: 'column', alignItems: 'flex-start', p: 1.5 }}>
-                            <Typography variant="body2" fontWeight={700} noWrap sx={{ width: '100%' }}>{invite.title || "Untitled Document"}</Typography>
+                        <ListItemButton key={invite.id} sx={{ mb: 0.5, borderRadius: 1.5, bgcolor: (t) => alpha(t.palette.error.main, 0.05), border: (t) => `1px dashed ${alpha(t.palette.error.main, 0.3)}`, flexDirection: "column", alignItems: "flex-start", p: 1.5 }}>
+                            <Typography variant="body2" fontWeight={700} noWrap sx={{ width: "100%" }}>{invite.title || "Untitled Document"}</Typography>
                             <Typography variant="caption" color="text.secondary" sx={{ mb: 1 }}>from {invite.senderNpub?.slice(0, 12)}...</Typography>
-                            <Box sx={{ display: 'flex', gap: 1, width: '100%' }}>
-                                <Button fullWidth size="small" variant="contained" color="success" onClick={(e) => { e.stopPropagation(); acceptInvite(invite); }} startIcon={<CheckCircleIcon />} sx={{ fontSize: '0.65rem', py: 0.2 }}>Accept</Button>
-                                <Button fullWidth size="small" variant="outlined" color="inherit" onClick={(e) => { e.stopPropagation(); rejectInvite(invite.id); }} sx={{ fontSize: '0.65rem', py: 0.2, opacity: 0.6 }}>Decline</Button>
+                            <Box sx={{ display: "flex", gap: 1, width: "100%" }}>
+                                <Button fullWidth size="small" variant="contained" color="success" onClick={(e) => { e.stopPropagation(); void acceptInvite(invite); }} startIcon={<CheckCircleIcon />} sx={{ fontSize: "0.65rem", py: 0.2 }}>Accept</Button>
+                                <Button fullWidth size="small" variant="outlined" color="inherit" onClick={(e) => { e.stopPropagation(); void rejectInvite(invite.id); }} sx={{ fontSize: "0.65rem", py: 0.2, opacity: 0.6 }}>Decline</Button>
                             </Box>
                         </ListItemButton>
                     ))}
@@ -437,11 +424,7 @@ export default function DocumentList({
 
       <TrashDialog open={trashOpen} onClose={() => setTrashOpen(false)} />
 
-      <Snackbar open={snackbarOpen} autoHideDuration={6000} onClose={() => setSnackbarOpen(false)} anchorOrigin={{ vertical: 'bottom', horizontal: 'left' }}>
-        <Alert onClose={() => setSnackbarOpen(false)} severity="info" variant="filled" sx={{ width: '100%', cursor: 'pointer' }} onClick={() => { setSnackbarOpen(false); setTab("shared"); }}>
-            New document shared: <strong>{latestInvite?.title || "Untitled"}</strong>
-        </Alert>
-      </Snackbar>
+
     </Box>
   );
 }
