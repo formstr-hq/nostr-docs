@@ -60,7 +60,7 @@ import {
   exportAsHtml,
   exportAsPlainText,
   exportAsPdf,
-  exportAsDocx,
+  exportAsDoc,
 } from "../../utils/exportDocument";
 
 // Delay after the last edit before auto-save fires (ms)
@@ -686,9 +686,9 @@ export function DocumentEditorController({
     exportAsPdf(editor.getHTML(), getDocTitle());
   };
 
-  const handleExportDocx = () => {
+  const handleExportDoc = () => {
     if (!editor) return;
-    exportAsDocx(editor.getHTML(), getDocTitle());
+    exportAsDoc(editor.getHTML(), getDocTitle());
   };
 
   /* ── Render ────────────────────────────────────────────── */
@@ -740,7 +740,7 @@ export function DocumentEditorController({
           onExportHtml={handleExportHtml}
           onExportPlainText={handleExportPlainText}
           onExportPdf={handleExportPdf}
-          onExportDocx={handleExportDocx}
+          onExportDoc={handleExportDoc}
         />
       )}
 

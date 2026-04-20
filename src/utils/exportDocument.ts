@@ -34,7 +34,7 @@ export function deriveFilename(markdown: string): string {
   );
 }
 
-/** Shared styled HTML wrapper used by HTML export, PDF, and DOCX. */
+/** Shared styled HTML wrapper used by HTML export, PDF, and DOC. */
 function styledHtmlDocument(html: string, title: string): string {
   return `<!DOCTYPE html>
 <html lang="en">
@@ -135,11 +135,10 @@ export function exportAsPdf(html: string, title: string) {
 }
 
 /**
- * Export as DOCX (.docx) — Word-compatible document.
- * Uses the Office Open XML HTML wrapper so Word / Google Docs / LibreOffice
- * can open it natively. Zero dependencies.
+ * Export as Word DOC (.doc) using HTML + Office namespaces.
+ * Word / Google Docs / LibreOffice can open it natively. Zero dependencies.
  */
-export function exportAsDocx(html: string, title: string, filename?: string) {
+export function exportAsDoc(html: string, title: string, filename?: string) {
   const derived = title
     .replace(/[<>:"/\\|?*]+/g, "")
     .replace(/\s+/g, "-")

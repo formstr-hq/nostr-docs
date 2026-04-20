@@ -75,7 +75,7 @@ type Props = {
   onExportHtml?: () => void;
   onExportPlainText?: () => void;
   onExportPdf?: () => void;
-  onExportDocx?: () => void;
+  onExportDoc?: () => void;
 };
 
 export function EditorToolbar({
@@ -100,7 +100,7 @@ export function EditorToolbar({
   onExportHtml,
   onExportPlainText,
   onExportPdf,
-  onExportDocx,
+  onExportDoc,
 }: Props) {
   const { user, loginModal } = useUser();
   const [menuAnchor, setMenuAnchor] = useState<null | HTMLElement>(null);
@@ -345,7 +345,7 @@ export function EditorToolbar({
             </MenuItem>
             <MenuItem
               onClick={() => {
-                onExportDocx?.();
+                onExportDoc?.();
                 setExportOpen(false);
                 setMenuAnchor(null);
               }}
