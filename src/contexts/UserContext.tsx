@@ -68,7 +68,7 @@ export const UserProvider: React.FC<{ children: React.ReactNode }> = ({
 
   // Listen to signerManager changes
   useEffect(() => {
-    signerManager.onChange(async () => {
+    const unsubscribe = signerManager.onChange(async () => {
       console.log("On change triggered");
       if (signerManager.hasSigner()) {
         const signer = await signerManager.getSigner();
@@ -83,6 +83,7 @@ export const UserProvider: React.FC<{ children: React.ReactNode }> = ({
 
     // Restore signer on mount (triggers onChange)
     signerManager.restoreFromStorage();
+    return unsubscribe;
   }, []);
 
   // Fetch kind-0 metadata and update state + localStorage
