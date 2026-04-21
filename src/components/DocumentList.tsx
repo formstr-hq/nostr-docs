@@ -10,6 +10,7 @@ import {
 } from "../lib/localStore.ts";
 import { publishEvent } from "../nostr/publish.ts";
 import {
+  Alert,
   Box,
   Typography,
   List,
@@ -107,6 +108,7 @@ export default function DocumentList({
   const { sharedDocuments, getKeys } = useSharedPages();
   const { docTags, allTags, selectedTag, setSelectedTag } = useDocMetadata();
   const [loading, setLoading] = useState(true);
+  const [syncError, setSyncError] = useState<string | null>(null);
   const [tab, setTab] = useState<"personal" | "shared">("personal");
   const [trashOpen, setTrashOpen] = useState(false);
   const [trashCount, setTrashCount] = useState(0);
@@ -173,6 +175,7 @@ export default function DocumentList({
       }
 
       // ── Phase 2: relay sync ──────────────────────────────
+      setSyncError(null);
       try {
         const pubkey = await signer.getPublicKey();
         const { relayMap } = await fetchAllDocuments(
@@ -204,6 +207,9 @@ export default function DocumentList({
         }
       } catch (err) {
         console.error("Failed to fetch documents:", err);
+        setSyncError(
+          "Could not sync with relays. Showing locally saved documents."
+        );
       } finally {
         setLoading(false);
       }
@@ -332,6 +338,17 @@ export default function DocumentList({
             />
           ))}
         </Box>
+      )}
+
+      {/* Relay sync error banner */}
+      {syncError && (
+        <Alert
+          severity="warning"
+          onClose={() => setSyncError(null)}
+          sx={{ mx: 1.5, mt: 1, borderRadius: 1, fontSize: "0.78rem" }}
+        >
+          {syncError}
+        </Alert>
       )}
 
       {/* List area */}
