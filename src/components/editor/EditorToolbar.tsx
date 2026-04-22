@@ -42,6 +42,7 @@ import HtmlIcon from "@mui/icons-material/Html";
 import TextSnippetIcon from "@mui/icons-material/TextSnippet";
 import PictureAsPdfIcon from "@mui/icons-material/PictureAsPdf";
 import ArticleOutlinedIcon from "@mui/icons-material/ArticleOutlined";
+import SearchIcon from "@mui/icons-material/Search";
 import { useState, useRef } from "react";
 import { useUser } from "../../contexts/UserContext";
 import type { Editor } from "@tiptap/react";
@@ -76,6 +77,8 @@ type Props = {
   onExportPlainText?: () => void;
   onExportPdf?: () => void;
   onExportDoc?: () => void;
+  showFindReplace?: boolean;
+  onToggleFindReplace?: () => void;
 };
 
 export function EditorToolbar({
@@ -101,6 +104,8 @@ export function EditorToolbar({
   onExportPlainText,
   onExportPdf,
   onExportDoc,
+  showFindReplace = false,
+  onToggleFindReplace,
 }: Props) {
   const { user, loginModal } = useUser();
   const [menuAnchor, setMenuAnchor] = useState<null | HTMLElement>(null);
@@ -205,6 +210,18 @@ export function EditorToolbar({
               Login to Save
             </Button>
           ))}
+
+          {mode === "edit" && onToggleFindReplace && (
+            <Tooltip title="Find & Replace">
+              <IconButton
+                size="small"
+                onClick={onToggleFindReplace}
+                color={showFindReplace ? "secondary" : "default"}
+              >
+                <SearchIcon fontSize="small" />
+              </IconButton>
+            </Tooltip>
+          )}
 
           <Tooltip title={focusMode ? "Exit focus mode" : "Focus mode"}>
             <IconButton size="small" onClick={onToggleFocusMode}>
