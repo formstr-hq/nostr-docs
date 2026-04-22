@@ -26,6 +26,7 @@ import {
 } from "@mui/material";
 import AddIcon from "@mui/icons-material/Add";
 import DeleteForeverIcon from "@mui/icons-material/DeleteForever";
+import SmartphoneIcon from "@mui/icons-material/Smartphone";
 import { useDocumentContext } from "../contexts/DocumentContext.tsx";
 import { signerManager } from "../signer/index.ts";
 import { useRelays } from "../contexts/RelayContext.tsx";
@@ -99,9 +100,12 @@ export default function DocumentList({
   const {
     setSelectedDocumentId,
     visibleDocuments,
+    visitedDocuments,
     addDocument,
     addDeletionRequest,
     selectedDocumentId,
+    localOnlyAddresses,
+    markLocalOnly,
   } = useDocumentContext();
   const [docRelays, setDocRelays] = useState<Map<string, string[]>>(new Map());
 
@@ -110,6 +114,7 @@ export default function DocumentList({
   const [loading, setLoading] = useState(true);
   const [syncError, setSyncError] = useState<string | null>(null);
   const [tab, setTab] = useState<"personal" | "shared">("personal");
+  const [tab, setTab] = useState<"personal" | "shared" | "visited">("personal");
   const [trashOpen, setTrashOpen] = useState(false);
   const [trashCount, setTrashCount] = useState(0);
   const { user } = useUser();
@@ -166,6 +171,9 @@ export default function DocumentList({
               viewKey: entry.viewKey,
               editKey: entry.editKey,
             });
+            if (entry.localOnly) {
+              markLocalOnly(entry.address, true);
+            }
           } catch {
             // Skip events that can't be decrypted (e.g. belong to another user)
           }
@@ -199,7 +207,9 @@ export default function DocumentList({
 
         // ── Phase 3: re-broadcast any events saved while offline ──
         for (const entry of localEntries) {
-          if (entry.pendingBroadcast) {
+          // Never re-broadcast device-only events. They are stored unsigned
+          // (sig: "") so relays would reject them anyway, but skip explicitly.
+          if (entry.pendingBroadcast && !entry.localOnly) {
             publishEvent(entry.event, relays)
               .then(() => markBroadcast(entry.address))
               .catch(() => {});
@@ -228,7 +238,19 @@ export default function DocumentList({
     navigate("/");
   };
 
-  const allDocs = tab === "personal" ? visibleDocuments : sharedDocuments;
+  const allDocs =
+    tab === "personal" ? visibleDocuments
+    : tab === "shared"  ? sharedDocuments
+    :                     visitedDocuments;
+
+  // Auto-switch to the tab that owns the currently selected doc
+  useEffect(() => {
+    if (!selectedDocumentId) return;
+    if (visibleDocuments.has(selectedDocumentId)) setTab("personal");
+    else if (sharedDocuments.has(selectedDocumentId)) setTab("shared");
+    else if (visitedDocuments.has(selectedDocumentId)) setTab("visited");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedDocumentId]);
 
   const docsToShow = selectedTag
     ? new Map(
@@ -240,6 +262,7 @@ export default function DocumentList({
 
   const personalCount = visibleDocuments.size;
   const sharedCount = sharedDocuments.size;
+  const visitedCount = visitedDocuments.size;
 
   return (
     <Box
@@ -269,7 +292,9 @@ export default function DocumentList({
       <Tabs
         value={tab}
         onChange={(_, v) => setTab(v)}
-        variant="fullWidth"
+        variant="scrollable"
+        scrollButtons="auto"
+        allowScrollButtonsMobile
         sx={{ flexShrink: 0, borderBottom: "1px solid", borderColor: "divider" }}
         textColor="secondary"
         indicatorColor="secondary"
@@ -298,6 +323,22 @@ export default function DocumentList({
               {sharedCount > 0 && (
                 <Chip
                   label={sharedCount}
+                  size="small"
+                  color="secondary"
+                  sx={{ height: 18, fontSize: "0.65rem" }}
+                />
+              )}
+            </Box>
+          }
+        />
+        <Tab
+          value="visited"
+          label={
+            <Box sx={{ display: "flex", alignItems: "center", gap: 0.75 }}>
+              Visited
+              {visitedCount > 0 && (
+                <Chip
+                  label={visitedCount}
                   size="small"
                   color="secondary"
                   sx={{ height: 18, fontSize: "0.65rem" }}
@@ -379,6 +420,8 @@ export default function DocumentList({
             >
               {tab === "personal"
                 ? "No documents yet.\nCreate your first page!"
+                : tab === "visited"
+                ? "No visited pages yet.\nOpen a shared link to see it here."
                 : "No shared documents found."}
             </Typography>
             {tab === "personal" && (
@@ -473,7 +516,29 @@ export default function DocumentList({
                               ))}
                             </Box>
                           )}
-                          {relays.length > 0 && (
+                          {localOnlyAddresses.has(address) ? (
+                            <Box
+                              component="span"
+                              sx={{ display: "flex", alignItems: "center", gap: 0.3, mt: 0.4 }}
+                            >
+                              <SmartphoneIcon sx={{ fontSize: "0.58rem", opacity: 0.45 }} />
+                              <Box
+                                component="span"
+                                sx={{
+                                  fontSize: "0.58rem",
+                                  fontFamily: "monospace",
+                                  opacity: 0.45,
+                                  bgcolor: (t) => alpha(t.palette.text.primary, 0.07),
+                                  borderRadius: 0.75,
+                                  px: 0.6,
+                                  py: 0.1,
+                                  lineHeight: 1.6,
+                                }}
+                              >
+                                Device only
+                              </Box>
+                            </Box>
+                          ) : relays.length > 0 && (
                             <Box
                               component="span"
                               sx={{ display: "flex", flexWrap: "wrap", gap: 0.4, mt: 0.4 }}

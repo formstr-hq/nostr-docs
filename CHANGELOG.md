@@ -1,3 +1,13 @@
+# 0.9.1
+
+= Fix Sharing urls
+
+# 0.9.0
+
+- Add device only pages when you don't wish to sync with relays.
+- Fix Shared docs showing up in personal pane
+- Add visited docs to keep track of docs in this session
+
 # 0.8.0
 - Fixed issues with delete
 - Fixed sharing transperancy

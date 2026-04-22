@@ -12,6 +12,7 @@ export interface LocalStoredEvent {
   pendingBroadcast: boolean; // true = not yet confirmed published to relays
   savedAt: number; // Unix ms timestamp
   trashedAt?: number; // Unix ms — set when moved to trash, absent when active
+  localOnly?: boolean; // true = encrypted locally only, never published to relays
 }
 
 function openDB(): Promise<IDBDatabase> {
@@ -45,7 +46,13 @@ export async function storeLocalEvent(entry: LocalStoredEvent): Promise<void> {
         resolve();
         return;
       }
-      const putReq = store.put(entry);
+      // Preserve an explicit localOnly flag set on this device so a newer
+      // relay event can't silently re-enable syncing.
+      const toStore: LocalStoredEvent = {
+        ...entry,
+        localOnly: entry.localOnly ?? existing?.localOnly,
+      };
+      const putReq = store.put(toStore);
       putReq.onsuccess = () => resolve();
       putReq.onerror = () => reject(putReq.error);
     };
@@ -131,6 +138,35 @@ export async function restoreLocalEvent(address: string): Promise<void> {
       const entry = getReq.result as LocalStoredEvent | undefined;
       if (!entry) { resolve(); return; }
       delete entry.trashedAt;
+      const putReq = store.put(entry);
+      putReq.onsuccess = () => resolve();
+      putReq.onerror = () => reject(putReq.error);
+    };
+    getReq.onerror = () => reject(getReq.error);
+  });
+}
+
+/**
+ * Set or clear the localOnly flag for a stored event.
+ * When clearing (switching to synced), also marks pendingBroadcast=true
+ * so the event is re-broadcast on next startup.
+ */
+export async function setLocalOnlyFlag(
+  address: string,
+  localOnly: boolean,
+): Promise<void> {
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(STORE_NAME, "readwrite");
+    const store = tx.objectStore(STORE_NAME);
+    const getReq = store.get(address);
+    getReq.onsuccess = () => {
+      const entry = getReq.result as LocalStoredEvent | undefined;
+      if (!entry) { resolve(); return; }
+      entry.localOnly = localOnly || undefined; // keep undefined instead of false to avoid polluting old entries
+      // Note: we do NOT set pendingBroadcast=true when clearing localOnly.
+      // Device-only events are stored unsigned (sig: ""), so they cannot be
+      // published as-is. The user must save again to create a fresh signed event.
       const putReq = store.put(entry);
       putReq.onsuccess = () => resolve();
       putReq.onerror = () => reject(putReq.error);

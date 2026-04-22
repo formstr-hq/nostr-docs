@@ -20,6 +20,8 @@ interface DocumentContextValue {
   selectedDocumentId: string | null;
 
   setSelectedDocumentId: (id: string | null) => void;
+  /** Addresses navigated to in the current browser session. */
+  sessionVisited: Set<string>;
   addDocument: (
     document: Event,
     keys?: { viewKey?: string; editKey?: string },
@@ -31,7 +33,15 @@ interface DocumentContextValue {
 
   deletedEventIds: Set<string>;
 
+  /** Docs authored by the current user (not deleted). */
   visibleDocuments: Map<string, DocumentHistory>;
+  /** Docs opened by the user but authored by someone else (not deleted). */
+  visitedDocuments: Map<string, DocumentHistory>;
+
+  /** Addresses of documents the user has explicitly set to device-only. */
+  localOnlyAddresses: Set<string>;
+  /** Update the in-memory device-only flag for a document address. */
+  markLocalOnly: (address: string, localOnly: boolean) => void;
 }
 
 const DocumentContext = createContext<DocumentContextValue | undefined>(
@@ -77,12 +87,38 @@ export const DocumentProvider: React.FC<{ children: React.ReactNode }> = ({
   const [documents, setDocuments] = useState<Map<string, DocumentHistory>>(
     new Map(),
   );
-  const [selectedDocumentId, setSelectedDocumentId] = useState<string | null>(
+  const [_selectedDocumentId, _setSelectedDocumentId] = useState<string | null>(
     null,
   );
+  const [sessionVisited, setSessionVisited] = useState<Set<string>>(new Set());
   const [deletedEventIds, setDeletedEventIds] = useState<Set<string>>(
     new Set(),
   );
+  const [localOnlyAddresses, setLocalOnlyAddresses] = useState<Set<string>>(
+    new Set(),
+  );
+
+  const selectedDocumentId = _selectedDocumentId;
+  const setSelectedDocumentId = (id: string | null) => {
+    _setSelectedDocumentId(id);
+    if (id) {
+      setSessionVisited((prev) => {
+        if (prev.has(id)) return prev;
+        const next = new Set(prev);
+        next.add(id);
+        return next;
+      });
+    }
+  };
+
+  const markLocalOnly = (address: string, localOnly: boolean) => {
+    setLocalOnlyAddresses((prev) => {
+      const next = new Set(prev);
+      if (localOnly) next.add(address);
+      else next.delete(address);
+      return next;
+    });
+  };
   const addDeletionRequest = (delEvent: Event) => {
     const eTags = delEvent.tags.filter((t) => t[0] === "e").map((t) => t[1]);
     const aTags = delEvent.tags.filter((t) => t[0] === "a").map((t) => t[1]);
@@ -106,13 +142,17 @@ export const DocumentProvider: React.FC<{ children: React.ReactNode }> = ({
       return newDocuments;
     });
 
-    setSelectedDocumentId((current) => (current === id ? null : current));
+    _setSelectedDocumentId((current) => (current === id ? null : current));
   };
 
   const visibleDocuments = useMemo(() => {
     return new Map(
       [...documents.entries()]
-        .filter(([address]) => !deletedEventIds.has(address))
+        .filter(([address, history]) => {
+          if (deletedEventIds.has(address)) return false;
+          const pubkey = history.versions[0]?.event.pubkey;
+          return pubkey === user?.pubkey;
+        })
         .map(([address, history]): [string, DocumentHistory] => [
           address,
           {
@@ -123,7 +163,28 @@ export const DocumentProvider: React.FC<{ children: React.ReactNode }> = ({
         ])
         .filter(([, h]) => h.versions.length > 0),
     );
-  }, [documents, deletedEventIds]);
+  }, [documents, deletedEventIds, user?.pubkey]);
+
+  const visitedDocuments = useMemo(() => {
+    return new Map(
+      [...documents.entries()]
+        .filter(([address, history]) => {
+          if (!sessionVisited.has(address)) return false;
+          if (deletedEventIds.has(address)) return false;
+          const pubkey = history.versions[0]?.event.pubkey;
+          return pubkey !== user?.pubkey;
+        })
+        .map(([address, history]): [string, DocumentHistory] => [
+          address,
+          {
+            versions: history.versions.filter(
+              (v) => !deletedEventIds.has(v.event.id),
+            ),
+          },
+        ])
+        .filter(([, h]) => h.versions.length > 0),
+    );
+  }, [documents, deletedEventIds, user?.pubkey, sessionVisited]);
 
   const addDocument = async (
     document: Event,
@@ -168,12 +229,16 @@ export const DocumentProvider: React.FC<{ children: React.ReactNode }> = ({
         documents,
         selectedDocumentId,
         setSelectedDocumentId,
+        sessionVisited,
         addDocument,
         removeDocument,
         deletedEventIds,
         addDeletionRequest,
         clearDeletionRecord,
         visibleDocuments,
+        visitedDocuments,
+        localOnlyAddresses,
+        markLocalOnly,
       }}
     >
       {children}

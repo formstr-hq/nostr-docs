@@ -12,9 +12,12 @@ import {
 } from "@mui/material";
 import InsertDriveFileIcon from "@mui/icons-material/InsertDriveFile";
 import LabelOutlinedIcon from "@mui/icons-material/LabelOutlined";
+import VisibilityOutlinedIcon from "@mui/icons-material/VisibilityOutlined";
+import EditOutlinedIcon from "@mui/icons-material/EditOutlined";
+import SmartphoneIcon from "@mui/icons-material/Smartphone";
 import { useDocMetadata } from "../../contexts/DocMetadataContext";
 import { useNavigate, useBlocker } from "react-router-dom";
-import { finalizeEvent, getPublicKey, nip19, type Event } from "nostr-tools";
+import { finalizeEvent, getPublicKey, getEventHash, nip19, type Event } from "nostr-tools";
 import { hexToBytes } from "nostr-tools/utils";
 import { useEditor } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
@@ -36,6 +39,7 @@ import {
   markBroadcast,
   removeLocalEvent,
   trashLocalEvent,
+  setLocalOnlyFlag,
 } from "../../lib/localStore";
 
 import { EditorToolbar } from "./EditorToolbar";
@@ -51,6 +55,13 @@ import { useBlossomServers } from "../../contexts/BlossomContext";
 import { KIND_FILE } from "../../nostr/kinds";
 import { getLatestVersion } from "../../utils/helpers";
 import { encodeNKeys } from "../../utils/nkeys";
+import {
+  exportAsMarkdown,
+  exportAsHtml,
+  exportAsPlainText,
+  exportAsPdf,
+  exportAsDoc,
+} from "../../utils/exportDocument";
 
 // Delay after the last edit before auto-save fires (ms)
 const AUTO_SAVE_DELAY_MS = 30_000;
@@ -135,6 +146,8 @@ export function DocumentEditorController({
     setSelectedDocumentId,
     removeDocument,
     addDocument,
+    localOnlyAddresses,
+    markLocalOnly,
   } = useDocumentContext();
   const { addSharedDoc } = useSharedPages();
 
@@ -183,6 +196,15 @@ export function DocumentEditorController({
     severity: "success" | "error";
   }>({ open: false, message: "", severity: "success" });
   const [shareOpen, setShareOpen] = useState(false);
+  // Device-only state: for drafts tracked locally; for saved docs derived from context
+  const [draftLocalOnly, setDraftLocalOnly] = useState(false);
+  const isLocalOnly = isDraft
+    ? draftLocalOnly
+    : (selectedDocumentId ? localOnlyAddresses.has(selectedDocumentId) : false);
+  const [syncConfirmOpen, setSyncConfirmOpen] = useState(false);
+  const [localOnlyConfirmOpen, setLocalOnlyConfirmOpen] = useState(false);
+  // Capture isLocalOnly at delete-click time so the modal always uses the right value
+  const pendingDeleteLocalOnlyRef = useRef<boolean>(false);
 
   const { servers: blossomServers } = useBlossomServers();
 
@@ -439,58 +461,77 @@ export function DocumentEditorController({
 
   /* ── Save helpers ──────────────────────────────────────── */
 
-  const saveSnapshotWithAddress = async (address: string, content: string) => {
+  const saveSnapshotWithAddress = async (
+    address: string,
+    content: string,
+    localOnly = false,
+  ) => {
     const dTag = address.split(":")?.[2];
     const encryptedContent = await encryptContent(content, viewKey);
     if (!encryptedContent) throw new Error("Encryption failed");
 
-    let signed: Event;
+    let stored: Event;
 
-    if (editKey) {
-      const editKeyBytes = hexToBytes(editKey);
-      const event = {
+    if (localOnly) {
+      // Device-only: encrypt and compute a valid event id but leave sig empty.
+      // An empty signature is rejected by every relay, providing a hard
+      // structural guarantee that this event can never be accidentally published.
+      const signer = await signerManager.getSigner();
+      if (!signer) throw new Error("No signer available");
+      const pubkey = editKey
+        ? getPublicKey(hexToBytes(editKey))
+        : await signer.getPublicKey();
+      const template = {
         kind: KIND_FILE,
         tags: [["d", dTag]],
         content: encryptedContent,
         created_at: Math.floor(Date.now() / 1000),
+        pubkey,
       };
-      signed = finalizeEvent(event, editKeyBytes);
+      stored = { ...template, id: getEventHash(template), sig: "" };
+    } else if (editKey) {
+      stored = finalizeEvent(
+        {
+          kind: KIND_FILE,
+          tags: [["d", dTag]],
+          content: encryptedContent,
+          created_at: Math.floor(Date.now() / 1000),
+        },
+        hexToBytes(editKey),
+      );
     } else {
       const signer = await signerManager.getSigner();
       if (!signer) throw new Error("No signer available");
-      const event = {
+      stored = await signer.signEvent({
         kind: KIND_FILE,
         tags: [["d", dTag]],
         content: encryptedContent,
         created_at: Math.floor(Date.now() / 1000),
-        pubkey: await signer.getPublicKey(),
-      };
-      signed = await signer.signEvent(event);
+      });
     }
 
     // 1. Update React state (in-memory, for immediate UI)
-    addDocument(signed, { viewKey, editKey });
+    addDocument(stored, { viewKey, editKey });
 
-    // 2. Persist locally first — this is the source of truth when offline.
-    //    Throws only if IndexedDB itself fails (rare), which will surface as
-    //    a save error to the user.
+    // 2. Persist locally — source of truth when offline (or device-only).
     await storeLocalEvent({
       address,
-      event: signed,
+      event: stored,
       viewKey: viewKey ?? undefined,
       editKey: editKey ?? undefined,
-      pendingBroadcast: true,
+      pendingBroadcast: !localOnly,
       savedAt: Date.now(),
+      localOnly: localOnly || undefined,
     });
 
-    // 3. Broadcast to relays (best-effort — relay failure doesn't undo the
-    //    local save, so we don't throw; we just log and leave the event
-    //    marked pendingBroadcast=true for the next sync opportunity).
-    try {
-      await publishEvent(signed, relays);
-      await markBroadcast(address);
-    } catch (err) {
-      console.warn("Relay broadcast failed (saved locally):", err);
+    // 3. Broadcast to relays — skipped entirely for device-only documents.
+    if (!localOnly) {
+      try {
+        await publishEvent(stored, relays);
+        await markBroadcast(address);
+      } catch (err) {
+        console.warn("Relay broadcast failed (saved locally):", err);
+      }
     }
   };
 
@@ -503,7 +544,8 @@ export function DocumentEditorController({
       pubkey = await signer.getPublicKey();
     }
     const address = `${KIND_FILE}:${pubkey}:${dTag}`;
-    await saveSnapshotWithAddress(address, content);
+    await saveSnapshotWithAddress(address, content, draftLocalOnly);
+    if (draftLocalOnly) markLocalOnly(address, true);
     setSelectedDocumentId(address);
     const naddr = nip19.naddrEncode({
       pubkey,
@@ -524,7 +566,27 @@ export function DocumentEditorController({
   };
 
   const saveExistingDocument = async (address: string, content: string) => {
-    await saveSnapshotWithAddress(address, content);
+    await saveSnapshotWithAddress(address, content, isLocalOnly);
+  };
+
+  const handleToggleLocalOnly = async () => {
+    if (isDraft) {
+      if (!draftLocalOnly) {
+        // Turning on — show warning first
+        setLocalOnlyConfirmOpen(true);
+      } else {
+        setDraftLocalOnly(false);
+      }
+      return;
+    }
+
+    if (isLocalOnly) {
+      // Turning off — requires confirmation since it will publish to relays
+      setSyncConfirmOpen(true);
+    } else {
+      // Turning on — show warning first
+      setLocalOnlyConfirmOpen(true);
+    }
   };
 
   const handleSave = async (silent = false) => {
@@ -589,11 +651,44 @@ export function DocumentEditorController({
       return;
     }
 
-    // Capture the address and event IDs now, before the modal opens, so the
-    // confirm handler always deletes the document the user intended to delete
-    // (guarding against selectedDocumentId changing while the modal is open).
+    // Capture address and localOnly flag before the modal opens so the confirm
+    // handler always acts on the document the user intended to delete.
     pendingDeleteAddressRef.current = address;
+    pendingDeleteLocalOnlyRef.current = isLocalOnly;
     setConfirmOpen(true);
+  };
+
+  /* ── Export helpers ──────────────────────────────────────── */
+
+  const getDocTitle = () => {
+    const firstLine = mdRef.current.split("\n").find((l) => l.trim());
+    return firstLine
+      ? firstLine.replace(/^#+\s*/, "").trim().slice(0, 60) || "Untitled"
+      : "Untitled";
+  };
+
+  const handleExportMarkdown = () => {
+    exportAsMarkdown(mdRef.current);
+  };
+
+  const handleExportHtml = () => {
+    if (!editor) return;
+    const html = editor.getHTML();
+    exportAsHtml(html, getDocTitle());
+  };
+
+  const handleExportPlainText = () => {
+    exportAsPlainText(mdRef.current);
+  };
+
+  const handleExportPdf = () => {
+    if (!editor) return;
+    exportAsPdf(editor.getHTML(), getDocTitle());
+  };
+
+  const handleExportDoc = () => {
+    if (!editor) return;
+    exportAsDoc(editor.getHTML(), getDocTitle());
   };
 
   /* ── Render ────────────────────────────────────────────── */
@@ -638,6 +733,14 @@ export function DocumentEditorController({
           isViewOnly={isViewOnly}
           onAttachFile={(files) => Array.from(files).forEach(handleFileUpload)}
           uploading={uploading}
+          isLocalOnly={isLocalOnly}
+          onToggleLocalOnly={handleToggleLocalOnly}
+          showLocalOnlyToggle={!viewKey && !editKey}
+          onExportMarkdown={handleExportMarkdown}
+          onExportHtml={handleExportHtml}
+          onExportPlainText={handleExportPlainText}
+          onExportPdf={handleExportPdf}
+          onExportDoc={handleExportDoc}
         />
       )}
 
@@ -680,6 +783,42 @@ export function DocumentEditorController({
           flexShrink: 0,
         }}
       >
+        {!isDraft && !isOwner && !!user && (
+          <Box
+            sx={{
+              display: "flex",
+              alignItems: "center",
+              gap: 0.5,
+              mr: "auto",
+              color: "info.main",
+            }}
+          >
+            {editKey ? (
+              <EditOutlinedIcon sx={{ fontSize: 12 }} />
+            ) : (
+              <VisibilityOutlinedIcon sx={{ fontSize: 12 }} />
+            )}
+            <Typography variant="caption" sx={{ fontWeight: 600 }}>
+              Shared page · {editKey ? "edit access" : "view only"}
+            </Typography>
+          </Box>
+        )}
+        {(isDraft || isOwner) && isLocalOnly && (
+          <Box
+            sx={{
+              display: "flex",
+              alignItems: "center",
+              gap: 0.5,
+              mr: "auto",
+              color: "text.secondary",
+            }}
+          >
+            <SmartphoneIcon sx={{ fontSize: 12 }} />
+            <Typography variant="caption" sx={{ fontWeight: 600 }}>
+              Device only
+            </Typography>
+          </Box>
+        )}
         {hasUnsavedChanges ? (
           <Typography variant="caption" color="error.main" sx={{ fontWeight: 600 }}>
             ● Unsaved changes
@@ -709,25 +848,31 @@ export function DocumentEditorController({
       <ConfirmModal
         open={confirmOpen}
         title="Delete Document?"
-        description="This sends a deletion request to your relays. This process is irreversible. Do you wish to proceed?"
+        description={
+          pendingDeleteLocalOnlyRef.current
+            ? "This note is only on this device and cannot be recovered once deleted. Do you wish to proceed?"
+            : "This sends a deletion request to your relays. This process is irreversible. Do you wish to proceed?"
+        }
         confirmText="Delete"
         cancelText="Cancel"
         onConfirm={async () => {
-          // Use the address captured at delete-click time, not the live context value.
           const address = pendingDeleteAddressRef.current ?? selectedDocumentId!;
+          const wasLocalOnly = pendingDeleteLocalOnlyRef.current;
           pendingDeleteAddressRef.current = null;
+          pendingDeleteLocalOnlyRef.current = false;
           setConfirmOpen(false);
-          try {
-            await deleteEvent({
-              address,
-              relays,
-              reason: "User requested deletion",
-              eventIds: documents.get(address)?.versions.map((v) => v.event.id) ?? [],
-            });
-          } catch (err) {
-            console.error("Failed to publish deletion event:", err);
-            setToast({ open: true, message: "Failed to delete from relays", severity: "error" });
-            // Still remove locally so the document isn't stuck in a half-deleted state.
+          if (!wasLocalOnly) {
+            try {
+              await deleteEvent({
+                address,
+                relays,
+                reason: "User requested deletion",
+                eventIds: documents.get(address)?.versions.map((v) => v.event.id) ?? [],
+              });
+            } catch (err) {
+              console.error("Failed to publish deletion event:", err);
+              setToast({ open: true, message: "Failed to delete from relays", severity: "error" });
+            }
           }
           removeDocument(address);
           await trashLocalEvent(address).catch(() => {});
@@ -735,8 +880,49 @@ export function DocumentEditorController({
         }}
         onCancel={() => {
           pendingDeleteAddressRef.current = null;
+          pendingDeleteLocalOnlyRef.current = false;
           setConfirmOpen(false);
         }}
+      />
+      <ConfirmModal
+        open={syncConfirmOpen}
+        title="Sync to relays?"
+        description="This note will be published to your relays the next time you save it. This cannot be undone."
+        confirmText="Turn off device only"
+        cancelText="Keep device only"
+        onConfirm={async () => {
+          setSyncConfirmOpen(false);
+          await setLocalOnlyFlag(selectedDocumentId!, false);
+          markLocalOnly(selectedDocumentId!, false);
+          setToast({
+            open: true,
+            message: "Device only off. Save to publish to your relays.",
+            severity: "success",
+          });
+        }}
+        onCancel={() => setSyncConfirmOpen(false)}
+      />
+      <ConfirmModal
+        open={localOnlyConfirmOpen}
+        title="Save to this device only?"
+        description="This page won't sync to your relays or any other device. This will be the only copy — if you lose this device or clear the app, it's gone permanently."
+        confirmText="Save device only"
+        cancelText="Keep syncing"
+        onConfirm={async () => {
+          setLocalOnlyConfirmOpen(false);
+          if (isDraft) {
+            setDraftLocalOnly(true);
+          } else {
+            await setLocalOnlyFlag(selectedDocumentId!, true);
+            markLocalOnly(selectedDocumentId!, true);
+          }
+          setToast({
+            open: true,
+            message: "Device only on. This note won't sync to relays or other devices.",
+            severity: "success",
+          });
+        }}
+        onCancel={() => setLocalOnlyConfirmOpen(false)}
       />
       <ConfirmModal
         open={historyConfirmOpen}

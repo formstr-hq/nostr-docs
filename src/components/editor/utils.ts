@@ -12,6 +12,7 @@ import { signerManager } from "../../signer";
 import { publishEvent } from "../../nostr/publish";
 import { encodeNKeys } from "../../utils/nkeys";
 import { KIND_FILE } from "../../nostr/kinds";
+import { isNativePlatform } from "../../signer/secureStorage";
 
 export const handleSharePublic = () => {
   console.log("TODO: Share publicly");
@@ -115,7 +116,8 @@ export async function handleGeneratePrivateLink(
     identifier: dTag,
   });
 
-  const shareUrl = `${window.location.origin}/doc/${naddr}#${nkeysStr}`;
+  const baseUrl = isNativePlatform ? "https://pages.formstr.app" : window.location.origin;
+  const shareUrl = `${baseUrl}/doc/${naddr}#${nkeysStr}`;
 
   return {
     url: shareUrl,
