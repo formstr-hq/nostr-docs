@@ -2,7 +2,7 @@ import type { Event } from "nostr-tools";
 
 const DB_NAME = "nostr-docs-local";
 const STORE_NAME = "events";
-const DB_VERSION = 3;
+const DB_VERSION = 1;
 
 export interface LocalStoredEvent {
   address: string; // "33457:pubkey:dtag" — primary key
@@ -22,9 +22,6 @@ function openDB(): Promise<IDBDatabase> {
       const db = req.result;
       if (!db.objectStoreNames.contains(STORE_NAME)) {
         db.createObjectStore(STORE_NAME, { keyPath: "address" });
-      }
-      if (db.objectStoreNames.contains("commentEvents")) {
-        db.deleteObjectStore("commentEvents");
       }
     };
     req.onsuccess = () => resolve(req.result);
