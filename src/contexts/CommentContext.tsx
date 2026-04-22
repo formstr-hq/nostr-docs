@@ -15,11 +15,6 @@ import {
   type CommentPayload,
   type CommentType,
 } from "../nostr/comments";
-import {
-  saveComment,
-  getCommentsForDoc,
-  type LocalStoredComment,
-} from "../lib/localStore";
 
 export interface DecryptedComment {
   id: string;
@@ -43,13 +38,13 @@ const CommentContext = createContext<CommentContextValue | undefined>(undefined)
 function decryptCommentEvent(
   event: Event,
   viewKey: string,
-): { comment: DecryptedComment; innerTags: string[][] } | null {
+): DecryptedComment | null {
   try {
     const conversationKey = viewKeyConversationKey(viewKey);
     const decrypted = nip44.decrypt(event.content, conversationKey);
-    const innerTags: string[][] = JSON.parse(decrypted);
+    const tags: string[][] = JSON.parse(decrypted);
 
-    const get = (name: string) => innerTags.find((t) => t[0] === name);
+    const get = (name: string) => tags.find((t) => t[0] === name);
     const contentTag = get("content");
     const typeTag = get("type");
     if (!contentTag || !typeTag) return null;
@@ -59,50 +54,21 @@ function decryptCommentEvent(
     const docEventId = event.tags.find((t) => t[0] === "e")?.[1] ?? "";
 
     return {
-      innerTags,
-      comment: {
-        id: event.id,
-        pubkey: event.pubkey,
-        createdAt: event.created_at,
-        docEventId,
-        content: contentTag[1],
-        type: typeTag[1] as CommentType,
-        quote: quoteTag?.[1],
-        context: contextTag
-          ? { prefix: contextTag[1], suffix: contextTag[2] }
-          : undefined,
-        event,
-      },
+      id: event.id,
+      pubkey: event.pubkey,
+      createdAt: event.created_at,
+      docEventId,
+      content: contentTag[1],
+      type: typeTag[1] as CommentType,
+      quote: quoteTag?.[1],
+      context: contextTag
+        ? { prefix: contextTag[1], suffix: contextTag[2] }
+        : undefined,
+      event,
     };
   } catch {
     return null;
   }
-}
-
-function commentFromStored(lc: LocalStoredComment): DecryptedComment | null {
-  const tags = lc.decryptedTags;
-  const get = (name: string) => tags.find((t) => t[0] === name);
-  const contentTag = get("content");
-  const typeTag = get("type");
-  if (!contentTag || !typeTag) return null;
-
-  const quoteTag = get("quote");
-  const contextTag = get("context");
-  const docEventId = lc.event.tags.find((t) => t[0] === "e")?.[1] ?? "";
-
-  return {
-    id: lc.id,
-    pubkey: lc.event.pubkey,
-    createdAt: lc.event.created_at,
-    docEventId,
-    content: contentTag[1],
-    type: typeTag[1] as CommentType,
-    quote: quoteTag?.[1],
-    context: contextTag
-      ? { prefix: contextTag[1], suffix: contextTag[2] }
-      : undefined,
-    event: lc.event,
-  };
 }
 
 function insertSorted(
@@ -129,34 +95,12 @@ export const CommentProvider: React.FC<{
   useEffect(() => {
     setComments([]);
 
-    // Hydrate from local store first so comments appear instantly
-    getCommentsForDoc(docAddress)
-      .then((stored) => {
-        const decrypted = stored
-          .map(commentFromStored)
-          .filter((c): c is DecryptedComment => c !== null)
-          .sort((a, b) => a.createdAt - b.createdAt);
-        if (decrypted.length > 0) {
-          setComments(decrypted);
-        }
-      })
-      .catch(() => {});
-
-    // Subscribe to relay for live + historical comments
     subRef.current?.close();
     subRef.current = fetchComments(docAddress, relays, (event) => {
-      const result = decryptCommentEvent(event, viewKey);
-      if (!result) return;
+      const comment = decryptCommentEvent(event, viewKey);
+      if (!comment) return;
 
-      saveComment({
-        id: event.id,
-        docAddress,
-        event,
-        decryptedTags: result.innerTags,
-        savedAt: Date.now(),
-      }).catch(() => {});
-
-      setComments((prev) => insertSorted(prev, result.comment));
+      setComments((prev) => insertSorted(prev, comment));
     });
 
     return () => {
@@ -176,29 +120,6 @@ export const CommentProvider: React.FC<{
       docEventId,
       relays,
     );
-
-    const decryptedTags: string[][] = [
-      ["content", payload.content],
-      ["type", payload.type],
-    ];
-    if (payload.quote !== undefined) {
-      decryptedTags.push(["quote", payload.quote]);
-    }
-    if (payload.context !== undefined) {
-      decryptedTags.push([
-        "context",
-        payload.context.prefix,
-        payload.context.suffix,
-      ]);
-    }
-
-    await saveComment({
-      id: event.id,
-      docAddress,
-      event,
-      decryptedTags,
-      savedAt: Date.now(),
-    });
 
     const comment: DecryptedComment = {
       id: event.id,

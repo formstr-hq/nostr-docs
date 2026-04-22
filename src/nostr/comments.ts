@@ -31,7 +31,6 @@ export async function publishComment(
   docAddress: string,
   docEventId: string,
   relays: string[],
-  relayHint = "",
 ): Promise<Event> {
   const signer = await signerManager.getSigner();
   if (!signer) throw new Error("No signer available");
@@ -56,8 +55,8 @@ export async function publishComment(
     created_at: Math.floor(Date.now() / 1000),
     content: encryptedContent,
     tags: [
-      ["a", docAddress, relayHint],
-      ["e", docEventId, relayHint],
+      ["a", docAddress],
+      ["e", docEventId],
       ["p", docOwnerPubkey],
     ],
   };

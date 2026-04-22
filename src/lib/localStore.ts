@@ -2,8 +2,7 @@ import type { Event } from "nostr-tools";
 
 const DB_NAME = "nostr-docs-local";
 const STORE_NAME = "events";
-const COMMENT_STORE_NAME = "commentEvents";
-const DB_VERSION = 2;
+const DB_VERSION = 3;
 
 export interface LocalStoredEvent {
   address: string; // "33457:pubkey:dtag" — primary key
@@ -16,14 +15,6 @@ export interface LocalStoredEvent {
   localOnly?: boolean; // true = encrypted locally only, never published to relays
 }
 
-export interface LocalStoredComment {
-  id: string; // comment event ID — primary key
-  docAddress: string; // "33457:pubkey:dtag" — indexed for fast doc lookup
-  event: Event; // raw kind 1494 event
-  decryptedTags: string[][]; // decrypted inner tags array
-  savedAt: number; // Unix ms
-}
-
 function openDB(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
     const req = indexedDB.open(DB_NAME, DB_VERSION);
@@ -32,9 +23,8 @@ function openDB(): Promise<IDBDatabase> {
       if (!db.objectStoreNames.contains(STORE_NAME)) {
         db.createObjectStore(STORE_NAME, { keyPath: "address" });
       }
-      if (!db.objectStoreNames.contains(COMMENT_STORE_NAME)) {
-        const commentStore = db.createObjectStore(COMMENT_STORE_NAME, { keyPath: "id" });
-        commentStore.createIndex("docAddress", "docAddress", { unique: false });
+      if (db.objectStoreNames.contains("commentEvents")) {
+        db.deleteObjectStore("commentEvents");
       }
     };
     req.onsuccess = () => resolve(req.result);
@@ -200,32 +190,3 @@ export async function removeLocalEvent(address: string): Promise<void> {
   });
 }
 
-/** Persist a decrypted comment locally. Silently skips if the comment already exists. */
-export async function saveComment(comment: LocalStoredComment): Promise<void> {
-  const db = await openDB();
-  return new Promise((resolve, reject) => {
-    const tx = db.transaction(COMMENT_STORE_NAME, "readwrite");
-    const store = tx.objectStore(COMMENT_STORE_NAME);
-    const getReq = store.get(comment.id);
-    getReq.onsuccess = () => {
-      if (getReq.result) { resolve(); return; }
-      const putReq = store.put(comment);
-      putReq.onsuccess = () => resolve();
-      putReq.onerror = () => reject(putReq.error);
-    };
-    getReq.onerror = () => reject(getReq.error);
-  });
-}
-
-/** Load all locally cached comments for a given document address. */
-export async function getCommentsForDoc(docAddress: string): Promise<LocalStoredComment[]> {
-  const db = await openDB();
-  return new Promise((resolve, reject) => {
-    const tx = db.transaction(COMMENT_STORE_NAME, "readonly");
-    const store = tx.objectStore(COMMENT_STORE_NAME);
-    const index = store.index("docAddress");
-    const req = index.getAll(docAddress);
-    req.onsuccess = () => resolve(req.result as LocalStoredComment[]);
-    req.onerror = () => reject(req.error);
-  });
-}

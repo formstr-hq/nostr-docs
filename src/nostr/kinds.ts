@@ -21,7 +21,7 @@ export const KIND_DOC_METADATA = 34579;
 
 /**
  * Private encrypted inline comment anchored to a document.
- * Non-replaceable: comments accumulate, each independently resolvable.
+ * Non-replaceable: comments accumulate.
  * Content is NIP-44 encrypted (viewKey conversation key) flat tag array.
  */
 export const KIND_COMMENT = 1494;
