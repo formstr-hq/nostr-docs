@@ -1,3 +1,8 @@
+# 0.9.3
+- Comments UI fix on mobile
+- Sort by recent
+- Fix view-key sharing issues on mobile
+
 # 0.9.2
 - Add comments to shared documents to allow users to discuss and collaborate on shared notes, enhancing communication and teamwork within the app.
 - Randomize theme until user selects one.
