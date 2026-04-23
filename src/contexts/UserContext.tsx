@@ -9,7 +9,7 @@ import LoginModal from "../components/LoginModal";
 export type UserProfile = {
   pubkey?: string;
   name?: string;
-  avatar?: string; // url
+  picture?: string; // url
   about?: string;
 };
 

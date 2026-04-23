@@ -56,7 +56,7 @@ export default function UserMenu({ themeId, onSelectTheme }: Props) {
         sx={{ cursor: "pointer", width: 36, height: 36 }}
         onClick={handleOpen}
         alt={displayName ?? undefined}
-        src={user?.avatar || undefined}
+        src={user?.picture || undefined}
       >
         {avatarLetter}
       </Avatar>
