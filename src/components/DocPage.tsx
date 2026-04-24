@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { Box, Button } from "@mui/material";
 import { useParams, useLocation } from "react-router-dom";
 import { useDocumentContext } from "../contexts/DocumentContext";
 import { fetchDocumentByNaddr } from "../nostr/fetchFile";
@@ -119,10 +120,47 @@ export default function DocPage() {
   if (invalid) return <div>Invalid document URL</div>;
   if (notFound) return <div>Document not found. It may have been deleted or not yet propagated to relays.</div>;
 
+  let pollEventId: string | null = null;
+  let computedAddress: string | null = null;
+  if (naddr) {
+    try {
+      const decoded = nip19.decode(naddr);
+      if (decoded.type === "naddr" && decoded.data) {
+        computedAddress = `${decoded.data.kind}:${decoded.data.pubkey}:${decoded.data.identifier}`;
+      }
+    } catch (e) {}
+  }
+
+  if (computedAddress) {
+    const activeDoc = documents.get(computedAddress);
+    const content = activeDoc?.versions[0]?.decryptedContent || "";
+    const match = content.match(/(?:nostr:)?(nevent1[0-9a-z]+|note1[0-9a-z]+)/);
+    if (match) {
+      pollEventId = match[1];
+    }
+  }
+
   return (
-    <DocumentEditorController
-      viewKey={decodedKeys.viewKey}
-      editKey={decodedKeys.editKey}
-    />
+    <Box sx={{ display: "flex", flexDirection: "column", height: "100%" }}>
+      {pollEventId && (
+        <Box sx={{ pb: 1, display: "flex", justifyContent: "center" }}>
+          <Button
+            variant="outlined"
+            color="secondary"
+            onClick={() => {
+              window.location.href = `https://pollerama.fun/respond/${pollEventId}`;
+            }}
+          >
+            Vote in Pollerama
+          </Button>
+        </Box>
+      )}
+      <Box sx={{ flex: 1, minHeight: 0 }}>
+        <DocumentEditorController
+          viewKey={decodedKeys.viewKey}
+          editKey={decodedKeys.editKey}
+        />
+      </Box>
+    </Box>
   );
 }

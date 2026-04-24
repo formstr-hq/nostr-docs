@@ -1,5 +1,6 @@
-import React from "react";
+import React, { useEffect } from "react";
 import "./App.css";
+import { App as CapApp } from "@capacitor/app";
 import {
   CssBaseline,
   GlobalStyles,
@@ -19,6 +20,7 @@ import {
   RouterProvider,
   Outlet,
   useLocation,
+  useNavigate,
 } from "react-router-dom";
 
 import DocumentList from "./components/DocumentList";
@@ -98,7 +100,36 @@ export default function App() {
 // Lives inside the router so hooks like useLocation / useBlocker work here
 // and in any descendant. ThemeProvider + CssBaseline also live here because
 // darkMode state needs to be co-located with the toggle handler.
+function useDeepLinks() {
+  const navigate = useNavigate();
+
+  useEffect(() => {
+    let listener: any = null;
+    CapApp.addListener("appUrlOpen", (event: any) => {
+      const url = event.url;
+      try {
+        let path = "";
+        if (url.startsWith("https://pages.formstr.app")) {
+          const u = new URL(url);
+          path = u.pathname;
+        }
+        
+        if (path) navigate(path);
+      } catch (err) {
+        console.error("Deep link parse error:", err);
+      }
+    }).then((l: any) => {
+      listener = l;
+    });
+
+    return () => {
+      listener?.remove();
+    };
+  }, [navigate]);
+}
+
 function AppLayout() {
+  useDeepLinks();
   const [mobileOpen, setMobileOpen] = React.useState(false);
   const [themeId, setThemeId] = React.useState<ThemeId>(() => {
     const stored = localStorage.getItem("formstr:theme") as ThemeId | null;
