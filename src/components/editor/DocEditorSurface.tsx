@@ -8,6 +8,8 @@ import type { Editor } from "@tiptap/react";
 import EditIcon from "@mui/icons-material/Edit";
 import { EncryptedFilePreview } from "./EncryptedFilePreview";
 import type { EncryptedFileAttrs } from "./EncryptedFilePreview";
+import { extractNeventRef } from "@formstr/polls";
+import { NostrDocsInlinePollCard } from "../../polls/NostrDocsInlinePollCard";
 import { CommentComposer } from "../comments/CommentComposer";
 import { CommentSidebar } from "../comments/CommentSidebar";
 
@@ -73,6 +75,25 @@ const markdownComponents: any = {
     };
     if (!attrs.src || !attrs.decryptionKey) return null;
     return <EncryptedFilePreview {...attrs} />;
+  },
+  // Render inline poll cards whenever markdown contains a Pollerama or nevent link.
+  a: (props: {
+    href?: string;
+    children?: React.ReactNode;
+  }) => {
+    const href = props.href ?? "";
+    const nevent = extractNeventRef(href);
+
+    if (!nevent) {
+      return (
+        <a href={href} target="_blank" rel="noreferrer">
+          {props.children}
+        </a>
+      );
+    }
+
+    // For poll links, render the interactive card only.
+    return <NostrDocsInlinePollCard nevent={nevent} />;
   },
 };
 

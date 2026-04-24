@@ -25,3 +25,15 @@ export const KIND_DOC_METADATA = 34579;
  * Content is NIP-44 encrypted (viewKey conversation key) flat tag array.
  */
 export const KIND_COMMENT = 1494;
+
+/**
+ * Poll event (NIP-88 style usage as implemented by Pollerama).
+ */
+export const KIND_POLL = 1068;
+
+/**
+ * Poll response event kinds.
+ * 1018 is the primary kind in Pollerama; 1070 is legacy/alternate support.
+ */
+export const KIND_POLL_RESPONSE = 1018;
+export const KIND_POLL_RESPONSE_ALT = 1070;
