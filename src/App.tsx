@@ -29,6 +29,7 @@ import { themes } from "./theme";
 import type { ThemeId } from "./theme";
 import FormstrLogo from "./assets/formstr-pages-logo.png";
 import DocPage from "./components/DocPage";
+import DriveImportPage from "./components/DriveImportPage";
 import { SharedPagesProvider } from "./contexts/SharedDocsContext";
 import { RelayProvider } from "./contexts/RelayContext";
 import { DocMetadataProvider } from "./contexts/DocMetadataContext";
@@ -69,6 +70,7 @@ const router = createRouter([
     children: [
       { index: true, element: <HomePage /> },
       { path: "doc/:naddr", element: <DocPageWrapper /> },
+      { path: "drive-import", element: <DriveImportPage /> },
       { path: "about", element: <AboutPage /> },
       { path: "*", element: <NotFoundPage /> },
     ],
