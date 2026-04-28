@@ -29,6 +29,7 @@ import Link from "@tiptap/extension-link";
 import Placeholder from "@tiptap/extension-placeholder";
 import CharacterCount from "@tiptap/extension-character-count";
 import { EncryptedFileNode } from "./extensions/EncryptedFileNode";
+import { SearchAndReplace } from "./extensions/SearchAndReplace";
 
 import { useDocumentContext } from "../../contexts/DocumentContext";
 import { useUser } from "../../contexts/UserContext";
@@ -47,6 +48,7 @@ import {
 } from "../../lib/localStore";
 
 import { EditorToolbar } from "./EditorToolbar";
+import { FindReplacePanel } from "./FindReplacePanel";
 import { DocEditorSurface } from "./DocEditorSurface";
 import { deleteEvent } from "../../nostr/deleteRequest";
 import ConfirmModal from "../common/ConfirmModal";
@@ -187,6 +189,7 @@ export function DocumentEditorController({
   // Whether the last save was an auto-save (vs a manual save)
   const [wasAutoSaved, setWasAutoSaved] = useState(false);
   const [focusMode, setFocusMode] = useState(false);
+  const [showFindReplace, setShowFindReplace] = useState(false);
   const [wordCount, setWordCount] = useState(0);
   const [charCount, setCharCount] = useState(0);
   const [confirmOpen, setConfirmOpen] = useState(false);
@@ -249,6 +252,7 @@ export function DocumentEditorController({
         placeholder: "Start writing your page here…",
       }),
       CharacterCount,
+      SearchAndReplace,
       EncryptedFileNode,
     ],
     editorProps: {
@@ -307,6 +311,10 @@ export function DocumentEditorController({
     }
   }, [mode, editor]);
 
+  useEffect(() => {
+    if (mode !== "edit") setShowFindReplace(false);
+  }, [mode]);
+
   /* ── Keyboard shortcuts ─────────────────────────────────── */
   // Use a ref so the keydown listener always calls the latest handleSave
   // without needing to re-register on every render.
@@ -320,6 +328,10 @@ export function DocumentEditorController({
       if ((e.ctrlKey || e.metaKey) && e.key === "s") {
         e.preventDefault();
         handleSaveRef.current();
+      }
+      if ((e.ctrlKey || e.metaKey) && e.key === "f" && modeRef.current === "edit") {
+        e.preventDefault();
+        setShowFindReplace(true);
       }
     };
     window.addEventListener("keydown", onKeyDown);
@@ -749,6 +761,15 @@ export function DocumentEditorController({
           onExportDoc={handleExportDoc}
           showComments={commentsEnabled ? showComments : undefined}
           onToggleComments={commentsEnabled ? () => setShowComments((s) => !s) : undefined}
+          showFindReplace={showFindReplace}
+          onToggleFindReplace={() => setShowFindReplace((v) => !v)}
+        />
+      )}
+
+      {showFindReplace && mode === "edit" && (
+        <FindReplacePanel
+          editor={editor}
+          onClose={() => setShowFindReplace(false)}
         />
       )}
       {isViewOnly && commentsEnabled && (
