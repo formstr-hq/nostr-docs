@@ -27,7 +27,8 @@ export type ThemeId =
   | "ocean"
   | "cypherpunk"
   | "dracula"
-  | "nord";
+  | "nord"
+  | "corpoDocs";
 
 export interface ThemeDefinition {
   label: string;
@@ -178,6 +179,36 @@ export const themes: Record<ThemeId, ThemeDefinition> = {
       typography: { fontFamily: `"Inter", sans-serif` },
       shape: { borderRadius: 8 },
       components: sharedComponents,
+    }),
+  },
+
+  corpoDocs: {
+    label: "Corpo Docs",
+    swatch: "#FFFFFF",
+    accentSwatch: "#1A73E8",
+    theme: createTheme({
+      palette: {
+        mode: "light",
+        primary: { main: "#1A73E8" },
+        secondary: { main: "#1A73E8" },
+        background: { default: "#F8F9FA", paper: "#FFFFFF" },
+        text: { primary: "#202124", secondary: "#5F6368" },
+        divider: "#E0E0E0",
+      },
+      typography: { fontFamily: `"Inter", "Arial", sans-serif` },
+      shape: { borderRadius: 4 },
+      components: {
+        ...sharedComponents,
+        MuiButton: {
+          styleOverrides: {
+            root: {
+              lineHeight: 1,
+              textTransform: "none" as const,
+              fontWeight: 500,
+            },
+          },
+        },
+      },
     }),
   },
 };
