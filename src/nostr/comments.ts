@@ -4,7 +4,7 @@ import type { SubCloser } from "nostr-tools/abstract-pool";
 import { pool } from "./relayPool";
 import { publishEvent } from "./publish";
 import { signerManager } from "../signer";
-import { KIND_COMMENT } from "./kinds";
+import { KIND_COMMENT, KIND_COMMENT_RESOLUTION } from "./kinds";
 
 export type CommentType = "comment" | "suggestion";
 
@@ -66,6 +66,37 @@ export async function publishComment(
   return signed;
 }
 
+export async function publishResolution(
+  commentEventId: string,
+  viewKey: string,
+  docAddress: string,
+  relays: string[],
+  resolved = true,
+): Promise<Event> {
+  const signer = await signerManager.getSigner();
+  if (!signer) throw new Error("No signer available");
+
+  const encryptedContent = encryptTags(
+    [["resolved", String(resolved)]],
+    viewKey,
+  );
+
+  const event: EventTemplate = {
+    kind: KIND_COMMENT_RESOLUTION,
+    created_at: Math.floor(Date.now() / 1000),
+    content: encryptedContent,
+    tags: [
+      ["d", commentEventId],
+      ["a", docAddress],
+      ["e", commentEventId],
+    ],
+  };
+
+  const signed = await signer.signEvent(event);
+  await publishEvent(signed, relays);
+  return signed;
+}
+
 export function fetchComments(
   docAddress: string,
   relays: string[],
@@ -76,6 +107,27 @@ export function fetchComments(
   return pool.subscribeMany(
     relays,
     { kinds: [KIND_COMMENT], "#a": [docAddress] },
+    {
+      onevent(event: Event) {
+        if (!seenIds.has(event.id)) {
+          seenIds.add(event.id);
+          onEvent(event);
+        }
+      },
+    },
+  );
+}
+
+export function fetchResolutions(
+  docAddress: string,
+  relays: string[],
+  onEvent: (event: Event) => void,
+): SubCloser {
+  const seenIds = new Set<string>();
+
+  return pool.subscribeMany(
+    relays,
+    { kinds: [KIND_COMMENT_RESOLUTION], "#a": [docAddress] },
     {
       onevent(event: Event) {
         if (!seenIds.has(event.id)) {
