@@ -22,18 +22,19 @@ import { useDocMetadata } from "../../contexts/DocMetadataContext";
 import { useNavigate, useBlocker } from "react-router-dom";
 import { finalizeEvent, getPublicKey, getEventHash, nip19, type Event } from "nostr-tools";
 import { hexToBytes } from "nostr-tools/utils";
-import { useEditor } from "@tiptap/react";
+import { useEditor, type Editor } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
 import { Markdown } from "tiptap-markdown";
 import Link from "@tiptap/extension-link";
 import Placeholder from "@tiptap/extension-placeholder";
 import CharacterCount from "@tiptap/extension-character-count";
 import { EncryptedFileNode } from "./extensions/EncryptedFileNode";
+import { CommentHighlight } from "./extensions/CommentHighlight";
 
 import { useDocumentContext } from "../../contexts/DocumentContext";
 import { useUser } from "../../contexts/UserContext";
 import { useSharedPages } from "../../contexts/SharedDocsContext";
-import { CommentProvider } from "../../contexts/CommentContext";
+import { CommentProvider, useComments } from "../../contexts/CommentContext";
 import { signerManager } from "../../signer";
 import { useRelays } from "../../contexts/RelayContext";
 import { publishEvent } from "../../nostr/publish";
@@ -137,6 +138,22 @@ function TagRow({ address }: { address: string }) {
   );
 }
 
+function CommentHighlightEffect({ editor, mode }: { editor: Editor | null; mode: EditorMode }) {
+  const { comments, resolvedIds, applyHighlights } = useComments();
+
+  useEffect(() => {
+    if (!editor || mode !== "edit") return;
+
+    const raf = requestAnimationFrame(() => {
+      applyHighlights(editor);
+    });
+
+    return () => cancelAnimationFrame(raf);
+  }, [comments, resolvedIds, editor, mode, applyHighlights]);
+
+  return null;
+}
+
 export function DocumentEditorController({
   viewKey,
   editKey,
@@ -211,6 +228,7 @@ export function DocumentEditorController({
   // Capture isLocalOnly at delete-click time so the modal always uses the right value
   const pendingDeleteLocalOnlyRef = useRef<boolean>(false);
   const [showComments, setShowComments] = useState(false);
+  const [activeCommentId, setActiveCommentId] = useState<string | null>(null);
 
   const { servers: blossomServers } = useBlossomServers();
 
@@ -250,6 +268,7 @@ export function DocumentEditorController({
       }),
       CharacterCount,
       EncryptedFileNode,
+      CommentHighlight,
     ],
     editorProps: {
       attributes: { class: "tiptap" },
@@ -794,6 +813,8 @@ export function DocumentEditorController({
           showComments={commentsEnabled && showComments}
           onCloseComments={() => setShowComments(false)}
           docEventId={activeVersion?.event.id ?? ""}
+          onCommentClick={(id) => { setActiveCommentId(id); setShowComments(true); }}
+          activeCommentId={activeCommentId}
         />
       </Paper>
 
@@ -1033,7 +1054,8 @@ export function DocumentEditorController({
 
   if (commentsEnabled) {
     return (
-      <CommentProvider viewKey={viewKey!} docAddress={selectedDocumentId!}>
+      <CommentProvider viewKey={viewKey!} docAddress={selectedDocumentId!} currentDocText={md}>
+        <CommentHighlightEffect editor={editor} mode={mode} />
         {editorJsx}
       </CommentProvider>
     );
