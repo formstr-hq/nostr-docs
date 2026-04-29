@@ -1,4 +1,4 @@
-import { useRef } from "react";
+import { useEffect, useRef } from "react";
 import { Box, Typography, useTheme, Fab } from "@mui/material";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -11,6 +11,8 @@ import type { EncryptedFileAttrs } from "./EncryptedFilePreview";
 import { FormFiller } from "./FormFiller";
 import { CommentComposer } from "../comments/CommentComposer";
 import { CommentSidebar } from "../comments/CommentSidebar";
+import { useComments } from "../../contexts/CommentContext";
+import { applyDomHighlights } from "../../utils/domHighlighting";
 
 type Props = {
   value: string;
@@ -24,6 +26,8 @@ type Props = {
   showComments: boolean;
   onCloseComments: () => void;
   docEventId: string;
+  onCommentClick?: (commentId: string) => void;
+  activeCommentId?: string | null;
 };
 
 const markdownSxBase = {
@@ -114,6 +118,17 @@ const markdownComponents: any = {
   },
 };
 
+function PreviewHighlights({ containerRef, value }: { containerRef: React.RefObject<HTMLElement | null>; value: string }) {
+  const { comments, resolvedIds, isOutdated } = useComments();
+
+  useEffect(() => {
+    if (!containerRef.current) return;
+    applyDomHighlights(containerRef.current, comments, resolvedIds, isOutdated);
+  }, [containerRef, comments, resolvedIds, isOutdated, value]);
+
+  return null;
+}
+
 export function DocEditorSurface({
   value,
   editor,
@@ -126,6 +141,8 @@ export function DocEditorSurface({
   showComments,
   onCloseComments,
   docEventId,
+  onCommentClick,
+  activeCommentId,
 }: Props) {
   const theme = useTheme();
   const previewRef = useRef<HTMLElement>(null);
@@ -138,12 +155,24 @@ export function DocEditorSurface({
     },
   };
 
+  const handleHighlightClick = (e: React.MouseEvent): boolean => {
+    const target = e.target as HTMLElement;
+    const span = target.closest("[data-comment-id]");
+    if (!span) return false;
+    const commentId = span.getAttribute("data-comment-id");
+    if (commentId && onCommentClick) {
+      onCommentClick(commentId);
+    }
+    return true;
+  };
+
   /* ── Preview mode ─────────────────────────────────────── */
   if (mode === "preview") {
     return (
       <Box sx={{ display: "flex", flex: 1, overflow: "hidden" }}>
         <Box
           ref={previewRef}
+          onClick={handleHighlightClick}
           sx={{
             flex: 1,
             overflowY: "auto",
@@ -177,9 +206,12 @@ export function DocEditorSurface({
           )}
         </Box>
         {commentsEnabled && (
-          <CommentComposer editor={null} containerRef={previewRef} docEventId={docEventId} isMobile={isMobile} />
+          <>
+            <PreviewHighlights containerRef={previewRef} value={value} />
+            <CommentComposer editor={null} containerRef={previewRef} docEventId={docEventId} isMobile={isMobile} />
+          </>
         )}
-        {showComments && <CommentSidebar onClose={onCloseComments} />}
+        {showComments && <CommentSidebar onClose={onCloseComments} activeCommentId={activeCommentId} isMobile={isMobile} />}
       </Box>
     );
   }
@@ -238,25 +270,32 @@ export function DocEditorSurface({
             </Typography>
           )}
         </Box>
-        {showComments && <CommentSidebar onClose={onCloseComments} />}
+        {showComments && <CommentSidebar onClose={onCloseComments} activeCommentId={activeCommentId} isMobile={isMobile} />}
       </Box>
     );
   }
 
   /* ── Edit mode — TipTap WYSIWYG ───────────────────────── */
+  const handleEditorClick = (e: React.MouseEvent) => {
+    const handled = handleHighlightClick(e);
+    if (!handled) {
+      editor?.commands.focus();
+      if (isMobile && showComments) onCloseComments();
+    }
+  };
 
   return (
     <Box sx={{ display: "flex", flex: 1, overflow: "hidden" }}>
       <Box
         sx={{ flex: 1, overflowY: "auto", p: 3, cursor: "text" }}
-        onClick={() => editor?.commands.focus()}
+        onClick={handleEditorClick}
       >
         <EditorContent editor={editor} />
         {commentsEnabled && (
           <CommentComposer editor={editor} docEventId={docEventId} isMobile={isMobile} />
         )}
       </Box>
-      {showComments && <CommentSidebar onClose={onCloseComments} />}
+      {showComments && <CommentSidebar onClose={onCloseComments} activeCommentId={activeCommentId} isMobile={isMobile} />}
     </Box>
   );
 }

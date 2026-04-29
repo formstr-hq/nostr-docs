@@ -25,3 +25,10 @@ export const KIND_DOC_METADATA = 34579;
  * Content is NIP-44 encrypted (viewKey conversation key) flat tag array.
  */
 export const KIND_COMMENT = 1494;
+
+/**
+ * Parameterized replaceable resolution state for a comment.
+ * One resolution per (pubkey, d-tag) pair — latest event wins.
+ * Uses tag: ["d", <commentEventId>]
+ */
+export const KIND_COMMENT_RESOLUTION = 34580;

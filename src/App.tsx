@@ -12,7 +12,7 @@ import {
   useMediaQuery,
 } from "@mui/material";
 import MenuIcon from "@mui/icons-material/Menu";
-import { ThemeProvider } from "@mui/material/styles";
+import { ThemeProvider, alpha } from "@mui/material/styles";
 import {
   createBrowserRouter,
   createHashRouter,
@@ -122,6 +122,7 @@ function AppLayout() {
     <ThemeProvider theme={theme}>
       <CssBaseline />
       <GlobalStyles styles={(t) => ({
+        "*": { "--comment-highlight-color": alpha(t.palette.secondary.main, 0.4) },
         ".tiptap a": { color: t.palette.secondary.main },
       })} />
 

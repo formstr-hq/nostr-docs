@@ -1,18 +1,55 @@
-import { Box, Typography, Divider, IconButton, Tooltip } from "@mui/material";
+import { useEffect, useRef, useState } from "react";
+import { Box, Button, Typography, Divider, IconButton, Tooltip } from "@mui/material";
 import CloseIcon from "@mui/icons-material/Close";
 import { useComments } from "../../contexts/CommentContext";
 import { CommentCard } from "./CommentCard";
 
 type Props = {
   onClose: () => void;
+  activeCommentId?: string | null;
+  isMobile?: boolean;
 };
 
-export function CommentSidebar({ onClose }: Props) {
-  const { comments } = useComments();
+export function CommentSidebar({ onClose, activeCommentId, isMobile }: Props) {
+  const { comments, resolvedIds, resolveComment, unresolveComment, isOutdated } = useComments();
+  const [showResolved, setShowResolved] = useState(false);
+  const [showOutdated, setShowOutdated] = useState(false);
+  const cardRefs = useRef<Map<string, HTMLDivElement>>(new Map());
+
+  useEffect(() => {
+    if (!activeCommentId) return;
+    const el = cardRefs.current.get(activeCommentId);
+    el?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+  }, [activeCommentId]);
+
+  const active = comments.filter((c) => !resolvedIds.has(c.id) && !isOutdated(c));
+  const outdated = comments.filter((c) => !resolvedIds.has(c.id) && isOutdated(c));
+  const resolved = comments.filter((c) => resolvedIds.has(c.id));
+
+  useEffect(() => {
+    if (resolved.length === 0) setShowResolved(false);
+  }, [resolved.length]);
+
+  useEffect(() => {
+    if (outdated.length === 0) setShowOutdated(false);
+  }, [outdated.length]);
 
   return (
     <Box
-      sx={{
+      sx={isMobile ? {
+        position: "fixed",
+        bottom: 0,
+        left: 0,
+        right: 0,
+        height: "50vh",
+        borderRadius: "16px 16px 0 0",
+        zIndex: 1300,
+        bgcolor: "background.paper",
+        boxShadow: 3,
+        display: "flex",
+        flexDirection: "column",
+        overflow: "hidden",
+      } : {
         width: 300,
         flexShrink: 0,
         borderLeft: "1px solid",
@@ -33,13 +70,39 @@ export function CommentSidebar({ onClose }: Props) {
         }}
       >
         <Typography variant="subtitle2" sx={{ fontWeight: 700 }}>
-          Comments {comments.length > 0 && `(${comments.length})`}
+          Comments {active.length > 0 && `(${active.length})`}
         </Typography>
-        <Tooltip title="Close comments">
-          <IconButton size="small" onClick={onClose}>
-            <CloseIcon fontSize="small" />
-          </IconButton>
-        </Tooltip>
+        <Box sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
+          <Button
+            size="small"
+            disabled={!showOutdated && outdated.length === 0}
+            onClick={() => setShowOutdated((v) => !v)}
+            sx={{ textTransform: "none", minWidth: 0, px: 0.5, fontSize: "0.75rem" }}
+          >
+            {showOutdated
+              ? "Hide outdated"
+              : outdated.length > 0
+                ? `Show outdated (${outdated.length})`
+                : "Show outdated"}
+          </Button>
+          <Button
+            size="small"
+            disabled={!showResolved && resolved.length === 0}
+            onClick={() => setShowResolved((v) => !v)}
+            sx={{ textTransform: "none", minWidth: 0, px: 0.5, fontSize: "0.75rem" }}
+          >
+            {showResolved
+              ? "Hide resolved"
+              : resolved.length > 0
+                ? `Show resolved (${resolved.length})`
+                : "Show resolved"}
+          </Button>
+          <Tooltip title="Close comments">
+            <IconButton size="small" onClick={onClose}>
+              <CloseIcon fontSize="small" />
+            </IconButton>
+          </Tooltip>
+        </Box>
       </Box>
 
       <Divider />
@@ -54,7 +117,7 @@ export function CommentSidebar({ onClose }: Props) {
           p: 1.5,
         }}
       >
-        {comments.length === 0 ? (
+        {active.length === 0 && !showOutdated && !showResolved ? (
           <Typography
             variant="body2"
             color="text.secondary"
@@ -63,9 +126,77 @@ export function CommentSidebar({ onClose }: Props) {
             No comments yet.
           </Typography>
         ) : (
-          comments.map((comment) => (
-            <CommentCard key={comment.id} comment={comment} />
-          ))
+          <>
+            {active.map((comment) => (
+              <Box
+                key={comment.id}
+                ref={(el: HTMLDivElement | null) => {
+                  if (el) cardRefs.current.set(comment.id, el);
+                  else cardRefs.current.delete(comment.id);
+                }}
+                sx={{ borderRadius: 2 }}
+              >
+                <CommentCard
+                  comment={comment}
+                  isResolved={false}
+                  isOutdated={false}
+                  onResolve={() => resolveComment(comment.id)}
+                  onCardClick={comment.quote ? () => {
+                    document.querySelector(`[data-comment-id="${comment.id}"]`)
+                      ?.scrollIntoView({ behavior: "smooth", block: "center" });
+                  } : undefined}
+                />
+              </Box>
+            ))}
+            {showOutdated && outdated.length > 0 && (
+              <>
+                <Divider />
+                {outdated.map((comment) => (
+                  <Box
+                    key={comment.id}
+                    ref={(el: HTMLDivElement | null) => {
+                      if (el) cardRefs.current.set(comment.id, el);
+                      else cardRefs.current.delete(comment.id);
+                    }}
+                    sx={{ borderRadius: 2 }}
+                  >
+                    <CommentCard
+                      comment={comment}
+                      isResolved={false}
+                      isOutdated={true}
+                      onResolve={() => resolveComment(comment.id)}
+                    />
+                  </Box>
+                ))}
+              </>
+            )}
+            {showResolved && resolved.length > 0 && (
+              <>
+                <Divider />
+                {resolved.map((comment) => (
+                  <Box
+                    key={comment.id}
+                    ref={(el: HTMLDivElement | null) => {
+                      if (el) cardRefs.current.set(comment.id, el);
+                      else cardRefs.current.delete(comment.id);
+                    }}
+                    sx={{ borderRadius: 2 }}
+                  >
+                    <CommentCard
+                      comment={comment}
+                      isResolved={true}
+                      isOutdated={false}
+                      onUnresolve={() => unresolveComment(comment.id)}
+                      onCardClick={comment.quote ? () => {
+                        document.querySelector(`[data-comment-id="${comment.id}"]`)
+                          ?.scrollIntoView({ behavior: "smooth", block: "center" });
+                      } : undefined}
+                    />
+                  </Box>
+                ))}
+              </>
+            )}
+          </>
         )}
       </Box>
     </Box>
