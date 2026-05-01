@@ -18,9 +18,14 @@ import {
 import AddIcon from "@mui/icons-material/Add";
 import DeleteOutlineIcon from "@mui/icons-material/DeleteOutline";
 import DragIndicatorIcon from "@mui/icons-material/DragIndicator";
-import { FormstrSDK } from "@formstr/sdk";
-import type { FormsSigner } from "@formstr/sdk";
+import CheckCircleOutlineIcon from "@mui/icons-material/CheckCircleOutline";
+import ErrorOutlineIcon from "@mui/icons-material/ErrorOutline";
+import ReplayIcon from "@mui/icons-material/Replay";
+import { FormstrSDK, encodeNKeys } from "@formstr/sdk";
+import type { FormsSigner, FormField, CreateFormResult } from "@formstr/sdk";
 import { useRelays } from "../contexts/RelayContext";
+import { pool } from "../nostr/relayPool";
+import type { Event as NostrEvent } from "nostr-tools";
 
 const sdk = new FormstrSDK();
 
@@ -46,21 +51,6 @@ function makeId(len = 8) {
   return Math.random().toString(36).slice(2, 2 + len);
 }
 
-function buildFieldTags(fields: FieldDef[]): string[][] {
-  return fields.map((f) => {
-    const hasOptions = f.type === "radioButton" || f.type === "checkboxes";
-    const optionsJson = hasOptions
-      ? JSON.stringify(
-          f.options
-            .filter(Boolean)
-            .map((o) => [makeId(4), o]),
-        )
-      : "[]";
-    const config = JSON.stringify({ required: f.required });
-    return ["field", f.id, f.type, f.label, optionsJson, config];
-  });
-}
-
 function emptyField(): FieldDef {
   return { id: makeId(), label: "", type: "shortText", options: ["Option 1"], required: false };
 }
@@ -68,7 +58,7 @@ function emptyField(): FieldDef {
 interface Props {
   open: boolean;
   onClose: () => void;
-  onCreated: (naddr: string) => void;
+  onCreated: (naddr: string, nkeys?: string) => void;
   signer: FormsSigner | null;
 }
 
@@ -77,6 +67,8 @@ export default function CreateFormDialog({ open, onClose, onCreated, signer }: P
   const [fields, setFields] = useState<FieldDef[]>([emptyField()]);
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [result, setResult] = useState<CreateFormResult | null>(null);
+  const [retrying, setRetrying] = useState<"form" | "myForms" | null>(null);
   const titleRef = useRef<HTMLInputElement>(null);
   const { relays } = useRelays();
 
@@ -116,6 +108,26 @@ export default function CreateFormDialog({ open, onClose, onCreated, signer }: P
       ),
     );
 
+  const rebroadcast = async (event: NostrEvent, targetRelays: string[], kind: "form" | "myForms") => {
+    setRetrying(kind);
+    try {
+      const results = await Promise.allSettled(pool.publish(targetRelays, event));
+      const accepted: string[] = [];
+      const rejected: string[] = [];
+      results.forEach((r, i) => {
+        if (r.status === "fulfilled") accepted.push(targetRelays[i]);
+        else rejected.push(targetRelays[i]);
+      });
+      setResult((prev) => {
+        if (!prev) return prev;
+        if (kind === "form") return { ...prev, formRelays: { accepted: [...prev.formRelays.accepted, ...accepted], rejected } };
+        return { ...prev, myFormsRelays: { accepted: [...(prev.myFormsRelays?.accepted ?? []), ...accepted], rejected } };
+      });
+    } finally {
+      setRetrying(null);
+    }
+  };
+
   const handleCreate = async () => {
     const name = formName.trim() || "Untitled form";
     if (fields.some((f) => !f.label.trim())) {
@@ -125,12 +137,22 @@ export default function CreateFormDialog({ open, onClose, onCreated, signer }: P
     setError(null);
     setCreating(true);
     try {
-      const { naddr } = await sdk.createForm(name, buildFieldTags(fields), {
+      const formFields: FormField[] = fields.map((f) => ({
+        label: f.label,
+        type: f.type,
+        options: (f.type === "radioButton" || f.type === "checkboxes") ? f.options.filter(Boolean) : undefined,
+        required: f.required,
+      }));
+      const res = await sdk.createForm(name, formFields, {
         relays: relays.length ? relays : undefined,
         signer: signer ?? undefined,
       });
-      onCreated(naddr);
-      handleClose();
+      const nkeys = encodeNKeys({
+        secretKey: res.signingKeyHex,
+        ...(res.viewKeyHex && { viewKey: res.viewKeyHex }),
+      });
+      onCreated(res.naddr, nkeys);
+      setResult(res);
     } catch (err) {
       setError(`Failed to publish: ${err instanceof Error ? err.message : String(err)}`);
     } finally {
@@ -143,11 +165,99 @@ export default function CreateFormDialog({ open, onClose, onCreated, signer }: P
     setFormName("Untitled form");
     setFields([emptyField()]);
     setError(null);
+    setResult(null);
     onClose();
   };
 
   const hasOptions = (type: FieldType) =>
     type === "radioButton" || type === "checkboxes";
+
+  const RelayStatus = ({
+    label,
+    accepted,
+    rejected,
+    onRetry,
+    retryingNow,
+    event,
+  }: {
+    label: string;
+    accepted: string[];
+    rejected: string[];
+    onRetry: () => void;
+    retryingNow: boolean;
+    event?: NostrEvent;
+  }) => (
+    <Box sx={{ mb: 1.5 }}>
+      <Typography variant="caption" sx={{ fontWeight: 600, color: "text.secondary", textTransform: "uppercase", fontSize: "0.65rem", letterSpacing: "0.08em" }}>
+        {label}
+      </Typography>
+      {accepted.map((r) => (
+        <Box key={r} sx={{ display: "flex", alignItems: "center", gap: 0.75, mt: 0.5 }}>
+          <CheckCircleOutlineIcon sx={{ fontSize: 14, color: "success.main" }} />
+          <Typography variant="caption" noWrap sx={{ flex: 1, color: "text.secondary" }}>{r}</Typography>
+        </Box>
+      ))}
+      {rejected.map((r) => (
+        <Box key={r} sx={{ display: "flex", alignItems: "center", gap: 0.75, mt: 0.5 }}>
+          <ErrorOutlineIcon sx={{ fontSize: 14, color: "error.main" }} />
+          <Typography variant="caption" noWrap sx={{ flex: 1, color: "text.secondary" }}>{r}</Typography>
+        </Box>
+      ))}
+      {rejected.length > 0 && event && (
+        <Button
+          size="small"
+          startIcon={retryingNow ? <CircularProgress size={12} color="inherit" /> : <ReplayIcon sx={{ fontSize: 14 }} />}
+          onClick={onRetry}
+          disabled={retryingNow}
+          sx={{ mt: 0.75, textTransform: "none", fontSize: "0.75rem", p: "2px 8px" }}
+        >
+          Retry {rejected.length} failed {rejected.length === 1 ? "relay" : "relays"}
+        </Button>
+      )}
+    </Box>
+  );
+
+  if (result) {
+    return (
+      <Dialog open={open} onClose={handleClose} maxWidth="sm" fullWidth PaperProps={{ sx: { borderRadius: 3, boxShadow: "0 20px 60px rgba(0,0,0,0.18)" } }}>
+        <DialogContent sx={{ p: 3 }}>
+          <Typography variant="caption" color="text.disabled" sx={{ fontWeight: 600, letterSpacing: "0.08em", textTransform: "uppercase", fontSize: "0.65rem" }}>
+            Form published
+          </Typography>
+          <Typography variant="h6" sx={{ fontWeight: 700, mt: 0.5, mb: 2 }}>
+            {formName}
+          </Typography>
+
+          <RelayStatus
+            label="Form event"
+            accepted={result.formRelays.accepted}
+            rejected={result.formRelays.rejected}
+            event={result.formEvent}
+            retryingNow={retrying === "form"}
+            onRetry={() => rebroadcast(result.formEvent, result.formRelays.rejected, "form")}
+          />
+
+          {result.myFormsRelays && (
+            <RelayStatus
+              label="My forms list"
+              accepted={result.myFormsRelays.accepted}
+              rejected={result.myFormsRelays.rejected}
+              event={result.myFormsEvent}
+              retryingNow={retrying === "myForms"}
+              onRetry={() => result.myFormsEvent && rebroadcast(result.myFormsEvent, result.myFormsRelays!.rejected, "myForms")}
+            />
+          )}
+
+          <Divider sx={{ my: 2 }} />
+          <Box sx={{ display: "flex", justifyContent: "flex-end" }}>
+            <Button variant="contained" color="secondary" size="small" onClick={handleClose} sx={{ textTransform: "none", fontWeight: 600 }}>
+              Done
+            </Button>
+          </Box>
+        </DialogContent>
+      </Dialog>
+    );
+  }
 
   return (
     <Dialog
