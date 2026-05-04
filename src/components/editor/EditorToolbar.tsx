@@ -43,8 +43,10 @@ import HtmlIcon from "@mui/icons-material/Html";
 import TextSnippetIcon from "@mui/icons-material/TextSnippet";
 import PictureAsPdfIcon from "@mui/icons-material/PictureAsPdf";
 import ArticleOutlinedIcon from "@mui/icons-material/ArticleOutlined";
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
+import { InputBase } from "@mui/material";
 import { useUser } from "../../contexts/UserContext";
+import { useDocMetadata } from "../../contexts/DocMetadataContext";
 import type { Editor } from "@tiptap/react";
 
 type EditorMode = "edit" | "preview" | "split";
@@ -79,6 +81,8 @@ type Props = {
   onExportDoc?: () => void;
   showComments?: boolean;
   onToggleComments?: () => void;
+  documentAddress?: string;
+  heuristicTitle?: string;
 };
 
 export function EditorToolbar({
@@ -106,6 +110,8 @@ export function EditorToolbar({
   onExportDoc,
   showComments,
   onToggleComments,
+  documentAddress,
+  heuristicTitle,
 }: Props) {
   const { user, loginModal } = useUser();
   const [menuAnchor, setMenuAnchor] = useState<null | HTMLElement>(null);
@@ -162,27 +168,33 @@ export function EditorToolbar({
           gap: 1,
         }}
       >
-        {/* Left: mode toggle — hidden for view-only shared links */}
-        {!isViewOnly && (
-          <ToggleButtonGroup
-            value={mode}
-            exclusive
-            size="small"
-            onChange={(_, val) => val && onSetMode(val as EditorMode)}
-            sx={{ "& .MuiToggleButton-root": { px: 1.5 } }}
-          >
-            <ToggleButton value="edit" title="WYSIWYG editor">
-              <EditIcon fontSize="small" />
-            </ToggleButton>
-            <ToggleButton value="split" title="Markdown source">
-              <EditNoteIcon fontSize="small" />
-            </ToggleButton>
-            <ToggleButton value="preview" title="Rendered preview">
-              <VisibilityIcon fontSize="small" />
-            </ToggleButton>
-          </ToggleButtonGroup>
-        )}
-        {isViewOnly && <Box />}
+        <Box sx={{ display: "flex", alignItems: "center", gap: 2, flex: 1, minWidth: 0 }}>
+          {/* Left: mode toggle — hidden for view-only shared links */}
+          {!isViewOnly && (
+            <ToggleButtonGroup
+              value={mode}
+              exclusive
+              size="small"
+              onChange={(_, val) => val && onSetMode(val as EditorMode)}
+              sx={{ "& .MuiToggleButton-root": { px: 1.5 } }}
+            >
+              <ToggleButton value="edit" title="WYSIWYG editor">
+                <EditIcon fontSize="small" />
+              </ToggleButton>
+              <ToggleButton value="split" title="Markdown source">
+                <EditNoteIcon fontSize="small" />
+              </ToggleButton>
+              <ToggleButton value="preview" title="Rendered preview">
+                <VisibilityIcon fontSize="small" />
+              </ToggleButton>
+            </ToggleButtonGroup>
+          )}
+          
+          {/* Title right next to toggles */}
+          {documentAddress && heuristicTitle && (
+            <ToolbarTitle address={documentAddress} heuristicTitle={heuristicTitle} canEdit={!isViewOnly} />
+          )}
+        </Box>
 
         {/* Right: save + focus + overflow menu */}
         <Box sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
@@ -684,5 +696,107 @@ export function EditorToolbar({
         </>
       )}
     </Paper>
+  );
+}
+
+function ToolbarTitle({ address, heuristicTitle, canEdit }: { address: string; heuristicTitle: string; canEdit: boolean }) {
+  const { docTitles, setDocTitle } = useDocMetadata();
+  const customTitle = docTitles.get(address) || "";
+  const displayTitle = customTitle || heuristicTitle;
+
+  const [input, setInput] = useState(displayTitle);
+  const [saving, setSaving] = useState(false);
+  const [editing, setEditing] = useState(false);
+
+  useEffect(() => {
+    if (!editing) {
+      setInput(displayTitle);
+    }
+  }, [displayTitle, editing]);
+
+  const handleSave = async () => {
+    let newTitle = input.trim();
+    if (newTitle === "" || newTitle === heuristicTitle) {
+      newTitle = "";
+    }
+    if (newTitle === customTitle) {
+      setEditing(false);
+      return;
+    }
+    setSaving(true);
+    try {
+      await setDocTitle(address, newTitle);
+      setEditing(false);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <Box
+      sx={{
+        display: "flex",
+        alignItems: "center",
+        flex: 1,
+        justifyContent: "flex-start",
+        minWidth: 0,
+        "&:hover .edit-icon": { opacity: 1 }
+      }}
+      onDoubleClick={() => canEdit && setEditing(true)}
+    >
+      {editing ? (
+        <InputBase
+          autoFocus
+          value={input}
+          onChange={(e) => setInput(e.target.value)}
+          onBlur={handleSave}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") handleSave();
+            if (e.key === "Escape") {
+              setInput(displayTitle);
+              setEditing(false);
+            }
+          }}
+          disabled={saving}
+          placeholder="Enter document title..."
+          sx={{
+            fontSize: "0.9rem",
+            fontWeight: 700,
+            width: "100%",
+            maxWidth: 400,
+          }}
+          inputProps={{ style: { textAlign: 'left' } }}
+        />
+      ) : (
+        <>
+          <Typography
+            variant="body2"
+            sx={{
+              fontWeight: 700,
+              cursor: canEdit ? "text" : "default",
+              whiteSpace: "nowrap",
+              overflow: "hidden",
+              textOverflow: "ellipsis",
+              maxWidth: 400,
+            }}
+            title={displayTitle}
+          >
+            {displayTitle}
+          </Typography>
+          {canEdit && (
+            <Tooltip title="Rename Document">
+              <IconButton 
+                className="edit-icon"
+                size="small" 
+                onClick={() => setEditing(true)} 
+                sx={{ opacity: 0, transition: "opacity 0.2s", p: 0.25, ml: 0.5 }}
+              >
+                <EditIcon sx={{ fontSize: 14 }} />
+              </IconButton>
+            </Tooltip>
+          )}
+        </>
+      )}
+    </Box>
   );
 }

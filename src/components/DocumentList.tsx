@@ -38,6 +38,9 @@ import TrashDialog from "./TrashDialog.tsx";
 import { encodeNKeys } from "../utils/nkeys.ts";
 import { getEventAddress } from "../utils/helpers.ts";
 import { useDocMetadata } from "../contexts/DocMetadataContext.tsx";
+import RenameDialog from "./RenameDialog.tsx";
+import EditOutlinedIcon from "@mui/icons-material/EditOutlined";
+import { IconButton } from "@mui/material";
 
 /** Deterministic hue (0–359) from a tag string. */
 function tagHue(tag: string): number {
@@ -109,10 +112,13 @@ export default function DocumentList({
   const [docRelays, setDocRelays] = useState<Map<string, string[]>>(new Map());
 
   const { sharedDocuments, getKeys } = useSharedPages();
-  const { docTags, allTags, selectedTag, setSelectedTag } = useDocMetadata();
+  const { docTags, docTitles, setDocTitle, allTags, selectedTag, setSelectedTag } = useDocMetadata();
   const [loading, setLoading] = useState(true);
   const [tab, setTab] = useState<"personal" | "shared" | "visited">("personal");
   const [trashOpen, setTrashOpen] = useState(false);
+  const [renameOpen, setRenameOpen] = useState(false);
+  const [renamingAddress, setRenamingAddress] = useState<string | null>(null);
+  const [renamingInitialTitle, setRenamingInitialTitle] = useState("");
   const [trashCount, setTrashCount] = useState(0);
   const { user } = useUser();
   const { relays } = useRelays();
@@ -444,17 +450,21 @@ export default function DocumentList({
               const tags = docTags.get(address) ?? [];
               const relays = docRelays.get(address) ?? [];
 
+              const customTitle = docTitles.get(address);
               const firstLine =
                 (decryptedContent ?? "").split("\n").find((l) => l.trim()) ??
                 "Untitled";
-              const title = firstLine
+              const heuristicTitle = firstLine
                 .replace(/^#+\s*/, "")
                 .slice(0, 42)
                 .trim();
-              const displayTitle = title || "Untitled";
+              const displayTitle = customTitle || heuristicTitle || "Untitled";
 
               return (
-                <Box key={address}>
+                <Box
+                  key={address}
+                  sx={{ position: "relative", "&:hover .rename-btn": { opacity: 1 } }}
+                >
                   {idx > 0 && (
                     <Divider
                       sx={{ my: 0.25, borderColor: "rgba(255,255,255,0.05)" }}
@@ -484,7 +494,28 @@ export default function DocumentList({
                     }}
                   >
                     <ListItemText
-                      primary={displayTitle}
+                      primary={
+                        <Box sx={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                          <Box component="span" sx={{ noWrap: true }}>{displayTitle}</Box>
+                          <IconButton
+                            className="rename-btn"
+                            size="small"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setRenamingAddress(address);
+                              setRenamingInitialTitle(displayTitle);
+                              setRenameOpen(true);
+                            }}
+                            sx={{
+                              opacity: isSelected ? 1 : 0,
+                              transition: "opacity 0.2s",
+                              p: 0.25,
+                            }}
+                          >
+                            <EditOutlinedIcon sx={{ fontSize: 16 }} />
+                          </IconButton>
+                        </Box>
+                      }
                       secondary={
                         <Box component="span" sx={{ display: "block" }}>
                           <Box component="span" sx={{ opacity: 0.6, fontSize: "0.7rem" }}>
@@ -620,6 +651,21 @@ export default function DocumentList({
           refreshTrashCount();
         }}
       />
+      {renamingAddress && (
+        <RenameDialog
+          open={renameOpen}
+          initialTitle={renamingInitialTitle}
+          onClose={() => setRenameOpen(false)}
+          onSave={async (newTitle) => {
+            // If they clear it, we'll save empty string to remove custom title.
+            // If they didn't change it from the initial title, we don't need to save
+            if (newTitle === docTitles.get(renamingAddress)) {
+              return;
+            }
+            await setDocTitle(renamingAddress, newTitle);
+          }}
+        />
+      )}
     </Box>
   );
 }

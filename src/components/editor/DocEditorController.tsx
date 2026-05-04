@@ -941,6 +941,8 @@ export function DocumentEditorController({
           onExportDoc={handleExportDoc}
           showComments={commentsEnabled ? showComments : undefined}
           onToggleComments={commentsEnabled ? () => setShowComments((s) => !s) : undefined}
+          documentAddress={selectedDocumentId ?? undefined}
+          heuristicTitle={getDocTitle()}
         />
       )}
       {isViewOnly && commentsEnabled && (

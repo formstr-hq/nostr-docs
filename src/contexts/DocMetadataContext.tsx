@@ -12,10 +12,12 @@ import { fetchAllDocMetadata, saveDocMetadata } from "../nostr/docMetadata";
 
 interface DocMetadataContextValue {
   docTags: Map<string, string[]>;
+  docTitles: Map<string, string>;
   allTags: string[];
   selectedTag: string | null;
   setSelectedTag: (tag: string | null) => void;
   setDocTags: (address: string, tags: string[]) => Promise<void>;
+  setDocTitle: (address: string, title: string) => Promise<void>;
   loading: boolean;
 }
 
@@ -29,6 +31,7 @@ export const DocMetadataProvider: React.FC<{ children: React.ReactNode }> = ({
   const { user } = useUser();
   const { relays } = useRelays();
   const [docTags, setDocTagsState] = useState<Map<string, string[]>>(new Map());
+  const [docTitles, setDocTitlesState] = useState<Map<string, string>>(new Map());
   const [selectedTag, setSelectedTag] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
@@ -46,10 +49,13 @@ export const DocMetadataProvider: React.FC<{ children: React.ReactNode }> = ({
         const pubkey = await signer.getPublicKey();
         const metadata = await fetchAllDocMetadata(relays, pubkey);
         const tagsMap = new Map<string, string[]>();
+        const titlesMap = new Map<string, string>();
         for (const [address, meta] of metadata) {
           if (meta.tags.length > 0) tagsMap.set(address, meta.tags);
+          if (meta.title) titlesMap.set(address, meta.title);
         }
         setDocTagsState(tagsMap);
+        setDocTitlesState(titlesMap);
       } catch (err) {
         console.error("Failed to fetch doc metadata:", err);
       } finally {
@@ -67,7 +73,8 @@ export const DocMetadataProvider: React.FC<{ children: React.ReactNode }> = ({
   }, [docTags]);
 
   const setDocTags = async (address: string, tags: string[]) => {
-    await saveDocMetadata(address, { tags }, relays);
+    const currentTitle = docTitles.get(address);
+    await saveDocMetadata(address, { tags, title: currentTitle }, relays);
     setDocTagsState((prev) => {
       const next = new Map(prev);
       if (tags.length === 0) next.delete(address);
@@ -76,9 +83,20 @@ export const DocMetadataProvider: React.FC<{ children: React.ReactNode }> = ({
     });
   };
 
+  const setDocTitle = async (address: string, title: string) => {
+    const currentTags = docTags.get(address) || [];
+    await saveDocMetadata(address, { tags: currentTags, title }, relays);
+    setDocTitlesState((prev) => {
+      const next = new Map(prev);
+      if (!title) next.delete(address);
+      else next.set(address, title);
+      return next;
+    });
+  };
+
   return (
     <DocMetadataContext.Provider
-      value={{ docTags, allTags, selectedTag, setSelectedTag, setDocTags, loading }}
+      value={{ docTags, docTitles, allTags, selectedTag, setSelectedTag, setDocTags, setDocTitle, loading }}
     >
       {children}
     </DocMetadataContext.Provider>

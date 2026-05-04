@@ -6,6 +6,7 @@ import { KIND_DOC_METADATA } from "./kinds";
 
 export interface DocMetadata {
   tags: string[];
+  title?: string;
 }
 
 export async function fetchAllDocMetadata(
