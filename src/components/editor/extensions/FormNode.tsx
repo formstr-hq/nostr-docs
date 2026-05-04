@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { Node, mergeAttributes } from "@tiptap/core";
 import { ReactNodeViewRenderer, NodeViewWrapper } from "@tiptap/react";
 import type { NodeViewProps } from "@tiptap/react";
@@ -13,7 +13,8 @@ import DeleteIcon from "@mui/icons-material/Delete";
 import OpenInNewIcon from "@mui/icons-material/OpenInNew";
 import BarChartIcon from "@mui/icons-material/BarChart";
 import EditOutlinedIcon from "@mui/icons-material/EditOutlined";
-import { FormstrSDK, decodeNKeys } from "@formstr/sdk";
+import { FormstrSDK, decodeNKeys, encodeNKeys } from "@formstr/sdk";
+import { useMyForms } from "../../../contexts/MyFormsContext";
 import type { NormalizedForm } from "@formstr/sdk";
 import { FormFiller } from "../FormFiller";
 
@@ -32,12 +33,18 @@ export function FormNodeCard({
   onDelete?: () => void;
   isEditable?: boolean;
 }) {
+  const { forms } = useMyForms();
   const [form, setForm] = useState<NormalizedForm | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
 
+  const effectiveNkeys = useMemo(() => {
+    if (nkeys && decodeNKeys(nkeys).secretKey) return nkeys;
+    return forms.find(f => f.naddr === naddr)?.nkeys ?? nkeys;
+  }, [naddr, nkeys, forms]);
+
   const fieldCount = form ? Object.keys(form.fields).length : 0;
-  const hasSecretKey = !!nkeys && !!decodeNKeys(nkeys).secretKey;
+  const hasSecretKey = !!effectiveNkeys && !!decodeNKeys(effectiveNkeys).secretKey;
 
   useEffect(() => {
     if (!naddr) { setLoading(false); setError(true); return; }
@@ -111,7 +118,7 @@ export function FormNodeCard({
             <Tooltip title="View responses">
               <IconButton
                 size="small"
-                onClick={() => window.open(`https://formstr.app/s/${naddr}#${nkeys}`, "_blank", "noopener")}
+                onClick={() => window.open(`https://formstr.app/s/${naddr}#${effectiveNkeys}`, "_blank", "noopener")}
               >
                 <BarChartIcon fontSize="small" />
               </IconButton>
@@ -148,10 +155,17 @@ export function FormNodeCard({
 
 function FormNodeView({ node, editor, deleteNode, selected }: NodeViewProps) {
   const { naddr, nkeys } = node.attrs as { naddr: string; nkeys?: string };
+  const { forms } = useMyForms();
   const [hovered, setHovered] = useState(false);
   const showActions = hovered || selected;
-  const hasSecretKey = !!nkeys && !!decodeNKeys(nkeys).secretKey;
-  const nkeysHash = nkeys ? `#${nkeys}` : "";
+
+  const effectiveNkeys = useMemo(() => {
+    if (nkeys && decodeNKeys(nkeys).secretKey) return nkeys;
+    return forms.find(f => f.naddr === naddr)?.nkeys ?? nkeys;
+  }, [naddr, nkeys, forms]);
+
+  const hasSecretKey = !!effectiveNkeys && !!decodeNKeys(effectiveNkeys).secretKey;
+  const nkeysHash = effectiveNkeys ? `#${effectiveNkeys}` : "";
 
   return (
     <NodeViewWrapper data-drag-handle>
@@ -230,8 +244,13 @@ export const FormNode = Node.create({
           node: { attrs: Record<string, string | null> },
         ) {
           const { naddr, nkeys } = node.attrs;
+          let safeNkeys: string | null = null;
+          if (nkeys) {
+            const { secretKey: _sk, ...rest } = decodeNKeys(nkeys);
+            if (Object.keys(rest).length) safeNkeys = encodeNKeys(rest);
+          }
           (state as unknown as { write: (s: string) => void }).write(
-            `<nostr-form data-naddr="${naddr || ""}"${nkeys ? ` data-nkeys="${nkeys}"` : ""}></nostr-form>`,
+            `<nostr-form data-naddr="${naddr || ""}"${safeNkeys ? ` data-nkeys="${safeNkeys}"` : ""}></nostr-form>`,
           );
           (state as unknown as { ensureNewLine: () => void }).ensureNewLine();
         },
@@ -249,7 +268,12 @@ export const FormNode = Node.create({
       nkeys: {
         default: null,
         parseHTML: (el) => el.getAttribute("data-nkeys"),
-        renderHTML: (attrs) => attrs.nkeys ? { "data-nkeys": attrs.nkeys } : {},
+        renderHTML: (attrs) => {
+          if (!attrs.nkeys) return {};
+          const { secretKey: _sk, ...rest } = decodeNKeys(attrs.nkeys);
+          if (!Object.keys(rest).length) return {};
+          return { "data-nkeys": encodeNKeys(rest) };
+        },
       },
     };
   },

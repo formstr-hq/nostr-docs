@@ -14,6 +14,7 @@ import {
   Divider,
   CircularProgress,
   Chip,
+  Collapse,
 } from "@mui/material";
 import AddIcon from "@mui/icons-material/Add";
 import DeleteOutlineIcon from "@mui/icons-material/DeleteOutline";
@@ -21,6 +22,8 @@ import DragIndicatorIcon from "@mui/icons-material/DragIndicator";
 import CheckCircleOutlineIcon from "@mui/icons-material/CheckCircleOutline";
 import ErrorOutlineIcon from "@mui/icons-material/ErrorOutline";
 import ReplayIcon from "@mui/icons-material/Replay";
+import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
+import ExpandLessIcon from "@mui/icons-material/ExpandLess";
 import { FormstrSDK, encodeNKeys } from "@formstr/sdk";
 import type { FormsSigner, FormField, CreateFormResult } from "@formstr/sdk";
 import { useRelays } from "../contexts/RelayContext";
@@ -172,7 +175,7 @@ export default function CreateFormDialog({ open, onClose, onCreated, signer }: P
   const hasOptions = (type: FieldType) =>
     type === "radioButton" || type === "checkboxes";
 
-  const RelayStatus = ({
+  const RelaySection = ({
     label,
     accepted,
     rejected,
@@ -186,49 +189,104 @@ export default function CreateFormDialog({ open, onClose, onCreated, signer }: P
     onRetry: () => void;
     retryingNow: boolean;
     event?: NostrEvent;
-  }) => (
-    <Box sx={{ mb: 1.5 }}>
-      <Typography variant="caption" sx={{ fontWeight: 600, color: "text.secondary", textTransform: "uppercase", fontSize: "0.65rem", letterSpacing: "0.08em" }}>
-        {label}
-      </Typography>
-      {accepted.map((r) => (
-        <Box key={r} sx={{ display: "flex", alignItems: "center", gap: 0.75, mt: 0.5 }}>
-          <CheckCircleOutlineIcon sx={{ fontSize: 14, color: "success.main" }} />
-          <Typography variant="caption" noWrap sx={{ flex: 1, color: "text.secondary" }}>{r}</Typography>
-        </Box>
-      ))}
-      {rejected.map((r) => (
-        <Box key={r} sx={{ display: "flex", alignItems: "center", gap: 0.75, mt: 0.5 }}>
-          <ErrorOutlineIcon sx={{ fontSize: 14, color: "error.main" }} />
-          <Typography variant="caption" noWrap sx={{ flex: 1, color: "text.secondary" }}>{r}</Typography>
-        </Box>
-      ))}
-      {rejected.length > 0 && event && (
-        <Button
-          size="small"
-          startIcon={retryingNow ? <CircularProgress size={12} color="inherit" /> : <ReplayIcon sx={{ fontSize: 14 }} />}
-          onClick={onRetry}
-          disabled={retryingNow}
-          sx={{ mt: 0.75, textTransform: "none", fontSize: "0.75rem", p: "2px 8px" }}
+  }) => {
+    const [expanded, setExpanded] = useState(rejected.length > 0);
+    const total = accepted.length + rejected.length;
+    const allGood = rejected.length === 0;
+
+    return (
+      <Box
+        sx={{
+          border: "1px solid",
+          borderColor: allGood ? "success.light" : "warning.light",
+          borderRadius: 2,
+          overflow: "hidden",
+          mb: 1.5,
+          opacity: total === 0 ? 0.5 : 1,
+        }}
+      >
+        <Box
+          onClick={() => setExpanded((v) => !v)}
+          sx={{
+            display: "flex",
+            alignItems: "center",
+            gap: 1.5,
+            px: 2,
+            py: 1.25,
+            cursor: "pointer",
+            bgcolor: allGood ? "success.50" : "warning.50",
+            "&:hover": { filter: "brightness(0.97)" },
+            userSelect: "none",
+          }}
         >
-          Retry {rejected.length} failed {rejected.length === 1 ? "relay" : "relays"}
-        </Button>
-      )}
-    </Box>
-  );
+          {allGood ? (
+            <CheckCircleOutlineIcon sx={{ fontSize: 18, color: "success.main", flexShrink: 0 }} />
+          ) : (
+            <ErrorOutlineIcon sx={{ fontSize: 18, color: "warning.main", flexShrink: 0 }} />
+          )}
+          <Typography variant="body2" sx={{ fontWeight: 600, flex: 1, fontSize: "0.85rem" }}>
+            {label}
+          </Typography>
+          <Chip
+            size="small"
+            label={`${accepted.length} / ${total} accepted`}
+            variant="outlined"
+            color={allGood ? "success" : "warning"}
+            sx={{ fontSize: "0.7rem", height: 22, fontWeight: 600 }}
+          />
+          {expanded
+            ? <ExpandLessIcon sx={{ fontSize: 17, color: "text.secondary", flexShrink: 0 }} />
+            : <ExpandMoreIcon sx={{ fontSize: 17, color: "text.secondary", flexShrink: 0 }} />
+          }
+        </Box>
+
+        <Collapse in={expanded}>
+          <Box sx={{ px: 2, py: 1.5, bgcolor: "background.paper" }}>
+            {accepted.map((r) => (
+              <Box key={r} sx={{ display: "flex", alignItems: "center", gap: 1, mb: 0.5 }}>
+                <CheckCircleOutlineIcon sx={{ fontSize: 13, color: "success.main", flexShrink: 0 }} />
+                <Typography variant="caption" noWrap sx={{ color: "text.secondary", flex: 1, fontFamily: "monospace" }}>{r}</Typography>
+              </Box>
+            ))}
+            {rejected.map((r) => (
+              <Box key={r} sx={{ display: "flex", alignItems: "center", gap: 1, mb: 0.5 }}>
+                <ErrorOutlineIcon sx={{ fontSize: 13, color: "error.main", flexShrink: 0 }} />
+                <Typography variant="caption" noWrap sx={{ color: "text.secondary", flex: 1, fontFamily: "monospace" }}>{r}</Typography>
+              </Box>
+            ))}
+            {rejected.length > 0 && event && (
+              <Button
+                size="small"
+                startIcon={retryingNow ? <CircularProgress size={12} color="inherit" /> : <ReplayIcon sx={{ fontSize: 13 }} />}
+                onClick={(e) => { e.stopPropagation(); onRetry(); }}
+                disabled={retryingNow}
+                color="warning"
+                sx={{ mt: 0.75, textTransform: "none", fontSize: "0.75rem", p: "2px 10px" }}
+              >
+                Retry {rejected.length} failed {rejected.length === 1 ? "relay" : "relays"}
+              </Button>
+            )}
+          </Box>
+        </Collapse>
+      </Box>
+    );
+  };
 
   if (result) {
     return (
       <Dialog open={open} onClose={handleClose} maxWidth="sm" fullWidth PaperProps={{ sx: { borderRadius: 3, boxShadow: "0 20px 60px rgba(0,0,0,0.18)" } }}>
         <DialogContent sx={{ p: 3 }}>
-          <Typography variant="caption" color="text.disabled" sx={{ fontWeight: 600, letterSpacing: "0.08em", textTransform: "uppercase", fontSize: "0.65rem" }}>
-            Form published
-          </Typography>
-          <Typography variant="h6" sx={{ fontWeight: 700, mt: 0.5, mb: 2 }}>
+          <Box sx={{ display: "flex", alignItems: "center", gap: 1, mb: 0.5 }}>
+            <CheckCircleOutlineIcon sx={{ fontSize: 18, color: "success.main" }} />
+            <Typography variant="caption" color="success.main" sx={{ fontWeight: 700, letterSpacing: "0.06em", textTransform: "uppercase", fontSize: "0.65rem" }}>
+              Form published
+            </Typography>
+          </Box>
+          <Typography variant="h6" sx={{ fontWeight: 700, mb: 2.5 }}>
             {formName}
           </Typography>
 
-          <RelayStatus
+          <RelaySection
             label="Form event"
             accepted={result.formRelays.accepted}
             rejected={result.formRelays.rejected}
@@ -238,7 +296,7 @@ export default function CreateFormDialog({ open, onClose, onCreated, signer }: P
           />
 
           {result.myFormsRelays && (
-            <RelayStatus
+            <RelaySection
               label="My forms list"
               accepted={result.myFormsRelays.accepted}
               rejected={result.myFormsRelays.rejected}
