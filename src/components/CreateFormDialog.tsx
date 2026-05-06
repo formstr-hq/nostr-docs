@@ -150,10 +150,7 @@ export default function CreateFormDialog({ open, onClose, onCreated, signer }: P
         relays: relays.length ? relays : undefined,
         signer: signer ?? undefined,
       });
-      const nkeys = encodeNKeys({
-        secretKey: res.signingKeyHex,
-        ...(res.viewKeyHex && { viewKey: res.viewKeyHex }),
-      });
+      const nkeys = res.viewKeyHex ? encodeNKeys({ viewKey: res.viewKeyHex }) : undefined;
       onCreated(res.naddr, nkeys);
       setResult(res);
     } catch (err) {

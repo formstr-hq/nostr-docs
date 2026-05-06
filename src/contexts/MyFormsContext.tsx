@@ -61,6 +61,7 @@ export function MyFormsProvider({ children }: { children: ReactNode }) {
 
     isLoadingRef.current = true;
     setLoading(true);
+    setForms([]);
     try {
       const result = await sdk.fetchMyForms(formsSigner, relays);
       setForms(result);
