@@ -73,7 +73,7 @@ import {
   exportAsHtml,
   exportAsPlainText,
   exportAsPdf,
-  exportAsDoc,
+  exportAsDocx,
 } from "../../utils/exportDocument";
 
 // Delay after the last edit before auto-save fires (ms)
@@ -845,7 +845,7 @@ export function DocumentEditorController({
   const handleExportHtml = () => {
     if (!editor) return;
     const html = editor.getHTML();
-    exportAsHtml(html, getDocTitle());
+    void exportAsHtml(html, getDocTitle());
   };
 
   const handleExportPlainText = () => {
@@ -854,12 +854,12 @@ export function DocumentEditorController({
 
   const handleExportPdf = () => {
     if (!editor) return;
-    exportAsPdf(editor.getHTML(), getDocTitle());
+    void exportAsPdf(editor.getHTML(), getDocTitle());
   };
 
   const handleExportDoc = () => {
     if (!editor) return;
-    exportAsDoc(editor.getHTML(), getDocTitle());
+    void exportAsDocx(editor.getHTML(), getDocTitle());
   };
 
   const handleFormCreated = (naddr: string, nkeys?: string) => {

@@ -36,6 +36,7 @@
     "@tiptap/suggestion": "^3.22.5",
     "bech32": "^2.0.0",
     "capacitor-secure-storage-plugin": "^0.13.0",
+    "docx": "^9.6.1",
     "nostr-signer-capacitor-plugin": "^0.0.5",
     "nostr-tools": "^2.7.0",
     "react": "^19.2.0",
