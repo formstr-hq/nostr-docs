@@ -37,6 +37,7 @@ import DeleteForeverIcon from "@mui/icons-material/DeleteForever";
 import SmartphoneIcon from "@mui/icons-material/Smartphone";
 import SearchIcon from "@mui/icons-material/Search";
 import CloseIcon from "@mui/icons-material/Close";
+import ArchiveOutlinedIcon from "@mui/icons-material/ArchiveOutlined";
 import { useDocumentContext } from "../contexts/DocumentContext.tsx";
 import { signerManager } from "../signer/index.ts";
 import { useRelays } from "../contexts/RelayContext.tsx";
@@ -123,7 +124,7 @@ export default function DocumentList({
   const [docRelays, setDocRelays] = useState<Map<string, string[]>>(new Map());
 
   const { sharedDocuments, getKeys } = useSharedPages();
-  const { docTags, docTitles, setDocTitle, allTags, selectedTag, setSelectedTag } = useDocMetadata();
+  const { docTags, docTitles, setDocTitle, docSharedAs, allTags, selectedTag, setSelectedTag } = useDocMetadata();
   const [loading, setLoading] = useState(true);
   const [tab, setTab] = useState<"personal" | "shared" | "visited">("personal");
   const [trashOpen, setTrashOpen] = useState(false);
@@ -688,6 +689,45 @@ export default function DocumentList({
                               ))}
                             </Box>
                           )}
+                          {docSharedAs.has(address) && (() => {
+                            const sharedAddr = docSharedAs.get(address)!;
+                            const [kind, pubkey, identifier] = sharedAddr.split(":");
+                            const sharedNaddr = nip19.naddrEncode({ kind: Number(kind), pubkey, identifier });
+                            const keys = getKeys(sharedAddr);
+                            let sharedPath = `/doc/${sharedNaddr}`;
+                            if (keys.length > 0 && keys[0]) {
+                              const nkeysObj: Record<string, string> = { viewKey: keys[0] };
+                              if (keys[1]) nkeysObj.editKey = keys[1];
+                              sharedPath += `#${encodeNKeys(nkeysObj)}`;
+                            }
+                            return (
+                              <Tooltip title="Go to live shared version">
+                                <Box
+                                  component="span"
+                                  onClick={(e) => { e.stopPropagation(); navigate(sharedPath); }}
+                                  sx={{ display: "flex", alignItems: "center", gap: 0.3, mt: 0.4, cursor: "pointer" }}
+                                >
+                                  <ArchiveOutlinedIcon sx={{ fontSize: "0.58rem", opacity: 0.55 }} />
+                                  <Box
+                                    component="span"
+                                    sx={{
+                                      fontSize: "0.58rem",
+                                      fontFamily: "monospace",
+                                      opacity: 0.55,
+                                      bgcolor: (t) => alpha(t.palette.text.primary, 0.07),
+                                      borderRadius: 0.75,
+                                      px: 0.6,
+                                      py: 0.1,
+                                      lineHeight: 1.6,
+                                      "&:hover": { opacity: 1 },
+                                    }}
+                                  >
+                                    backup
+                                  </Box>
+                                </Box>
+                              </Tooltip>
+                            );
+                          })()}
                           {localOnlyAddresses.has(address) ? (
                             <Box
                               component="span"

@@ -7,6 +7,9 @@ import { KIND_DOC_METADATA } from "./kinds";
 export interface DocMetadata {
   tags: string[];
   title?: string;
+  viewKey?: string;
+  editKey?: string;
+  sharedAs?: string; // address of the shared (editKey-signed) copy
 }
 
 export async function fetchAllDocMetadata(

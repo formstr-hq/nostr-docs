@@ -14,6 +14,7 @@ import {
   Tooltip,
   Typography,
 } from "@mui/material";
+import VpnKeyIcon from "@mui/icons-material/VpnKey";
 import EditIcon from "@mui/icons-material/Edit";
 import VisibilityIcon from "@mui/icons-material/Visibility";
 import EditNoteIcon from "@mui/icons-material/EditNote";
@@ -83,6 +84,7 @@ type Props = {
   onToggleComments?: () => void;
   documentAddress?: string;
   heuristicTitle?: string;
+  hasEditKey?: boolean;
 };
 
 export function EditorToolbar({
@@ -112,6 +114,7 @@ export function EditorToolbar({
   onToggleComments,
   documentAddress,
   heuristicTitle,
+  hasEditKey = false,
 }: Props) {
   const { user, loginModal } = useUser();
   const [menuAnchor, setMenuAnchor] = useState<null | HTMLElement>(null);
@@ -198,14 +201,14 @@ export function EditorToolbar({
 
         {/* Right: save + focus + overflow menu */}
         <Box sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
-          {!isViewOnly && (user ? (
-            <Tooltip title={isLocalOnly ? "Saving to device only" : ""}>
+          {!isViewOnly && (user || hasEditKey ? (
+            <Tooltip title={hasEditKey ? "Saving with shared key" : isLocalOnly ? "Saving to device only" : ""}>
               <Button
                 variant="contained"
                 color="secondary"
                 size="small"
                 onClick={onSave}
-                startIcon={isLocalOnly ? <SmartphoneIcon fontSize="small" /> : undefined}
+                startIcon={hasEditKey ? <VpnKeyIcon fontSize="small" /> : isLocalOnly ? <SmartphoneIcon fontSize="small" /> : undefined}
                 sx={{ fontWeight: 700, px: 2 }}
               >
                 {saving ? "Saving…" : "Save"}

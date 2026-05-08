@@ -7,6 +7,8 @@ import { nip19 } from "nostr-tools";
 import { decodeNKeys } from "../utils/nkeys";
 import { DocumentEditorController } from "./editor/DocEditorController";
 import { storeLocalEvent } from "../lib/localStore";
+import { useUser } from "../contexts/UserContext";
+import { useSharedPages } from "../contexts/SharedDocsContext";
 
 export default function DocPage() {
   const { naddr } = useParams<{ naddr: string }>();
@@ -14,6 +16,8 @@ export default function DocPage() {
   const { documents, setSelectedDocumentId, addDocument } =
     useDocumentContext();
   const { relays } = useRelays();
+  const { user } = useUser();
+  const { addSharedDoc } = useSharedPages();
 
   const [loading, setLoading] = useState(true);
   const [invalid, setInvalid] = useState(false);
@@ -100,6 +104,14 @@ export default function DocPage() {
           pendingBroadcast: false,
           savedAt: Date.now(),
         }).catch(() => {});
+
+        // When a logged-in user opens a shared link, save a metadata event so
+        // the doc appears in their list via metadata queries.
+        if (keys.viewKey && user) {
+          const sharedTag = [eventAddress, keys.viewKey];
+          if (keys.editKey) sharedTag.push(keys.editKey);
+          addSharedDoc(sharedTag).catch(() => {});
+        }
 
         setSelectedDocumentId(eventAddress);
       } catch (err) {
