@@ -273,7 +273,7 @@ export const EncryptedFileNode = Node.create({
   atom: true,
   draggable: true,
 
-  addOptions() {
+  addStorage() {
     return {
       markdown: {
         serialize(state: Record<string, (...args: unknown[]) => unknown>, node: { attrs: Record<string, string | number | null> }) {

@@ -33,6 +33,7 @@ import { SharedPagesProvider } from "./contexts/SharedDocsContext";
 import { RelayProvider } from "./contexts/RelayContext";
 import { DocMetadataProvider } from "./contexts/DocMetadataContext";
 import { BlossomProvider } from "./contexts/BlossomContext";
+import { MyFormsProvider } from "./contexts/MyFormsContext";
 
 const drawerWidth = 320;
 
@@ -81,6 +82,7 @@ export default function App() {
     <UserProvider>
       <RelayProvider>
         <BlossomProvider>
+          <MyFormsProvider>
           <DocumentProvider>
             <SharedPagesProvider>
               <DocMetadataProvider>
@@ -88,6 +90,7 @@ export default function App() {
               </DocMetadataProvider>
             </SharedPagesProvider>
           </DocumentProvider>
+          </MyFormsProvider>
         </BlossomProvider>
       </RelayProvider>
     </UserProvider>

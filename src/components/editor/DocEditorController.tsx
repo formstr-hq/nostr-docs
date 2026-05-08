@@ -29,6 +29,15 @@ import Link from "@tiptap/extension-link";
 import Placeholder from "@tiptap/extension-placeholder";
 import CharacterCount from "@tiptap/extension-character-count";
 import { EncryptedFileNode } from "./extensions/EncryptedFileNode";
+import { FormNode } from "./extensions/FormNode";
+import { SlashCommand } from "./extensions/SlashCommand";
+import { SlashCommandMenu } from "./SlashCommandMenu";
+import type { SlashCommandItem } from "./extensions/SlashCommand";
+import type { SlashCommandMenuHandle } from "./SlashCommandMenu";
+import CreateFormDialog from "../CreateFormDialog";
+import MyFormsPickerDialog from "../MyFormsPickerDialog";
+import type { FormsSigner } from "@formstr/sdk";
+import { createPortal } from "react-dom";
 
 import { useDocumentContext } from "../../contexts/DocumentContext";
 import { useUser } from "../../contexts/UserContext";
@@ -211,6 +220,16 @@ export function DocumentEditorController({
   // Capture isLocalOnly at delete-click time so the modal always uses the right value
   const pendingDeleteLocalOnlyRef = useRef<boolean>(false);
   const [showComments, setShowComments] = useState(false);
+  const [formDialogOpen, setFormDialogOpen] = useState(false);
+  const [formsPickerOpen, setFormsPickerOpen] = useState(false);
+
+  // Slash command menu state
+  const slashMenuRef = useRef<SlashCommandMenuHandle | null>(null);
+  const [slashMenuProps, setSlashMenuProps] = useState<{
+    items: SlashCommandItem[];
+    command: (item: SlashCommandItem) => void;
+    rect: DOMRect;
+  } | null>(null);
 
   const { servers: blossomServers } = useBlossomServers();
 
@@ -236,7 +255,7 @@ export function DocumentEditorController({
   isViewOnlyRef.current = isViewOnly;
 
   // Always-current upload function — avoids stale closures in editorProps handlers
-  const uploadFileRef = useRef<(file: File) => Promise<void>>(async () => {});
+  const uploadFileRef = useRef<(file: File) => Promise<void>>(async () => { });
 
   /* ── TipTap editor instance ────────────────────────────── */
   const editor = useEditor({
@@ -250,6 +269,152 @@ export function DocumentEditorController({
       }),
       CharacterCount,
       EncryptedFileNode,
+      FormNode,
+      SlashCommand.configure({
+        suggestion: {
+          items: ({ query }) => {
+            const all: SlashCommandItem[] = [
+              {
+                id: "h1",
+                label: "Heading 1",
+                description: "Large section heading",
+                icon: "H₁",
+                keywords: ["h1", "heading", "title", "large"],
+                command: ({ editor, range }) =>
+                  editor.deleteRange(range).toggleHeading({ level: 1 }).run(),
+              },
+              {
+                id: "h2",
+                label: "Heading 2",
+                description: "Medium section heading",
+                icon: "H₂",
+                keywords: ["h2", "heading", "subtitle", "medium"],
+                command: ({ editor, range }) =>
+                  editor.deleteRange(range).toggleHeading({ level: 2 }).run(),
+              },
+              {
+                id: "h3",
+                label: "Heading 3",
+                description: "Small section heading",
+                icon: "H₃",
+                keywords: ["h3", "heading", "subheading", "small"],
+                command: ({ editor, range }) =>
+                  editor.deleteRange(range).toggleHeading({ level: 3 }).run(),
+              },
+              {
+                id: "bullet",
+                label: "Bullet list",
+                description: "Simple unordered list",
+                icon: "•",
+                keywords: ["bullet", "list", "unordered", "ul"],
+                command: ({ editor, range }) =>
+                  editor.deleteRange(range).toggleBulletList().run(),
+              },
+              {
+                id: "numbered",
+                label: "Numbered list",
+                description: "Ordered list with numbers",
+                icon: "1.",
+                keywords: ["numbered", "ordered", "list", "ol"],
+                command: ({ editor, range }) =>
+                  editor.deleteRange(range).toggleOrderedList().run(),
+              },
+              {
+                id: "quote",
+                label: "Quote",
+                description: "Capture a quotation",
+                icon: "❝",
+                keywords: ["quote", "blockquote", "callout"],
+                command: ({ editor, range }) =>
+                  editor.deleteRange(range).toggleBlockquote().run(),
+              },
+              {
+                id: "code",
+                label: "Code block",
+                description: "Monospace code snippet",
+                icon: "</>",
+                keywords: ["code", "codeblock", "pre", "snippet", "mono"],
+                command: ({ editor, range }) =>
+                  editor.deleteRange(range).toggleCodeBlock().run(),
+              },
+              {
+                id: "divider",
+                label: "Divider",
+                description: "Horizontal separator line",
+                icon: "—",
+                keywords: ["divider", "hr", "separator", "rule"],
+                command: ({ editor, range }) =>
+                  editor.deleteRange(range).setHorizontalRule().run(),
+              },
+              {
+                id: "form",
+                label: "Form",
+                description: "Create and embed a Nostr form",
+                icon: "📋",
+                keywords: ["form", "survey", "nostr", "embed", "questionnaire", "create"],
+                command: ({ editor, range }) => {
+                  editor.deleteRange(range).run();
+                  setFormDialogOpen(true);
+                },
+              },
+              {
+                id: "my-forms",
+                label: "My forms",
+                description: "Embed one of your existing forms",
+                icon: "📂",
+                keywords: ["my forms", "existing", "reuse", "embed", "library"],
+                command: ({ editor, range }) => {
+                  editor.deleteRange(range).run();
+                  setFormsPickerOpen(true);
+                },
+              },
+            ];
+            if (!query) return all;
+            const q = query.toLowerCase();
+            return all.filter(
+              (item) =>
+                item.label.toLowerCase().includes(q) ||
+                item.keywords.some((k) => k.includes(q)),
+            );
+          },
+          render: () => {
+            let component: SlashCommandMenuHandle | null = null;
+
+            return {
+              onStart(props) {
+                const rect = props.clientRect?.();
+                if (!rect) return;
+                setSlashMenuProps({
+                  items: props.items as SlashCommandItem[],
+                  command: (item) => props.command(item),
+                  rect,
+                });
+              },
+              onUpdate(props) {
+                const rect = props.clientRect?.();
+                if (!rect) return;
+                setSlashMenuProps({
+                  items: props.items as SlashCommandItem[],
+                  command: (item) => props.command(item),
+                  rect,
+                });
+                component = slashMenuRef.current;
+              },
+              onKeyDown(props) {
+                if (props.event.key === "Escape") {
+                  setSlashMenuProps(null);
+                  return true;
+                }
+                component = slashMenuRef.current;
+                return component?.onKeyDown(props.event) ?? false;
+              },
+              onExit() {
+                setSlashMenuProps(null);
+              },
+            };
+          },
+        },
+      }),
     ],
     editorProps: {
       attributes: { class: "tiptap" },
@@ -311,7 +476,7 @@ export function DocumentEditorController({
   // Use a ref so the keydown listener always calls the latest handleSave
   // without needing to re-register on every render.
   const handleSaveRef = useRef<(silent?: boolean) => Promise<void>>(
-    async () => {},
+    async () => { },
   );
 
   useEffect(() => {
@@ -652,7 +817,7 @@ export function DocumentEditorController({
         eventIds: history?.versions.map((v) => v.event.id) ?? [],
       });
       removeDocument(address);
-      removeLocalEvent(address).catch(() => {});
+      removeLocalEvent(address).catch(() => { });
       navigate("/");
       return;
     }
@@ -696,6 +861,33 @@ export function DocumentEditorController({
     if (!editor) return;
     exportAsDoc(editor.getHTML(), getDocTitle());
   };
+
+  const handleFormCreated = (naddr: string, nkeys?: string) => {
+    if (!editor) return;
+    editor
+      .chain()
+      .focus()
+      .insertContent({ type: "nostrForm", attrs: { naddr, nkeys: nkeys ?? null } })
+      .run();
+  };
+
+  /* Build a FormsSigner adapter from the app's signerManager */
+  const formsSigner: FormsSigner | null = user
+    ? {
+      getPublicKey: () => signerManager.getSigner().then((s) => s.getPublicKey()),
+      signEvent: (ev) => signerManager.getSigner().then((s) => s.signEvent(ev)),
+      nip44Encrypt: (pub, pt) =>
+        signerManager.getSigner().then((s) => {
+          if (!s.nip44Encrypt) throw new Error("Signer does not support NIP-44");
+          return s.nip44Encrypt(pub, pt);
+        }),
+      nip44Decrypt: (pub, ct) =>
+        signerManager.getSigner().then((s) => {
+          if (!s.nip44Decrypt) throw new Error("Signer does not support NIP-44");
+          return s.nip44Decrypt(pub, ct);
+        }),
+    }
+    : null;
 
   /* ── Render ────────────────────────────────────────────── */
 
@@ -900,7 +1092,7 @@ export function DocumentEditorController({
             }
           }
           removeDocument(address);
-          await trashLocalEvent(address).catch(() => {});
+          await trashLocalEvent(address).catch(() => { });
           navigate("/");
         }}
         onCancel={() => {
@@ -1003,6 +1195,46 @@ export function DocumentEditorController({
           ))}
         </Paper>
       )}
+
+      {/* ── Slash command menu portal ─────────────────────── */}
+      {slashMenuProps &&
+        createPortal(
+          <div
+            style={{
+              position: "fixed",
+              top: slashMenuProps.rect.bottom + 4,
+              left: slashMenuProps.rect.left,
+              zIndex: 9999,
+            }}
+          >
+            <SlashCommandMenu
+              ref={(handle) => {
+                slashMenuRef.current = handle;
+              }}
+              items={slashMenuProps.items}
+              command={(item) => {
+                slashMenuProps.command(item);
+                setSlashMenuProps(null);
+              }}
+            />
+          </div>,
+          document.body,
+        )}
+
+      {/* ── Create form dialog ────────────────────────────── */}
+      <CreateFormDialog
+        open={formDialogOpen}
+        onClose={() => setFormDialogOpen(false)}
+        onCreated={handleFormCreated}
+        signer={formsSigner}
+      />
+
+      {/* ── My forms picker ───────────────────────────────── */}
+      <MyFormsPickerDialog
+        open={formsPickerOpen}
+        onClose={() => setFormsPickerOpen(false)}
+        onPick={handleFormCreated}
+      />
 
       <ShareModal
         open={shareOpen}
