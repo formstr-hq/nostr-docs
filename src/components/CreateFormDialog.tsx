@@ -27,6 +27,7 @@ import ExpandLessIcon from "@mui/icons-material/ExpandLess";
 import { FormstrSDK, encodeNKeys } from "@formstr/sdk";
 import type { FormsSigner, FormField, CreateFormResult } from "@formstr/sdk";
 import { useRelays } from "../contexts/RelayContext";
+import { useMyForms } from "../contexts/MyFormsContext";
 import { pool } from "../nostr/relayPool";
 import type { Event as NostrEvent } from "nostr-tools";
 
@@ -66,6 +67,7 @@ interface Props {
 }
 
 export default function CreateFormDialog({ open, onClose, onCreated, signer }: Props) {
+  const { addForm } = useMyForms();
   const [formName, setFormName] = useState("Untitled form");
   const [fields, setFields] = useState<FieldDef[]>([emptyField()]);
   const [creating, setCreating] = useState(false);
@@ -151,6 +153,8 @@ export default function CreateFormDialog({ open, onClose, onCreated, signer }: P
         signer: signer ?? undefined,
       });
       const nkeys = res.viewKeyHex ? encodeNKeys({ viewKey: res.viewKeyHex }) : undefined;
+      const secretNkeys = encodeNKeys({ secretKey: res.signingKeyHex, ...(res.viewKeyHex && { viewKey: res.viewKeyHex }) });
+      addForm(res.naddr, secretNkeys);
       onCreated(res.naddr, nkeys);
       setResult(res);
     } catch (err) {

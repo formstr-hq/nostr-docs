@@ -8,6 +8,7 @@ import {
 } from "react";
 import { FormstrSDK } from "@formstr/sdk";
 import type { MyFormSummary, FormsSigner } from "@formstr/sdk";
+import { nip19 } from "nostr-tools";
 import { signerManager } from "../signer";
 import { useRelays } from "./RelayContext";
 
@@ -17,12 +18,14 @@ interface MyFormsContextValue {
   forms: MyFormSummary[];
   loading: boolean;
   refresh: () => Promise<void>;
+  addForm: (naddr: string, nkeys?: string) => void;
 }
 
 const MyFormsContext = createContext<MyFormsContextValue>({
   forms: [],
   loading: false,
   refresh: async () => {},
+  addForm: () => {},
 });
 
 export function useMyForms() {
@@ -61,7 +64,7 @@ export function MyFormsProvider({ children }: { children: ReactNode }) {
 
     isLoadingRef.current = true;
     setLoading(true);
-    setForms([]);
+    if (pub !== loadedForPubRef.current) setForms([]);
     try {
       const result = await sdk.fetchMyForms(formsSigner, relays);
       setForms(result);
@@ -90,9 +93,25 @@ export function MyFormsProvider({ children }: { children: ReactNode }) {
     load();
   }, [relays.join(",")]);
 
+  const addForm = (naddr: string, nkeys?: string) => {
+    let formId = "";
+    let formPubkey = "";
+    try {
+      const decoded = nip19.decode(naddr);
+      if (decoded.type === "naddr") {
+        formId = decoded.data.identifier;
+        formPubkey = decoded.data.pubkey;
+      }
+    } catch {}
+    setForms((prev) => {
+      if (prev.some((f) => f.formId && f.formId === formId && f.formPubkey === formPubkey)) return prev;
+      return [{ naddr, nkeys, formId, formPubkey, name: "", fieldCount: 0, relay: "" }, ...prev];
+    });
+  };
+
   return (
     <MyFormsContext.Provider
-      value={{ forms, loading, refresh: () => load(true) }}
+      value={{ forms, loading, refresh: () => load(true), addForm }}
     >
       {children}
     </MyFormsContext.Provider>

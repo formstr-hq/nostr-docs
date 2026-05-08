@@ -37,7 +37,6 @@ import type { SlashCommandMenuHandle } from "./SlashCommandMenu";
 import CreateFormDialog from "../CreateFormDialog";
 import MyFormsPickerDialog from "../MyFormsPickerDialog";
 import type { FormsSigner } from "@formstr/sdk";
-import { useMyForms } from "../../contexts/MyFormsContext";
 import { createPortal } from "react-dom";
 
 import { useDocumentContext } from "../../contexts/DocumentContext";
@@ -233,7 +232,6 @@ export function DocumentEditorController({
   } | null>(null);
 
   const { servers: blossomServers } = useBlossomServers();
-  const { refresh: refreshMyForms } = useMyForms();
 
   // Each in-flight upload gets a unique entry so multiple concurrent uploads
   // are all visible and the button stays disabled until all finish.
@@ -871,7 +869,6 @@ export function DocumentEditorController({
       .focus()
       .insertContent({ type: "nostrForm", attrs: { naddr, nkeys: nkeys ?? null } })
       .run();
-    refreshMyForms();
   };
 
   /* Build a FormsSigner adapter from the app's signerManager */

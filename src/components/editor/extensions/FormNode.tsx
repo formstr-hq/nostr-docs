@@ -14,11 +14,26 @@ import OpenInNewIcon from "@mui/icons-material/OpenInNew";
 import BarChartIcon from "@mui/icons-material/BarChart";
 import EditOutlinedIcon from "@mui/icons-material/EditOutlined";
 import { FormstrSDK, decodeNKeys, encodeNKeys } from "@formstr/sdk";
+import { nip19 } from "nostr-tools";
 import { useMyForms } from "../../../contexts/MyFormsContext";
 import type { NormalizedForm } from "@formstr/sdk";
 import { FormFiller } from "../FormFiller";
 
 const sdk = new FormstrSDK();
+
+function decodeNaddr(naddr: string) {
+  try {
+    const decoded = nip19.decode(naddr);
+    if (decoded.type === "naddr") return { formId: decoded.data.identifier, formPubkey: decoded.data.pubkey };
+  } catch {}
+  return null;
+}
+
+function findInMyForms(forms: ReturnType<typeof useMyForms>["forms"], naddr: string) {
+  const decoded = decodeNaddr(naddr);
+  if (!decoded) return undefined;
+  return forms.find(f => f.formId === decoded.formId && f.formPubkey === decoded.formPubkey);
+}
 
 // ── Shared card UI — used in both edit and preview modes ─────
 
@@ -40,7 +55,7 @@ export function FormNodeCard({
 
   const effectiveNkeys = useMemo(() => {
     if (nkeys && decodeNKeys(nkeys).secretKey) return nkeys;
-    return forms.find(f => f.naddr === naddr)?.nkeys ?? nkeys;
+    return findInMyForms(forms, naddr)?.nkeys ?? nkeys;
   }, [naddr, nkeys, forms]);
 
   const fieldCount = form ? Object.keys(form.fields).length : 0;
@@ -161,7 +176,7 @@ function FormNodeView({ node, editor, deleteNode, selected }: NodeViewProps) {
 
   const effectiveNkeys = useMemo(() => {
     if (nkeys && decodeNKeys(nkeys).secretKey) return nkeys;
-    return forms.find(f => f.naddr === naddr)?.nkeys ?? nkeys;
+    return findInMyForms(forms, naddr)?.nkeys ?? nkeys;
   }, [naddr, nkeys, forms]);
 
   const hasSecretKey = !!effectiveNkeys && !!decodeNKeys(effectiveNkeys).secretKey;
@@ -202,15 +217,17 @@ function FormNodeView({ node, editor, deleteNode, selected }: NodeViewProps) {
                 </IconButton>
               </Tooltip>
             )}
-            <Tooltip title="Edit form">
-              <IconButton
-                size="small"
-                onClick={() => window.open(`https://formstr.app/edit/${naddr}${nkeysHash}`, "_blank", "noopener")}
-                sx={{ bgcolor: "background.paper", boxShadow: 1 }}
-              >
-                <EditOutlinedIcon fontSize="small" />
-              </IconButton>
-            </Tooltip>
+            {hasSecretKey && (
+              <Tooltip title="Edit form">
+                <IconButton
+                  size="small"
+                  onClick={() => window.open(`https://formstr.app/edit/${naddr}${nkeysHash}`, "_blank", "noopener")}
+                  sx={{ bgcolor: "background.paper", boxShadow: 1 }}
+                >
+                  <EditOutlinedIcon fontSize="small" />
+                </IconButton>
+              </Tooltip>
+            )}
             <Tooltip title="Remove">
               <IconButton
                 size="small"
