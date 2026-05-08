@@ -289,7 +289,7 @@ export function EditorToolbar({
               onClick={(e) => {
                 e.stopPropagation();
                 // For mobile, a click can toggle it too if hover isn't available
-                setExportOpen(!exportOpen); 
+                setExportOpen(!exportOpen);
               }}
               sx={{ display: "flex", justifyContent: "space-between" }}
             >

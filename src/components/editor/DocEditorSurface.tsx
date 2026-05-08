@@ -8,6 +8,7 @@ import type { Editor } from "@tiptap/react";
 import EditIcon from "@mui/icons-material/Edit";
 import { EncryptedFilePreview } from "./EncryptedFilePreview";
 import type { EncryptedFileAttrs } from "./EncryptedFilePreview";
+import { FormFiller } from "./FormFiller";
 import { CommentComposer } from "../comments/CommentComposer";
 import { CommentSidebar } from "../comments/CommentSidebar";
 
@@ -55,8 +56,8 @@ const markdownSxBase = {
   },
 };
 
-// Custom component map for ReactMarkdown — handles <encrypted-file> HTML elements
-// that tiptap-markdown serializes into the document markdown.
+// Custom component map for ReactMarkdown — handles custom HTML elements that
+// tiptap-markdown serializes into the document markdown.
 // Cast to any: react-markdown's Components type only covers known HTML tags,
 // but rehype-raw passes custom elements through as-is.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -73,6 +74,15 @@ const markdownComponents: any = {
     };
     if (!attrs.src || !attrs.decryptionKey) return null;
     return <EncryptedFilePreview {...attrs} />;
+  },
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  "nostr-form": (props: any) => {
+    const naddr = props["data-naddr"] ?? "";
+    const nkeys = props["data-nkeys"] ?? undefined;
+
+    if (!naddr) return null;
+
+    return <FormFiller naddr={naddr} nkeys={nkeys} />;
   },
 };
 
