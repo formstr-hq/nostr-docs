@@ -42,6 +42,27 @@ export type ShareResult = {
   editKey?: string;
 };
 
+export function buildShareUrl(
+  address: string,
+  viewKeyHex: string,
+  editKeyHex?: string,
+): string {
+  const [kindStr, pubkey, identifier] = address.split(":");
+  const naddr = nip19.naddrEncode({
+    kind: parseInt(kindStr, 10),
+    pubkey,
+    identifier,
+  });
+  const nkeysStr = encodeNKeys({
+    viewKey: viewKeyHex,
+    ...(editKeyHex && { editKey: editKeyHex }),
+  });
+  const baseUrl = isNativePlatform
+    ? "https://pages.formstr.app"
+    : window.location.origin;
+  return `${baseUrl}/doc/${naddr}#${nkeysStr}`;
+}
+
 export async function handleGeneratePrivateLink(
   canEdit: boolean,
   selectedDocumentId: string | null,

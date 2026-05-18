@@ -61,7 +61,7 @@ import { DocEditorSurface } from "./DocEditorSurface";
 import { deleteEvent } from "../../nostr/deleteRequest";
 import ConfirmModal from "../common/ConfirmModal";
 import ShareModal from "../ShareModal";
-import { handleGeneratePrivateLink, handleSharePublic } from "./utils";
+import { buildShareUrl, handleGeneratePrivateLink, handleSharePublic } from "./utils";
 import { encryptContent } from "../../utils/encryption";
 import { encryptFile } from "../../utils/fileEncryption";
 import { uploadToBlossom } from "../../blossom/client";
@@ -1290,7 +1290,18 @@ export function DocumentEditorController({
         open={shareOpen}
         onClose={() => setShareOpen(false)}
         onPublicPost={() => handleSharePublic()}
+        hasEditShare={!!sharedAsAddress}
         onPrivateLink={async (canEdit) => {
+          // Edit-access re-share: reuse the existing keys and skip publishing.
+          // Republishing would push our stale local copy over any edits the
+          // collaborator has made through the live shared link.
+          if (canEdit && selectedDocumentId && sharedAsAddress) {
+            const existing = getKeys(sharedAsAddress);
+            if (existing[0] && existing[1]) {
+              return buildShareUrl(sharedAsAddress, existing[0], existing[1]);
+            }
+          }
+
           const result = await handleGeneratePrivateLink(
             canEdit,
             selectedDocumentId,
