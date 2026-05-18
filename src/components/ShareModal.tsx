@@ -23,9 +23,10 @@ type Props = {
   onClose: () => void;
   onPublicPost?: () => void;
   onPrivateLink?: (canEdit: boolean) => Promise<string | void>;
+  hasEditShare?: boolean;
 };
 
-export default function ShareModal({ open, onClose, onPrivateLink }: Props) {
+export default function ShareModal({ open, onClose, onPrivateLink, hasEditShare = false }: Props) {
   const [canEdit, setCanEdit] = useState(false);
   const [privateLink, setPrivateLink] = useState<string>("");
   const [loading, setLoading] = useState(false);
@@ -91,11 +92,13 @@ export default function ShareModal({ open, onClose, onPrivateLink }: Props) {
               />
               <Typography color="text.secondary">Can edit</Typography>
             </Box>
-            {canEdit && (
-              <Typography variant="caption" color="text.secondary" sx={{ mt: 0.5, display: "block" }}>
-                Creates a separate shared copy. Anyone with the link can edit it — your original document is unaffected.
-              </Typography>
-            )}
+            <Typography variant="caption" color="text.secondary" sx={{ mt: 0.5, display: "block" }}>
+              {canEdit
+                ? hasEditShare
+                  ? "This page already has a shared editable copy — you'll get the existing link back. Any edits collaborators have made are preserved."
+                  : "Creates a separate shared copy. Anyone with the link can edit it — your original document is unaffected."
+                : "Anyone with the link can read this page. Generating again rotates access — previously shared view links stop working."}
+            </Typography>
 
             <Button
               variant="contained"
@@ -106,6 +109,10 @@ export default function ShareModal({ open, onClose, onPrivateLink }: Props) {
             >
               {loading ? (
                 <CircularProgress size={24} color="inherit" />
+              ) : canEdit && hasEditShare ? (
+                "Get Existing Link"
+              ) : !canEdit && privateLink ? (
+                "Rotate View Access"
               ) : (
                 "Generate Link"
               )}

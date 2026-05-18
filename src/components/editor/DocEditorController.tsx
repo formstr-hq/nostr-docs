@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import {
   Box,
+  Button,
   Paper,
   Snackbar,
   Alert,
@@ -60,7 +61,7 @@ import { DocEditorSurface } from "./DocEditorSurface";
 import { deleteEvent } from "../../nostr/deleteRequest";
 import ConfirmModal from "../common/ConfirmModal";
 import ShareModal from "../ShareModal";
-import { handleGeneratePrivateLink, handleSharePublic } from "./utils";
+import { buildShareUrl, buildSharedDocPath, handleGeneratePrivateLink, handleSharePublic } from "./utils";
 import { encryptContent } from "../../utils/encryption";
 import { encryptFile } from "../../utils/fileEncryption";
 import { uploadToBlossom } from "../../blossom/client";
@@ -162,7 +163,8 @@ export function DocumentEditorController({
     localOnlyAddresses,
     markLocalOnly,
   } = useDocumentContext();
-  const { addSharedDoc } = useSharedPages();
+  const { addSharedDoc, getKeys } = useSharedPages();
+  const { setDocSharedAs, docSharedAs } = useDocMetadata();
 
   const navigate = useNavigate();
   const { relays } = useRelays();
@@ -173,8 +175,11 @@ export function DocumentEditorController({
   const { user } = useUser();
   const history = selectedDocumentId ? documents.get(selectedDocumentId) : null;
   const isOwner = !!user?.pubkey && !!history?.versions[0]?.event.pubkey && user.pubkey === history.versions[0].event.pubkey;
-  const isViewOnly = !!viewKey && !editKey && !isOwner;
+  const sharedAsAddress = selectedDocumentId ? (docSharedAs.get(selectedDocumentId) ?? null) : null;
+  const isViewOnly = (!!viewKey && !editKey && !isOwner) || !!sharedAsAddress;
   const commentsEnabled = !!viewKey && !!selectedDocumentId;
+
+  const sharedAsUrl = sharedAsAddress ? buildSharedDocPath(sharedAsAddress, getKeys) : null;
 
   const versions =
     history?.versions.map((v) => ({
@@ -908,6 +913,38 @@ export function DocumentEditorController({
         }),
       }}
     >
+      {sharedAsUrl && (
+        <Box
+          sx={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            px: 2,
+            py: 0.75,
+            borderRadius: 2,
+            bgcolor: (t) => t.palette.mode === "dark"
+              ? "rgba(255,255,255,0.05)"
+              : "rgba(0,0,0,0.04)",
+            border: "1px solid",
+            borderColor: "divider",
+            flexShrink: 0,
+          }}
+        >
+          <Typography variant="caption" color="text.secondary">
+            This is a backup — the live shared copy is the editable version.
+          </Typography>
+          <Button
+            size="small"
+            variant="outlined"
+            color="secondary"
+            onClick={() => navigate(sharedAsUrl)}
+            sx={{ ml: 2, whiteSpace: "nowrap", fontSize: "0.72rem" }}
+          >
+            Go to live version
+          </Button>
+        </Box>
+      )}
+
       {!isViewOnly && (
         <EditorToolbar
           saving={saving}
@@ -943,6 +980,7 @@ export function DocumentEditorController({
           onToggleComments={commentsEnabled ? () => setShowComments((s) => !s) : undefined}
           documentAddress={selectedDocumentId ?? undefined}
           heuristicTitle={getDocTitle()}
+          hasEditKey={!!editKey}
         />
       )}
       {isViewOnly && commentsEnabled && (
@@ -1242,7 +1280,18 @@ export function DocumentEditorController({
         open={shareOpen}
         onClose={() => setShareOpen(false)}
         onPublicPost={() => handleSharePublic()}
+        hasEditShare={!!sharedAsAddress}
         onPrivateLink={async (canEdit) => {
+          // Edit-access re-share: reuse the existing keys and skip publishing.
+          // Republishing would push our stale local copy over any edits the
+          // collaborator has made through the live shared link.
+          if (canEdit && selectedDocumentId && sharedAsAddress) {
+            const existing = getKeys(sharedAsAddress);
+            if (existing[0] && existing[1]) {
+              return buildShareUrl(sharedAsAddress, existing[0], existing[1]);
+            }
+          }
+
           const result = await handleGeneratePrivateLink(
             canEdit,
             selectedDocumentId,
@@ -1258,6 +1307,12 @@ export function DocumentEditorController({
             ...(result.editKey ? [result.editKey] : []),
           ];
           await addSharedDoc(sharedDocTag);
+
+          // Mark the original doc as a backup pointing to the shared copy.
+          // Only makes sense when the logged-in owner is sharing their own doc.
+          if (result.editKey && selectedDocumentId && isOwner) {
+            await setDocSharedAs(selectedDocumentId, result.address);
+          }
 
           return result.url;
         }}
