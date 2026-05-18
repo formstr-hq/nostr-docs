@@ -48,6 +48,7 @@ import { useNavigate } from "react-router-dom";
 import { useSharedPages } from "../contexts/SharedDocsContext.tsx";
 import TrashDialog from "./TrashDialog.tsx";
 import { encodeNKeys } from "../utils/nkeys.ts";
+import { buildSharedDocPath } from "./editor/utils.ts";
 import { getEventAddress } from "../utils/helpers.ts";
 import { useDocMetadata } from "../contexts/DocMetadataContext.tsx";
 import RenameDialog from "./RenameDialog.tsx";
@@ -691,15 +692,7 @@ export default function DocumentList({
                           )}
                           {docSharedAs.has(address) && (() => {
                             const sharedAddr = docSharedAs.get(address)!;
-                            const [kind, pubkey, identifier] = sharedAddr.split(":");
-                            const sharedNaddr = nip19.naddrEncode({ kind: Number(kind), pubkey, identifier });
-                            const keys = getKeys(sharedAddr);
-                            let sharedPath = `/doc/${sharedNaddr}`;
-                            if (keys.length > 0 && keys[0]) {
-                              const nkeysObj: Record<string, string> = { viewKey: keys[0] };
-                              if (keys[1]) nkeysObj.editKey = keys[1];
-                              sharedPath += `#${encodeNKeys(nkeysObj)}`;
-                            }
+                            const sharedPath = buildSharedDocPath(sharedAddr, getKeys);
                             return (
                               <Tooltip title="Go to live shared version">
                                 <Box

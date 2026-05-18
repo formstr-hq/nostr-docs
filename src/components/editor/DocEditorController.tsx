@@ -61,7 +61,7 @@ import { DocEditorSurface } from "./DocEditorSurface";
 import { deleteEvent } from "../../nostr/deleteRequest";
 import ConfirmModal from "../common/ConfirmModal";
 import ShareModal from "../ShareModal";
-import { buildShareUrl, handleGeneratePrivateLink, handleSharePublic } from "./utils";
+import { buildShareUrl, buildSharedDocPath, handleGeneratePrivateLink, handleSharePublic } from "./utils";
 import { encryptContent } from "../../utils/encryption";
 import { encryptFile } from "../../utils/fileEncryption";
 import { uploadToBlossom } from "../../blossom/client";
@@ -179,17 +179,7 @@ export function DocumentEditorController({
   const isViewOnly = (!!viewKey && !editKey && !isOwner) || !!sharedAsAddress;
   const commentsEnabled = !!viewKey && !!selectedDocumentId;
 
-  const sharedAsUrl = sharedAsAddress ? (() => {
-    const [kind, pubkey, identifier] = sharedAsAddress.split(":");
-    const naddr = nip19.naddrEncode({ kind: Number(kind), pubkey, identifier });
-    const keys = getKeys(sharedAsAddress);
-    if (keys.length > 0 && keys[0]) {
-      const nkeysObj: Record<string, string> = { viewKey: keys[0] };
-      if (keys[1]) nkeysObj.editKey = keys[1];
-      return `/doc/${naddr}#${encodeNKeys(nkeysObj)}`;
-    }
-    return `/doc/${naddr}`;
-  })() : null;
+  const sharedAsUrl = sharedAsAddress ? buildSharedDocPath(sharedAsAddress, getKeys) : null;
 
   const versions =
     history?.versions.map((v) => ({

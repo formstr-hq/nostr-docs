@@ -42,6 +42,29 @@ export type ShareResult = {
   editKey?: string;
 };
 
+/**
+ * Builds an in-app path (`/doc/<naddr>[#<nkeys>]`) for a shared document address,
+ * appending the nkeys fragment when keys are available for that address.
+ */
+export function buildSharedDocPath(
+  sharedAddr: string,
+  getKeys: (addr: string) => string[],
+): string {
+  const [kindStr, pubkey, identifier] = sharedAddr.split(":");
+  const naddr = nip19.naddrEncode({
+    kind: parseInt(kindStr, 10),
+    pubkey,
+    identifier,
+  });
+  const keys = getKeys(sharedAddr);
+  if (keys.length > 0 && keys[0]) {
+    const nkeysObj: Record<string, string> = { viewKey: keys[0] };
+    if (keys[1]) nkeysObj.editKey = keys[1];
+    return `/doc/${naddr}#${encodeNKeys(nkeysObj)}`;
+  }
+  return `/doc/${naddr}`;
+}
+
 export function buildShareUrl(
   address: string,
   viewKeyHex: string,
