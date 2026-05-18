@@ -2,12 +2,12 @@ import { useMemo } from "react";
 import MiniSearch, { type SearchResult } from "minisearch";
 import type { Event } from "nostr-tools";
 
-type DocumentVersion = {
+export type DocumentVersion = {
   event: Event;
   decryptedContent: string;
 };
 
-type DocumentHistory = {
+export type DocumentHistory = {
   versions: DocumentVersion[];
 };
 
@@ -28,9 +28,9 @@ type IndexEntry = {
   tags: string;
 };
 
-const heuristicTitle = (content: string): string => {
+export const heuristicTitle = (content: string, maxLength = 120): string => {
   const firstLine = content.split("\n").find((l) => l.trim()) ?? "";
-  return firstLine.replace(/^#+\s*/, "").slice(0, 120).trim();
+  return firstLine.replace(/^#+\s*/, "").slice(0, maxLength).trim();
 };
 
 const buildIndex = (

@@ -9,7 +9,13 @@ import {
   markBroadcast,
 } from "../lib/localStore.ts";
 import { publishEvent } from "../nostr/publish.ts";
-import { useDocSearch, buildSnippet, type DocOrigin } from "../lib/docSearch.ts";
+import {
+  useDocSearch,
+  buildSnippet,
+  heuristicTitle,
+  type DocOrigin,
+  type DocumentHistory,
+} from "../lib/docSearch.ts";
 import {
   Box,
   Typography,
@@ -275,11 +281,17 @@ export default function DocumentList({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedDocumentId]);
 
-  type DocumentHistory = {
-    versions: { event: Event; decryptedContent: string }[];
+  type RenderEntry = {
+    address: string;
+    history: DocumentHistory;
+    origin: DocOrigin;
+    terms?: string[];
   };
 
-  // Resolve a [address, history, origin] tuple from any of the three maps.
+  const matchesTagFilter = (address: string) =>
+    !selectedTag || (docTags.get(address) ?? []).includes(selectedTag);
+
+  // Search spans all three maps; resolve which one an address came from.
   const resolveDoc = (
     address: string,
   ): { history: DocumentHistory; origin: DocOrigin } | null => {
@@ -292,41 +304,23 @@ export default function DocumentList({
     return null;
   };
 
-  type RenderEntry = {
-    address: string;
-    history: DocumentHistory;
-    origin: DocOrigin;
-    terms?: string[];
-  };
-
   const entries: RenderEntry[] = isSearching
     ? (searchHits!
         .map((hit) => {
+          if (!matchesTagFilter(hit.address)) return null;
           const resolved = resolveDoc(hit.address);
           if (!resolved) return null;
-          if (selectedTag && !(docTags.get(hit.address) ?? []).includes(selectedTag))
-            return null;
           return { address: hit.address, ...resolved, terms: hit.terms };
         })
         .filter(Boolean) as RenderEntry[])
     : [...allDocs.entries()]
-        .filter(([address]) =>
-          !selectedTag || (docTags.get(address) ?? []).includes(selectedTag),
-        )
+        .filter(([address]) => matchesTagFilter(address))
         .sort(([, a], [, b]) => {
           const aTime = a.versions.at(-1)?.event.created_at ?? 0;
           const bTime = b.versions.at(-1)?.event.created_at ?? 0;
           return bTime - aTime;
         })
-        .map(([address, history]) => ({
-          address,
-          history,
-          origin: (tab === "personal"
-            ? "personal"
-            : tab === "shared"
-            ? "shared"
-            : "visited") as DocOrigin,
-        }));
+        .map(([address, history]) => ({ address, history, origin: tab }));
 
   const personalCount = visibleDocuments.size;
   const sharedCount = sharedDocuments.size;
@@ -538,14 +532,8 @@ export default function DocumentList({
               const relays = docRelays.get(address) ?? [];
 
               const customTitle = docTitles.get(address);
-              const firstLine =
-                (decryptedContent ?? "").split("\n").find((l) => l.trim()) ??
-                "Untitled";
-              const heuristicTitle = firstLine
-                .replace(/^#+\s*/, "")
-                .slice(0, 42)
-                .trim();
-              const displayTitle = customTitle || heuristicTitle || "Untitled";
+              const displayTitle =
+                customTitle || heuristicTitle(decryptedContent ?? "", 42) || "Untitled";
 
               const snippet =
                 isSearching && terms
