@@ -54,6 +54,28 @@ const markdownSxBase = {
     margin: "0.5em 0",
     opacity: 0.85,
   },
+  "& .md-table-scroll": {
+    overflowX: "auto",
+    WebkitOverflowScrolling: "touch",
+    display: "block",
+    margin: "1em 0",
+  },
+  "& table": {
+    borderCollapse: "collapse",
+    minWidth: "360px",
+    width: "100%",
+  },
+  "& td, & th": {
+    border: "1px solid rgba(128,128,128,0.3)",
+    padding: "6px 12px",
+    textAlign: "left",
+    verticalAlign: "top",
+    wordBreak: "break-word",
+  },
+  "& th": {
+    background: "rgba(128,128,128,0.1)",
+    fontWeight: 700,
+  },
 };
 
 // Custom component map for ReactMarkdown — handles custom HTML elements that
@@ -62,6 +84,12 @@ const markdownSxBase = {
 // but rehype-raw passes custom elements through as-is.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const markdownComponents: any = {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  table: ({ children, ...props }: any) => (
+    <div className="md-table-scroll">
+      <table {...props}>{children}</table>
+    </div>
+  ),
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   "encrypted-file": (props: any) => {
     const attrs: EncryptedFileAttrs = {

@@ -29,6 +29,10 @@ import { Markdown } from "tiptap-markdown";
 import Link from "@tiptap/extension-link";
 import Placeholder from "@tiptap/extension-placeholder";
 import CharacterCount from "@tiptap/extension-character-count";
+import { Table } from "@tiptap/extension-table";
+import { TableRow } from "@tiptap/extension-table-row";
+import { TableHeader } from "@tiptap/extension-table-header";
+import { TableCell } from "@tiptap/extension-table-cell";
 import { EncryptedFileNode } from "./extensions/EncryptedFileNode";
 import { FormNode } from "./extensions/FormNode";
 import { SlashCommand } from "./extensions/SlashCommand";
@@ -273,6 +277,10 @@ export function DocumentEditorController({
         placeholder: "Start writing your page here…",
       }),
       CharacterCount,
+      Table.configure({ resizable: false }),
+      TableRow,
+      TableHeader,
+      TableCell,
       EncryptedFileNode,
       FormNode,
       SlashCommand.configure({
@@ -350,6 +358,18 @@ export function DocumentEditorController({
                 keywords: ["divider", "hr", "separator", "rule"],
                 command: ({ editor, range }) =>
                   editor.deleteRange(range).setHorizontalRule().run(),
+              },
+              {
+                id: "table",
+                label: "Table",
+                description: "Insert a 3×3 table",
+                icon: "⊞",
+                keywords: ["table", "grid", "rows", "columns", "spreadsheet"],
+                command: ({ editor, range }) =>
+                  editor
+                    .deleteRange(range)
+                    .insertTable({ rows: 3, cols: 3, withHeaderRow: true })
+                    .run(),
               },
               {
                 id: "form",

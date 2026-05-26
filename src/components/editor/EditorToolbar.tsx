@@ -37,6 +37,7 @@ import UndoIcon from "@mui/icons-material/Undo";
 import RedoIcon from "@mui/icons-material/Redo";
 import FormatIndentIncreaseIcon from "@mui/icons-material/FormatIndentIncrease";
 import FormatIndentDecreaseIcon from "@mui/icons-material/FormatIndentDecrease";
+import TableChartIcon from "@mui/icons-material/TableChart";
 import AttachFileIcon from "@mui/icons-material/AttachFile";
 import FileDownloadIcon from "@mui/icons-material/FileDownload";
 import DescriptionIcon from "@mui/icons-material/Description";
@@ -662,6 +663,24 @@ export function EditorToolbar({
               >
                 {"</>"}
               </ButtonBase>
+            </Tooltip>
+
+            {/* Table */}
+            <Divider orientation="vertical" flexItem sx={{ mx: 0.5 }} />
+            <Tooltip title="Insert table">
+              <IconButton
+                size="small"
+                onClick={() =>
+                  editor
+                    .chain()
+                    .focus()
+                    .insertTable({ rows: 3, cols: 3, withHeaderRow: true })
+                    .run()
+                }
+                color={editor.isActive("table") ? "secondary" : "default"}
+              >
+                <TableChartIcon fontSize="small" />
+              </IconButton>
             </Tooltip>
 
             {/* Attach file */}
