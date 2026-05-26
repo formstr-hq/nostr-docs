@@ -1,3 +1,13 @@
+# 0.9.6
+- Add tables
+
+# 0.9.5
+- Add forms in pages (interoperable with forstr.app)
+- Add / shortcut
+- add local search in documents
+- Fix transperancy in sharing.
+- Move from list event to metadata event
+
 # 0.9.3
 - Comments UI fix on mobile
 - Sort by recent
