@@ -603,31 +603,33 @@ export function EditorToolbar({
                 <FormatListNumberedIcon fontSize="small" />
               </IconButton>
             </Tooltip>
-            <Tooltip title="Indent list item (Tab)">
-              <span>
-                <IconButton
-                  size="small"
-                  onClick={() =>
-                    editor.chain().focus().sinkListItem("listItem").run()
+            <Tooltip title="Indent (Tab)">
+              <IconButton
+                size="small"
+                onClick={() => {
+                  if (editor.isActive("listItem")) {
+                    editor.chain().focus().sinkListItem("listItem").run();
+                  } else {
+                    editor.chain().focus().indent().run();
                   }
-                  disabled={!editor.can().sinkListItem("listItem")}
-                >
-                  <FormatIndentIncreaseIcon fontSize="small" />
-                </IconButton>
-              </span>
+                }}
+              >
+                <FormatIndentIncreaseIcon fontSize="small" />
+              </IconButton>
             </Tooltip>
-            <Tooltip title="Unindent list item (Shift+Tab)">
-              <span>
-                <IconButton
-                  size="small"
-                  onClick={() =>
-                    editor.chain().focus().liftListItem("listItem").run()
+            <Tooltip title="Outdent (Shift+Tab)">
+              <IconButton
+                size="small"
+                onClick={() => {
+                  if (editor.isActive("listItem")) {
+                    editor.chain().focus().liftListItem("listItem").run();
+                  } else {
+                    editor.chain().focus().outdent().run();
                   }
-                  disabled={!editor.can().liftListItem("listItem")}
-                >
-                  <FormatIndentDecreaseIcon fontSize="small" />
-                </IconButton>
-              </span>
+                }}
+              >
+                <FormatIndentDecreaseIcon fontSize="small" />
+              </IconButton>
             </Tooltip>
             <Tooltip title="Blockquote">
               <IconButton

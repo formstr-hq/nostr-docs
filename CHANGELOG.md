@@ -1,5 +1,6 @@
 # 0.9.6
 - Add tables
+- Add indents on regular text
 
 # 0.9.5
 - Add forms in pages (interoperable with forstr.app)

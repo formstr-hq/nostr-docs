@@ -36,6 +36,7 @@ import { TableCell } from "@tiptap/extension-table-cell";
 import { EncryptedFileNode } from "./extensions/EncryptedFileNode";
 import { FormNode } from "./extensions/FormNode";
 import { SlashCommand } from "./extensions/SlashCommand";
+import { Indent } from "./extensions/Indent";
 import { SlashCommandMenu } from "./SlashCommandMenu";
 import type { SlashCommandItem } from "./extensions/SlashCommand";
 import type { SlashCommandMenuHandle } from "./SlashCommandMenu";
@@ -281,6 +282,7 @@ export function DocumentEditorController({
       TableRow,
       TableHeader,
       TableCell,
+      Indent,
       EncryptedFileNode,
       FormNode,
       SlashCommand.configure({
