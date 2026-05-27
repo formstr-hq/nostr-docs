@@ -244,6 +244,7 @@ export function DocEditorSurface({
   }
 
   /* ── Edit mode — TipTap WYSIWYG ───────────────────────── */
+
   return (
     <Box sx={{ display: "flex", flex: 1, overflow: "hidden" }}>
       <Box

@@ -121,6 +121,78 @@
   width: 4px;
 }
 
+/* ── Table vertex anchor handles ──────────────────────────── */
+.tbl-handle-cell {
+  border: none !important;
+  background: transparent !important;
+  padding: 0 !important;
+  width: 18px !important;
+  min-width: 0 !important;
+  vertical-align: middle !important;
+  text-align: center !important;
+}
+
+.tbl-col-handle-cell {
+  vertical-align: top !important;
+  padding-top: 3px !important;
+}
+
+.tbl-anchor-dot {
+  display: block;
+  margin: auto;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: rgba(120, 120, 200, 0.45);
+  border: none;
+  cursor: pointer;
+  padding: 0;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.15s, background-color 0.12s, transform 0.12s;
+}
+
+.tiptap table:hover .tbl-anchor-dot,
+.tiptap table:focus-within .tbl-anchor-dot {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.tbl-anchor-dot:hover {
+  background: #1565c0;
+  transform: scale(1.35);
+}
+
+/* ── Table context menu (appended to body) ────────────────── */
+.tbl-ctx-menu {
+  position: absolute;
+  z-index: 9999;
+  background: var(--tbl-menu-bg, #fff);
+  border: 1px solid var(--tbl-menu-border, rgba(0, 0, 0, 0.11));
+  border-radius: 8px;
+  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.18);
+  padding: 4px 0;
+  min-width: 168px;
+}
+
+.tbl-ctx-item {
+  display: block;
+  width: 100%;
+  padding: 7px 14px;
+  text-align: left;
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 13px;
+  font-family: inherit;
+  color: var(--tbl-menu-text, #222);
+  white-space: nowrap;
+}
+
+.tbl-ctx-item:hover { background: var(--tbl-menu-hover, rgba(0, 0, 0, 0.05)); }
+.tbl-ctx-danger { color: var(--tbl-menu-danger, #c62828); }
+.tbl-ctx-danger:hover { background: var(--tbl-menu-hover, rgba(0, 0, 0, 0.05)); }
+
 /* Remove all focus/border artifacts */
 .ProseMirror,
 .ProseMirror:focus,

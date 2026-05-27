@@ -12,6 +12,7 @@ import {
   CircularProgress,
   IconButton,
   Tooltip,
+  useTheme,
 } from "@mui/material";
 import InsertDriveFileIcon from "@mui/icons-material/InsertDriveFile";
 import LabelOutlinedIcon from "@mui/icons-material/LabelOutlined";
@@ -37,6 +38,7 @@ import { EncryptedFileNode } from "./extensions/EncryptedFileNode";
 import { FormNode } from "./extensions/FormNode";
 import { SlashCommand } from "./extensions/SlashCommand";
 import { Indent } from "./extensions/Indent";
+import { TableHandles } from "./extensions/TableHandles";
 import { SlashCommandMenu } from "./SlashCommandMenu";
 import type { SlashCommandItem } from "./extensions/SlashCommand";
 import type { SlashCommandMenuHandle } from "./SlashCommandMenu";
@@ -176,6 +178,18 @@ export function DocumentEditorController({
 
   const isDraft = selectedDocumentId === null;
   const isMobile = useMediaQuery("(max-width:900px)");
+  const theme = useTheme();
+
+  useEffect(() => {
+    const root = document.documentElement;
+    root.style.setProperty("--tbl-menu-bg", theme.palette.background.paper);
+    root.style.setProperty("--tbl-menu-text", theme.palette.text.primary);
+    root.style.setProperty("--tbl-menu-text-secondary", theme.palette.text.secondary);
+    root.style.setProperty("--tbl-menu-border", theme.palette.divider);
+    root.style.setProperty("--tbl-menu-hover", theme.palette.action.hover);
+    root.style.setProperty("--tbl-menu-danger", theme.palette.error.main);
+  }, [theme]);
+
   // viewKey present but no editKey = shared read-only link
   const { user } = useUser();
   const history = selectedDocumentId ? documents.get(selectedDocumentId) : null;
@@ -283,6 +297,7 @@ export function DocumentEditorController({
       TableHeader,
       TableCell,
       Indent,
+      TableHandles,
       EncryptedFileNode,
       FormNode,
       SlashCommand.configure({
