@@ -1,5 +1,5 @@
 import { useRef } from "react";
-import { Box, Typography, useTheme, Fab, Tooltip } from "@mui/material";
+import { Box, Typography, useTheme, Fab } from "@mui/material";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import rehypeRaw from "rehype-raw";
