@@ -49,6 +49,7 @@ import { useState, useRef, useEffect } from "react";
 import { InputBase } from "@mui/material";
 import { useUser } from "../../contexts/UserContext";
 import { useDocMetadata } from "../../contexts/DocMetadataContext";
+import { useEditorState } from "@tiptap/react";
 import type { Editor } from "@tiptap/react";
 
 type EditorMode = "edit" | "preview" | "split";
@@ -120,6 +121,8 @@ export function EditorToolbar({
   const { user, loginModal } = useUser();
   const [menuAnchor, setMenuAnchor] = useState<null | HTMLElement>(null);
   const [historyAnchor, setHistoryAnchor] = useState<null | HTMLElement>(null);
+  const [tableMenuAnchor, setTableMenuAnchor] = useState<null | HTMLElement>(null);
+  const tableMenuOpen = Boolean(tableMenuAnchor);
 
   const exportButtonRef = useRef<HTMLLIElement>(null);
   const hideExportTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
@@ -142,6 +145,10 @@ export function EditorToolbar({
   const historyOpen = Boolean(historyAnchor);
 
   const showFormatting = (mode === "edit" || mode === "split") && !!editor;
+  const isInTable = useEditorState({
+    editor,
+    selector: ({ editor: e }) => e?.isActive("table") ?? false,
+  });
 
   const handleLink = () => {
     if (!editor) return;
@@ -679,11 +686,111 @@ export function EditorToolbar({
                     .insertTable({ rows: 3, cols: 3, withHeaderRow: true })
                     .run()
                 }
-                color={editor.isActive("table") ? "secondary" : "default"}
+                color={isInTable ? "secondary" : "default"}
               >
                 <TableChartIcon fontSize="small" />
               </IconButton>
             </Tooltip>
+            {isInTable && (
+              <>
+                <Tooltip title="Table options">
+                  <ButtonBase
+                    onClick={(e) => setTableMenuAnchor(e.currentTarget)}
+                    sx={{
+                      height: 28,
+                      px: 0.75,
+                      borderRadius: 1,
+                      fontSize: "0.7rem",
+                      fontWeight: 700,
+                      fontFamily: "inherit",
+                      color: "secondary.main",
+                      bgcolor: "action.selected",
+                      "&:hover": { bgcolor: "action.hover" },
+                      transition: "background-color 0.15s, color 0.15s",
+                    }}
+                  >
+                    Table ▾
+                  </ButtonBase>
+                </Tooltip>
+                <Menu
+                  anchorEl={tableMenuAnchor}
+                  open={tableMenuOpen}
+                  onClose={() => setTableMenuAnchor(null)}
+                >
+                  <MenuItem
+                    onClick={() => {
+                      editor.chain().focus().addRowBefore().run();
+                      setTableMenuAnchor(null);
+                    }}
+                  >
+                    <ListItemText primary="Add row above" />
+                  </MenuItem>
+                  <MenuItem
+                    onClick={() => {
+                      editor.chain().focus().addRowAfter().run();
+                      setTableMenuAnchor(null);
+                    }}
+                  >
+                    <ListItemText primary="Add row below" />
+                  </MenuItem>
+                  <MenuItem
+                    onClick={() => {
+                      editor.chain().focus().deleteRow().run();
+                      setTableMenuAnchor(null);
+                    }}
+                  >
+                    <ListItemText primary="Delete row" />
+                  </MenuItem>
+                  <Divider />
+                  <MenuItem
+                    onClick={() => {
+                      editor.chain().focus().addColumnBefore().run();
+                      setTableMenuAnchor(null);
+                    }}
+                  >
+                    <ListItemText primary="Add column before" />
+                  </MenuItem>
+                  <MenuItem
+                    onClick={() => {
+                      editor.chain().focus().addColumnAfter().run();
+                      setTableMenuAnchor(null);
+                    }}
+                  >
+                    <ListItemText primary="Add column after" />
+                  </MenuItem>
+                  <MenuItem
+                    onClick={() => {
+                      editor.chain().focus().deleteColumn().run();
+                      setTableMenuAnchor(null);
+                    }}
+                  >
+                    <ListItemText primary="Delete column" />
+                  </MenuItem>
+                  <Divider />
+                  <MenuItem
+                    onClick={() => {
+                      editor.chain().focus().toggleHeaderRow().run();
+                      setTableMenuAnchor(null);
+                    }}
+                  >
+                    <ListItemText primary="Toggle header row" />
+                  </MenuItem>
+                  <Divider />
+                  <MenuItem
+                    onClick={() => {
+                      editor.chain().focus().deleteTable().run();
+                      setTableMenuAnchor(null);
+                    }}
+                    sx={{ color: "error.main" }}
+                  >
+                    <ListItemIcon sx={{ color: "error.main" }}>
+                      <DeleteIcon fontSize="small" />
+                    </ListItemIcon>
+                    <ListItemText primary="Delete table" />
+                  </MenuItem>
+                </Menu>
+              </>
+            )}
 
             {/* Attach file */}
             {onAttachFile && (
