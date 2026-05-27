@@ -13,6 +13,13 @@ import {
   ToggleButton,
   Tooltip,
   Typography,
+  Select,
+  FormControl,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
+  TextField,
 } from "@mui/material";
 import VpnKeyIcon from "@mui/icons-material/VpnKey";
 import EditIcon from "@mui/icons-material/Edit";
@@ -120,6 +127,36 @@ export function EditorToolbar({
 }: Props) {
   const { user, loginModal } = useUser();
   const [menuAnchor, setMenuAnchor] = useState<null | HTMLElement>(null);
+  const [fontDialogOpen, setFontDialogOpen] = useState(false);
+  const [newFontName, setNewFontName] = useState("");
+  const [availableFonts, setAvailableFonts] = useState<string[]>([
+    "Inter",
+    "Arial",
+    "Comic Sans MS",
+    "Courier New",
+    "Georgia",
+    "Impact",
+    "Tahoma",
+    "Times New Roman",
+    "Trebuchet MS",
+    "Verdana"
+  ]);
+
+  const handleAddFont = () => {
+    const font = newFontName.trim();
+    if (font) {
+      if (!availableFonts.includes(font)) {
+        setAvailableFonts([...availableFonts, font]);
+      }
+      editor?.chain().focus().setFontFamily(font).run();
+      const link = document.createElement("link");
+      link.rel = "stylesheet";
+      link.href = `https://fonts.googleapis.com/css2?family=${font.replace(/ /g, "+")}&display=swap`;
+      document.head.appendChild(link);
+    }
+    setFontDialogOpen(false);
+    setNewFontName("");
+  };
   const [historyAnchor, setHistoryAnchor] = useState<null | HTMLElement>(null);
   const [tableMenuAnchor, setTableMenuAnchor] = useState<null | HTMLElement>(null);
   const tableMenuOpen = Boolean(tableMenuAnchor);
@@ -520,6 +557,32 @@ export function EditorToolbar({
 
             <Divider orientation="vertical" flexItem sx={{ mx: 0.5 }} />
 
+            {/* Font Family */}
+            <FormControl size="small" sx={{ minWidth: 120 }}>
+              <Select
+                value={editor.getAttributes("textStyle").fontFamily || "Inter"}
+                onChange={(e) => {
+                  const font = e.target.value;
+                  if (font === "__ADD_FONT__") {
+                    setFontDialogOpen(true);
+                  } else {
+                    editor.chain().focus().setFontFamily(font).run();
+                  }
+                }}
+                sx={{ height: 28, fontSize: "0.75rem", ".MuiSelect-select": { py: 0.5 } }}
+              >
+                {availableFonts.map((font) => (
+                  <MenuItem key={font} value={font} style={{ fontFamily: font }}>
+                    {font}
+                  </MenuItem>
+                ))}
+                <Divider />
+                <MenuItem value="__ADD_FONT__"><em>Add font...</em></MenuItem>
+              </Select>
+            </FormControl>
+
+            <Divider orientation="vertical" flexItem sx={{ mx: 0.5 }} />
+
             {/* Text style */}
             <Tooltip title="Bold (Ctrl+B)">
               <IconButton
@@ -826,6 +889,35 @@ export function EditorToolbar({
           </Box>
         </>
       )}
+
+      <Dialog open={fontDialogOpen} onClose={() => setFontDialogOpen(false)}>
+        <DialogTitle>Add Font</DialogTitle>
+        <DialogContent>
+          <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+            Enter the exact name of the font (e.g., 'Roboto' or 'Fira Code'). 
+            If it's available on Google Fonts, it will be loaded dynamically.
+          </Typography>
+          <TextField
+            autoFocus
+            margin="dense"
+            label="Font Family Name"
+            type="text"
+            fullWidth
+            variant="outlined"
+            value={newFontName}
+            onChange={(e) => setNewFontName(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") handleAddFont();
+            }}
+          />
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setFontDialogOpen(false)}>Cancel</Button>
+          <Button onClick={handleAddFont} variant="contained" disabled={!newFontName.trim()}>
+            Add
+          </Button>
+        </DialogActions>
+      </Dialog>
     </Paper>
   );
 }

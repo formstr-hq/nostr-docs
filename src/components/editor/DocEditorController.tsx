@@ -27,6 +27,8 @@ import { hexToBytes } from "nostr-tools/utils";
 import { useEditor } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
 import { Markdown } from "tiptap-markdown";
+import { FontFamily } from "@tiptap/extension-font-family";
+import { TextStyle } from "@tiptap/extension-text-style";
 import Link from "@tiptap/extension-link";
 import Placeholder from "@tiptap/extension-placeholder";
 import CharacterCount from "@tiptap/extension-character-count";
@@ -285,6 +287,8 @@ export function DocumentEditorController({
   const editor = useEditor({
     extensions: [
       StarterKit,
+      TextStyle,
+      FontFamily,
       // html: true so <encrypted-file> tags round-trip through markdown storage
       Markdown.configure({ html: true, tightLists: true }),
       Link.configure({ openOnClick: false }),
