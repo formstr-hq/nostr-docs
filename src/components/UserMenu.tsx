@@ -18,9 +18,11 @@ import PaletteIcon from "@mui/icons-material/Palette";
 import LoginIcon from "@mui/icons-material/Login";
 import LogoutIcon from "@mui/icons-material/Logout";
 import CloudUploadIcon from "@mui/icons-material/CloudUpload";
+import MicIcon from "@mui/icons-material/Mic";
 import { useUser } from "../contexts/UserContext";
 import LoginModal from "./LoginModal";
 import BlossomServersModal from "./BlossomServersModal";
+import DictationSettingsDialog from "./dictation/DictationSettingsDialog";
 import { themes } from "../theme";
 import type { ThemeId, ThemeDefinition } from "../theme";
 
@@ -35,6 +37,7 @@ export default function UserMenu({ themeId, onSelectTheme }: Props) {
   const [loginOpen, setLoginOpen] = useState(false);
   const [themeOpen, setThemeOpen] = useState(false);
   const [blossomOpen, setBlossomOpen] = useState(false);
+  const [dictationOpen, setDictationOpen] = useState(false);
 
   const handleOpen = (e: React.MouseEvent<HTMLElement>) =>
     setAnchorEl(e.currentTarget);
@@ -144,6 +147,14 @@ export default function UserMenu({ themeId, onSelectTheme }: Props) {
           <ListItemText primary="Blossom Servers" secondary="File upload servers" secondaryTypographyProps={{ variant: "caption" }} />
         </MenuItem>
 
+        {/* Dictation */}
+        <MenuItem onClick={() => { setDictationOpen(true); handleClose(); }}>
+          <ListItemIcon>
+            <MicIcon fontSize="small" />
+          </ListItemIcon>
+          <ListItemText primary="Dictation" secondary="On-device voice typing" secondaryTypographyProps={{ variant: "caption" }} />
+        </MenuItem>
+
         <Divider />
 
         {/* Login / Logout */}
@@ -176,6 +187,7 @@ export default function UserMenu({ themeId, onSelectTheme }: Props) {
 
       <LoginModal open={loginOpen} onClose={() => setLoginOpen(false)} />
       <BlossomServersModal open={blossomOpen} onClose={() => setBlossomOpen(false)} />
+      <DictationSettingsDialog open={dictationOpen} onClose={() => setDictationOpen(false)} />
     </>
   );
 }

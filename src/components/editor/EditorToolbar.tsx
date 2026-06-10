@@ -51,6 +51,7 @@ import { useUser } from "../../contexts/UserContext";
 import { useDocMetadata } from "../../contexts/DocMetadataContext";
 import { useEditorState } from "@tiptap/react";
 import type { Editor } from "@tiptap/react";
+import DictationButton from "../dictation/DictationButton";
 
 type EditorMode = "edit" | "preview" | "split";
 
@@ -791,6 +792,16 @@ export function EditorToolbar({
                 </Menu>
               </>
             )}
+
+            {/* Dictation */}
+            <Divider orientation="vertical" flexItem sx={{ mx: 0.5 }} />
+            <DictationButton
+              size="small"
+              tooltip="Dictate"
+              onTranscript={(text) =>
+                editor.chain().focus().insertContent(text + " ").run()
+              }
+            />
 
             {/* Attach file */}
             {onAttachFile && (
