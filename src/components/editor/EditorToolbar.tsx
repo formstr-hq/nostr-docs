@@ -51,6 +51,7 @@ import { useState, useRef, useEffect } from "react";
 import { InputBase } from "@mui/material";
 import { useUser } from "../../contexts/UserContext";
 import { useDocMetadata } from "../../contexts/DocMetadataContext";
+import { sha256Hex } from "../../utils/fileEncryption";
 import { useEditorState } from "@tiptap/react";
 import type { Editor } from "@tiptap/react";
 import { useBlossomServers } from "../../contexts/BlossomContext";
@@ -107,13 +108,6 @@ async function resolveStoredFontBlob(entry: { blob: Blob; mimeType: string; blos
   }
 
   return entry.blob;
-}
-
-async function sha256Hex(data: ArrayBuffer): Promise<string> {
-  const digest = await crypto.subtle.digest("SHA-256", data);
-  return Array.from(new Uint8Array(digest))
-    .map((byte) => byte.toString(16).padStart(2, "0"))
-    .join("");
 }
 
 type EditorMode = "edit" | "preview" | "split";
@@ -259,7 +253,7 @@ export function EditorToolbar({
 
     if (blossomServers.length > 0) {
       const bytes = new Uint8Array(await file.arrayBuffer());
-      const sha256 = await sha256Hex(bytes.buffer);
+      const sha256 = await sha256Hex(bytes);
 
       try {
         const blossomUrl = await uploadBinaryToBlossom(

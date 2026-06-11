@@ -7,6 +7,7 @@ import { getConversationKey } from "nostr-tools/nip44";
 import { hexToBytes } from "nostr-tools/utils";
 import { useUser, type UserProfile } from "./UserContext";
 import { getEventAddress } from "../utils/helpers";
+import { sha256Hex } from "../utils/fileEncryption";
 
 type DocumentVersion = {
   event: Event;
@@ -245,9 +246,46 @@ export const DocumentProvider: React.FC<{ children: React.ReactNode }> = ({
           const format = (tag[3] as any) || "woff2";
           if (!url || !family) continue;
           try {
+            // 1. Validate URL scheme
+            let parsedUrl: URL;
+            try {
+              parsedUrl = new URL(url);
+            } catch (err) {
+              throw new Error("Invalid URL format");
+            }
+            if (parsedUrl.protocol !== "https:") {
+              throw new Error("Only HTTPS urls are allowed for fonts");
+            }
+
+            // 2. Extract expected hash from Blossom URL
+            const expectedHash = parsedUrl.pathname.split("/").pop() || "";
+            if (!/^[0-9a-f]{64}$/i.test(expectedHash)) {
+              throw new Error("URL does not appear to be a valid Blossom URL (missing sha256 hash)");
+            }
+
             const res = await fetch(url);
             if (!res.ok) throw new Error(`Failed to fetch font: ${res.status}`);
+
+            // 3. Enforce file size limit (5MB)
+            const contentLength = res.headers.get("content-length");
+            if (contentLength && Number(contentLength) > 5 * 1024 * 1024) {
+              throw new Error("Font file exceeds 5MB limit");
+            }
+
             const blob = await res.blob();
+            if (blob.size > 5 * 1024 * 1024) {
+              throw new Error("Downloaded font file exceeds 5MB limit");
+            }
+
+            // 4. Verify cryptographic hash
+            const buf = await blob.arrayBuffer();
+            const actualHash = await sha256Hex(buf);
+            if (actualHash !== expectedHash.toLowerCase()) {
+              throw new Error(`Font hash verification failed (expected ${expectedHash}, got ${actualHash})`);
+            }
+
+            // We must re-create the blob because arrayBuffer() might drain it depending on browser, or we just use the buffer.
+            // Actually `blob.arrayBuffer()` doesn't consume the blob, so it's safe to reuse it.
             const mimeType = res.headers.get("content-type") || "font/woff2";
             await saveFontResource({
               family,

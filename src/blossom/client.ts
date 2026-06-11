@@ -40,9 +40,7 @@ export async function uploadBinaryToBlossom(
           "Content-Type": mimeType,
           Authorization: authorization,
         },
-        body: new Blob([
-          data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength) as ArrayBuffer,
-        ]),
+        body: new Blob([data]),
       });
       if (!res.ok) {
         const text = await res.text().catch(() => res.statusText);
