@@ -45,6 +45,7 @@ import HtmlIcon from "@mui/icons-material/Html";
 import TextSnippetIcon from "@mui/icons-material/TextSnippet";
 import PictureAsPdfIcon from "@mui/icons-material/PictureAsPdf";
 import ArticleOutlinedIcon from "@mui/icons-material/ArticleOutlined";
+import CloudUploadIcon from "@mui/icons-material/CloudUpload";
 import { useState, useRef, useEffect } from "react";
 import { InputBase } from "@mui/material";
 import { useUser } from "../../contexts/UserContext";
@@ -87,6 +88,8 @@ type Props = {
   documentAddress?: string;
   heuristicTitle?: string;
   hasEditKey?: boolean;
+  hasPublishResults?: boolean;
+  onViewPublishResults?: () => void;
 };
 
 export function EditorToolbar({
@@ -117,6 +120,8 @@ export function EditorToolbar({
   documentAddress,
   heuristicTitle,
   hasEditKey = false,
+  hasPublishResults = false,
+  onViewPublishResults,
 }: Props) {
   const { user, loginModal } = useUser();
   const [menuAnchor, setMenuAnchor] = useState<null | HTMLElement>(null);
@@ -280,6 +285,20 @@ export function EditorToolbar({
               </ListItemIcon>
               <ListItemText primary="History" />
             </MenuItem>
+
+            {onViewPublishResults && (
+              <MenuItem
+                onClick={() => {
+                  onViewPublishResults();
+                  setMenuAnchor(null);
+                }}
+              >
+                <ListItemIcon>
+                  <CloudUploadIcon fontSize="small" />
+                </ListItemIcon>
+                <ListItemText primary="Relay Uploads" />
+              </MenuItem>
+            )}
 
             <MenuItem
               ref={exportButtonRef}

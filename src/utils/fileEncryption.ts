@@ -1,22 +1,8 @@
-function bufToHex(buf: ArrayBuffer | Uint8Array): string {
-  return Array.from(new Uint8Array(buf))
-    .map((b) => b.toString(16).padStart(2, "0"))
-    .join("");
-}
-
-function hexToBuf(hex: string): Uint8Array {
-  const result = new Uint8Array(hex.length / 2);
-  for (let i = 0; i < hex.length; i += 2) {
-    result[i / 2] = parseInt(hex.slice(i, i + 2), 16);
-  }
-  return result;
-}
+import { bytesToHex, hexToBytes } from "nostr-tools/utils";
 
 export async function sha256Hex(data: ArrayBuffer | Uint8Array): Promise<string> {
-  // crypto.subtle.digest requires ArrayBuffer, not Uint8Array<ArrayBufferLike>
-  const buf = data instanceof Uint8Array ? (data.buffer as ArrayBuffer) : data;
-  const hash = await crypto.subtle.digest("SHA-256", buf);
-  return bufToHex(hash);
+  const hash = await crypto.subtle.digest("SHA-256", data);
+  return bytesToHex(new Uint8Array(hash));
 }
 
 export async function encryptFile(file: File): Promise<{
@@ -48,8 +34,8 @@ export async function encryptFile(file: File): Promise<{
 
   return {
     encryptedData,
-    decryptionKey: bufToHex(rawKey),
-    decryptionNonce: bufToHex(nonce),
+    decryptionKey: bytesToHex(new Uint8Array(rawKey)),
+    decryptionNonce: bytesToHex(nonce),
     x,
     ox,
   };
@@ -60,12 +46,12 @@ export async function decryptFile(
   decryptionKey: string,
   decryptionNonce: string,
 ): Promise<ArrayBuffer> {
-  const keyBytes = hexToBuf(decryptionKey);
-  const nonce = hexToBuf(decryptionNonce);
+  const keyBytes = hexToBytes(decryptionKey);
+  const nonce = hexToBytes(decryptionNonce);
 
   const cryptoKey = await crypto.subtle.importKey(
     "raw",
-    keyBytes.buffer as ArrayBuffer,
+    keyBytes.buffer.slice(keyBytes.byteOffset, keyBytes.byteOffset + keyBytes.byteLength) as ArrayBuffer,
     "AES-GCM",
     false,
     ["decrypt"],

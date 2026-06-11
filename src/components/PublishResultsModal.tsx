@@ -71,25 +71,37 @@ export default function PublishResultsModal({
         <Typography variant="h5" component="span" fontWeight={700}>
           Publish results
         </Typography>
-        <Box sx={{ display: "flex", gap: 1 }}>
-          <Chip
-            label={`${acceptedCount} accepted`}
-            color="success"
-            size="small"
-            sx={{ fontWeight: 600, fontSize: "0.85rem" }}
-          />
-          {rejectedCount > 0 && (
+        {results.length > 0 && (
+          <Box sx={{ display: "flex", gap: 1 }}>
             <Chip
-              label={`${rejectedCount} rejected`}
-              color="error"
+              label={`${acceptedCount} accepted`}
+              color="success"
               size="small"
               sx={{ fontWeight: 600, fontSize: "0.85rem" }}
             />
-          )}
-        </Box>
+            {rejectedCount > 0 && (
+              <Chip
+                label={`${rejectedCount} rejected`}
+                color="error"
+                size="small"
+                sx={{ fontWeight: 600, fontSize: "0.85rem" }}
+              />
+            )}
+          </Box>
+        )}
       </DialogTitle>
       <DialogContent dividers>
-        <TableContainer>
+        {results.length === 0 ? (
+          <Box sx={{ p: 4, textAlign: "center", py: 8 }}>
+            <Typography variant="h6" color="text.secondary" gutterBottom>
+              No publish results yet
+            </Typography>
+            <Typography color="text.secondary">
+              Save your document to publish it to relays and view the results here.
+            </Typography>
+          </Box>
+        ) : (
+          <TableContainer>
           <Table size="small">
             <TableHead>
               <TableRow>
@@ -156,6 +168,7 @@ export default function PublishResultsModal({
             </TableBody>
           </Table>
         </TableContainer>
+        )}
       </DialogContent>
       <DialogActions>
         <Button onClick={onClose} color="inherit" sx={{ fontWeight: 600 }}>

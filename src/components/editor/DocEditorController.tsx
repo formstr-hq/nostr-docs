@@ -230,7 +230,6 @@ export function DocumentEditorController({
   useEffect(() => {
     if (location.state?.publishResults) {
       setPublishResults(location.state.publishResults);
-      setResultsModalOpen(true);
       // Clear location.state so it doesn't reopen on subsequent refreshes
       window.history.replaceState({}, document.title);
     }
@@ -856,7 +855,6 @@ export function DocumentEditorController({
         setToast({ open: true, message: "Saved", severity: "success" });
         if (results && results.length > 0) {
           setPublishResults(results);
-          setResultsModalOpen(true);
         }
       }
     } catch (err) {
@@ -1038,6 +1036,8 @@ export function DocumentEditorController({
           isLocalOnly={isLocalOnly}
           onToggleLocalOnly={handleToggleLocalOnly}
           showLocalOnlyToggle={!viewKey && !editKey}
+          hasPublishResults={publishResults.length > 0}
+          onViewPublishResults={() => setResultsModalOpen(true)}
           onExportMarkdown={handleExportMarkdown}
           onExportHtml={handleExportHtml}
           onExportPlainText={handleExportPlainText}
