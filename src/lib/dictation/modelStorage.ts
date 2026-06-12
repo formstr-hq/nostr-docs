@@ -83,8 +83,8 @@ function idbHas(key: string): Promise<boolean> {
     openDb()
       .then((db) => {
         const tx = db.transaction(IDB_STORE, "readonly");
-        const req = tx.objectStore(IDB_STORE).count(key);
-        req.onsuccess = () => resolve(req.result > 0);
+        const req = tx.objectStore(IDB_STORE).getKey(key);
+        req.onsuccess = () => resolve(req.result !== undefined);
         req.onerror = () => reject(req.error);
       })
       .catch(reject);
@@ -208,6 +208,11 @@ export async function hasCachedModel(
   _url: string,
   storageKey: string,
 ): Promise<boolean> {
+  // The whisper worker runs in a Web Worker where `window` is undefined, so
+  // it never takes the Capacitor branch — it always writes to IndexedDB.
+  // That means on Android the model can live in either Capacitor Filesystem
+  // (downloaded by the setup dialog on the main thread) or IndexedDB
+  // (downloaded by the worker). Check both so the UI doesn't lie.
   if (isCapacitor) {
     try {
       const { Filesystem, Directory } = await import("@capacitor/filesystem");
@@ -215,9 +220,9 @@ export async function hasCachedModel(
         path: `${MODEL_DIR}/${storageKey}.bin`,
         directory: Directory.Data,
       });
-      return stat.size > 0;
+      if (stat.size > 0) return true;
     } catch {
-      return false;
+      // not present in Capacitor FS — fall through to IDB
     }
   }
   try {
@@ -231,6 +236,7 @@ export async function clearCachedModel(
   _url: string,
   storageKey: string,
 ): Promise<void> {
+  // Clear both stores — see hasCachedModel for why both can hold the file.
   if (isCapacitor) {
     try {
       const { Filesystem, Directory } = await import("@capacitor/filesystem");
@@ -241,7 +247,6 @@ export async function clearCachedModel(
     } catch {
       // not present
     }
-    return;
   }
   try {
     await idbDelete(storageKey);
@@ -262,7 +267,6 @@ export async function clearAllCachedModels(): Promise<void> {
     } catch {
       // ignore
     }
-    return;
   }
   try {
     await idbClear();

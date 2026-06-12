@@ -18,12 +18,14 @@ import {
   IconButton,
   Alert,
   CircularProgress,
+  LinearProgress,
   Divider,
   Chip,
   InputLabel,
   FormControl,
 } from "@mui/material";
 import DeleteIcon from "@mui/icons-material/Delete";
+import DownloadIcon from "@mui/icons-material/Download";
 import SearchIcon from "@mui/icons-material/Search";
 import {
   BUILTIN_MODELS,
@@ -34,11 +36,14 @@ import {
   type HFModelResult,
   clearCachedModel,
   clearAllCachedModels,
+  hasCachedModel,
+  getModelBytes,
 } from "../../lib/dictation";
 import { loadPrefs, savePrefs } from "../../lib/dictation/prefs";
 import type {
   CustomModelEntry,
   DictationPrefs,
+  ModelInfo,
 } from "../../lib/dictation/types";
 
 interface Props {
@@ -58,40 +63,104 @@ export default function DictationSettingsDialog({ open, onClose }: Props) {
   const [prefs, setPrefs] = useState<DictationPrefs | null>(null);
   const [tab, setTab] = useState<"models" | "discover" | "custom">("models");
   const [searchTerm, setSearchTerm] = useState("");
+  const [searched, setSearched] = useState(false);
   const [searching, setSearching] = useState(false);
   const [searchError, setSearchError] = useState<string | null>(null);
   const [searchResults, setSearchResults] = useState<HFModelResult[]>([]);
   const [customUrl, setCustomUrl] = useState("");
   const [customLabel, setCustomLabel] = useState("");
+  const [downloadedIds, setDownloadedIds] = useState<Set<string>>(new Set());
+  const [downloadingId, setDownloadingId] = useState<string | null>(null);
+  const [downloadProgress, setDownloadProgress] = useState<{
+    bytes: number;
+    total: number;
+  }>({ bytes: 0, total: 0 });
+  const [downloadError, setDownloadError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!open) return;
     loadPrefs().then(setPrefs);
   }, [open]);
 
-  const update = async (patch: Partial<DictationPrefs>) => {
-    if (!prefs) return;
-    const next = { ...prefs, ...patch };
+  useEffect(() => {
+    if (!open || !prefs) return;
+    let cancelled = false;
+    const checks: Promise<[string, boolean]>[] = [];
+    for (const m of Object.values(BUILTIN_MODELS)) {
+      checks.push(
+        hasCachedModel(m.url, m.storageKey).then((v) => [m.id, v]),
+      );
+    }
+    for (const m of prefs.customModels) {
+      const info = customToModelInfo(m);
+      checks.push(
+        hasCachedModel(info.url, info.storageKey).then((v) => [m.id, v]),
+      );
+    }
+    Promise.all(checks).then((entries) => {
+      if (cancelled) return;
+      setDownloadedIds(new Set(entries.filter(([, v]) => v).map(([id]) => id)));
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [open, prefs]);
+
+  const persist = async (next: DictationPrefs) => {
     setPrefs(next);
     await savePrefs(next);
   };
 
-  const handleSearch = async () => {
-    if (!searchTerm.trim()) return;
+  const update = async (patch: Partial<DictationPrefs>) => {
+    if (!prefs) return;
+    await persist({ ...prefs, ...patch });
+  };
+
+  const handleSearch = () => {
     setSearching(true);
+    setSearched(true);
     setSearchError(null);
     setSearchResults([]);
+    searchHuggingFace(searchTerm)
+      .then(setSearchResults)
+      .catch((err) =>
+        setSearchError(err instanceof Error ? err.message : String(err)),
+      )
+      .finally(() => setSearching(false));
+  };
+
+  const downloadModel = async (
+    info: ModelInfo,
+    basePrefs: DictationPrefs,
+  ) => {
+    if (downloadingId) return;
+    setDownloadError(null);
+    setDownloadingId(info.id);
+    setDownloadProgress({ bytes: 0, total: info.sizeBytes });
     try {
-      const res = await searchHuggingFace(searchTerm);
-      setSearchResults(res);
+      await getModelBytes(info.url, info.storageKey, (p) => {
+        setDownloadProgress({ bytes: p.bytes, total: p.total || info.sizeBytes });
+      });
+      setDownloadedIds((prev) => new Set(prev).add(info.id));
+      await persist({
+        ...basePrefs,
+        modelId: info.id,
+        setupComplete: true,
+      });
+      setTab("models");
     } catch (err) {
-      setSearchError(err instanceof Error ? err.message : String(err));
+      setDownloadError(err instanceof Error ? err.message : String(err));
     } finally {
-      setSearching(false);
+      setDownloadingId(null);
     }
   };
 
-  const addCustomFromResult = async (r: HFModelResult) => {
+  const downloadBuiltin = (id: keyof typeof BUILTIN_MODELS) => {
+    if (!prefs) return;
+    return downloadModel(BUILTIN_MODELS[id], prefs);
+  };
+
+  const installFromResult = async (r: HFModelResult) => {
     if (!prefs) return;
     const id = makeCustomId(r.url);
     const entry: CustomModelEntry = {
@@ -101,15 +170,14 @@ export default function DictationSettingsDialog({ open, onClose }: Props) {
       sizeBytes: r.sizeBytes,
       englishOnly: r.language === "en",
     };
-    await update({
+    const nextPrefs: DictationPrefs = {
+      ...prefs,
       customModels: [...prefs.customModels, entry],
-      modelId: id,
-      setupComplete: false,
-    });
-    setTab("models");
+    };
+    await downloadModel(customToModelInfo(entry), nextPrefs);
   };
 
-  const addCustomFromUrl = async () => {
+  const installFromUrl = async () => {
     if (!prefs || !customUrl.trim()) return;
     const id = makeCustomId(customUrl);
     const entry: CustomModelEntry = {
@@ -119,14 +187,13 @@ export default function DictationSettingsDialog({ open, onClose }: Props) {
       sizeBytes: 0,
       englishOnly: false,
     };
-    await update({
+    const nextPrefs: DictationPrefs = {
+      ...prefs,
       customModels: [...prefs.customModels, entry],
-      modelId: id,
-      setupComplete: false,
-    });
+    };
     setCustomUrl("");
     setCustomLabel("");
-    setTab("models");
+    await downloadModel(customToModelInfo(entry), nextPrefs);
   };
 
   const removeCustom = async (id: string) => {
@@ -134,23 +201,33 @@ export default function DictationSettingsDialog({ open, onClose }: Props) {
     const remaining = prefs.customModels.filter((m) => m.id !== id);
     const next: DictationPrefs = { ...prefs, customModels: remaining };
     if (prefs.modelId === id) next.modelId = "tiny.en";
-    setPrefs(next);
-    await savePrefs(next);
+    // Also drop any cached bytes for the removed entry.
+    const entry = prefs.customModels.find((m) => m.id === id);
+    if (entry) {
+      const info = customToModelInfo(entry);
+      await clearCachedModel(info.url, info.storageKey);
+    }
+    setDownloadedIds((prev) => {
+      const out = new Set(prev);
+      out.delete(id);
+      return out;
+    });
+    await persist(next);
   };
 
-  const clearCurrent = async () => {
+  const clearCacheFor = async (modelId: string) => {
     if (!prefs) return;
     let url: string | null = null;
     let storageKey: string | null = null;
-    if (prefs.modelId.startsWith("custom:")) {
-      const entry = prefs.customModels.find((m) => m.id === prefs.modelId);
+    if (modelId.startsWith("custom:")) {
+      const entry = prefs.customModels.find((m) => m.id === modelId);
       if (entry) {
         const info = customToModelInfo(entry);
         url = info.url;
         storageKey = info.storageKey;
       }
     } else {
-      const info = BUILTIN_MODELS[prefs.modelId as keyof typeof BUILTIN_MODELS];
+      const info = BUILTIN_MODELS[modelId as keyof typeof BUILTIN_MODELS];
       if (info) {
         url = info.url;
         storageKey = info.storageKey;
@@ -158,31 +235,95 @@ export default function DictationSettingsDialog({ open, onClose }: Props) {
     }
     if (!url || !storageKey) return;
     await clearCachedModel(url, storageKey);
-    await update({ setupComplete: false });
+    setDownloadedIds((prev) => {
+      const out = new Set(prev);
+      out.delete(modelId);
+      return out;
+    });
+    if (prefs.modelId === modelId) {
+      await update({ setupComplete: false });
+    }
   };
 
   const clearAll = async () => {
     await clearAllCachedModels();
+    setDownloadedIds(new Set());
     await update({ setupComplete: false });
   };
 
-  const allModels = useMemo(() => {
+  const downloadedModels = useMemo(() => {
     if (!prefs) return [];
-    return [
-      ...Object.values(BUILTIN_MODELS).map((m) => ({
+    const out: { id: string; label: string; sub: string; custom: boolean }[] =
+      [];
+    for (const m of Object.values(BUILTIN_MODELS)) {
+      if (!downloadedIds.has(m.id)) continue;
+      out.push({
         id: m.id,
         label: m.label,
         sub: `${formatBytes(m.sizeBytes)} • ${m.englishOnly ? "English" : "Multilingual"}`,
         custom: false,
-      })),
-      ...prefs.customModels.map((m) => ({
+      });
+    }
+    for (const m of prefs.customModels) {
+      if (!downloadedIds.has(m.id)) continue;
+      out.push({
         id: m.id,
         label: m.label,
         sub: m.sizeBytes ? formatBytes(m.sizeBytes) : "Custom",
         custom: true,
-      })),
-    ];
-  }, [prefs]);
+      });
+    }
+    return out;
+  }, [prefs, downloadedIds]);
+
+  const pct =
+    downloadProgress.total > 0
+      ? Math.min(
+          100,
+          Math.round((downloadProgress.bytes / downloadProgress.total) * 100),
+        )
+      : null;
+
+  const renderDownloadAction = (
+    id: string,
+    onDownload: () => void | Promise<void>,
+    opts?: { retry?: boolean },
+  ) => {
+    if (downloadedIds.has(id)) {
+      return (
+        <Chip size="small" label="Downloaded" color="success" sx={{ ml: 1 }} />
+      );
+    }
+    if (downloadingId === id) {
+      return (
+        <Box sx={{ ml: 1, minWidth: 110, textAlign: "right" }}>
+          <Typography variant="caption" color="text.secondary">
+            {pct === null ? "Downloading…" : `${pct}%`}
+          </Typography>
+          <LinearProgress
+            variant={pct === null ? "indeterminate" : "determinate"}
+            value={pct ?? undefined}
+            sx={{ mt: 0.5 }}
+          />
+        </Box>
+      );
+    }
+    return (
+      <Button
+        size="small"
+        variant="outlined"
+        disabled={downloadingId !== null}
+        startIcon={<DownloadIcon fontSize="small" />}
+        onClick={(e) => {
+          e.stopPropagation();
+          void onDownload();
+        }}
+        sx={{ ml: 1 }}
+      >
+        {opts?.retry ? "Retry" : "Download"}
+      </Button>
+    );
+  };
 
   if (!prefs) {
     return (
@@ -225,56 +366,122 @@ export default function DictationSettingsDialog({ open, onClose }: Props) {
           <Tab value="custom" label="Custom URL" sx={{ minHeight: 36 }} />
         </Tabs>
 
+        {downloadError && (
+          <Alert
+            severity="error"
+            sx={{ mb: 2 }}
+            onClose={() => setDownloadError(null)}
+          >
+            {downloadError}
+          </Alert>
+        )}
+
         {tab === "models" && (
           <Box>
-            <List dense disablePadding>
-              {allModels.map((m) => (
-                <ListItemButton
-                  key={m.id}
-                  selected={prefs.modelId === m.id}
-                  onClick={() =>
-                    update({ modelId: m.id, setupComplete: false })
-                  }
+            {downloadedModels.length === 0 ? (
+              <Box sx={{ py: 3, textAlign: "center" }}>
+                <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
+                  No models downloaded yet.
+                </Typography>
+                <Button
+                  size="small"
+                  variant="outlined"
+                  onClick={() => setTab("discover")}
                 >
-                  <ListItemText primary={m.label} secondary={m.sub} />
-                  {m.custom && (
-                    <IconButton
-                      edge="end"
-                      size="small"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        removeCustom(m.id);
-                      }}
+                  Browse Discover
+                </Button>
+              </Box>
+            ) : (
+              <>
+                <List dense disablePadding>
+                  {downloadedModels.map((m) => (
+                    <ListItemButton
+                      key={m.id}
+                      selected={prefs.modelId === m.id}
+                      onClick={() =>
+                        update({ modelId: m.id, setupComplete: true })
+                      }
                     >
-                      <DeleteIcon fontSize="small" />
-                    </IconButton>
-                  )}
-                </ListItemButton>
-              ))}
-            </List>
-            <Divider sx={{ my: 2 }} />
-            <Box sx={{ display: "flex", gap: 1 }}>
-              <Button size="small" onClick={clearCurrent}>
-                Clear current model cache
-              </Button>
-              <Button size="small" color="error" onClick={clearAll}>
-                Clear all
-              </Button>
-            </Box>
+                      <ListItemText primary={m.label} secondary={m.sub} />
+                      <IconButton
+                        edge="end"
+                        size="small"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          // For customs, fully remove the entry; otherwise
+                          // just drop the cached bytes — the entry stays in
+                          // Discover so the user can re-download.
+                          if (m.custom) void removeCustom(m.id);
+                          else void clearCacheFor(m.id);
+                        }}
+                        title={
+                          m.custom
+                            ? "Remove custom model"
+                            : "Remove from device"
+                        }
+                      >
+                        <DeleteIcon fontSize="small" />
+                      </IconButton>
+                    </ListItemButton>
+                  ))}
+                </List>
+                <Divider sx={{ my: 2 }} />
+                <Button size="small" color="error" onClick={clearAll}>
+                  Clear all downloads
+                </Button>
+              </>
+            )}
           </Box>
         )}
 
         {tab === "discover" && (
           <Box>
+            <Typography
+              variant="overline"
+              color="text.secondary"
+              sx={{ display: "block", mb: 0.5 }}
+            >
+              Recommended (ggerganov/whisper.cpp)
+            </Typography>
+            <List dense disablePadding>
+              {Object.values(BUILTIN_MODELS).map((m) => (
+                <ListItemButton
+                  key={m.id}
+                  disableRipple
+                  sx={{ cursor: "default" }}
+                  // ListItemButton needs a noop onClick to not look "broken" — the
+                  // real action lives in the download icon on the right.
+                  onClick={() => {}}
+                >
+                  <ListItemText
+                    primary={m.label}
+                    secondary={`${formatBytes(m.sizeBytes)} • ${
+                      m.englishOnly ? "English" : "Multilingual"
+                    }`}
+                  />
+                  {renderDownloadAction(m.id, () => downloadBuiltin(m.id))}
+                </ListItemButton>
+              ))}
+            </List>
+
+            <Divider sx={{ my: 2 }} />
+
+            <Typography
+              variant="overline"
+              color="text.secondary"
+              sx={{ display: "block", mb: 0.5 }}
+            >
+              Search HuggingFace
+            </Typography>
             <Typography variant="caption" color="text.secondary" sx={{ display: "block", mb: 1 }}>
-              Search HuggingFace for community whisper.cpp models. These are
-              uploaded by third parties — use at your own discretion.
+              Community whisper.cpp models. Leave empty and hit Search to browse
+              the most-downloaded.
             </Typography>
             <Box sx={{ display: "flex", gap: 1, mb: 2 }}>
               <TextField
                 size="small"
                 fullWidth
-                placeholder="e.g. hindi, japanese, medical…"
+                placeholder="e.g. hindi, medical, korean… (empty = browse)"
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
                 onKeyDown={(e) => e.key === "Enter" && handleSearch()}
@@ -295,36 +502,95 @@ export default function DictationSettingsDialog({ open, onClose }: Props) {
             )}
             {!searching && !searchResults.length && !searchError && (
               <Typography variant="caption" color="text.secondary">
-                No results yet — try a language or topic.
+                {searched
+                  ? `No whisper.cpp models found${searchTerm.trim() ? ` for "${searchTerm.trim()}"` : ""}.`
+                  : "Hit Search to browse community models."}
               </Typography>
             )}
             <List dense disablePadding>
-              {searchResults.map((r) => (
-                <ListItemButton
-                  key={`${r.repoId}/${r.filename}`}
-                  onClick={() => addCustomFromResult(r)}
-                >
-                  <ListItemText
-                    primary={`${r.repoId} — ${r.filename}`}
-                    secondary={
-                      <>
-                        {r.sizeBytes ? formatBytes(r.sizeBytes) : "size unknown"} •{" "}
-                        {r.downloads.toLocaleString()} downloads
-                        {r.language ? ` • ${r.language}` : ""}
-                      </>
-                    }
-                  />
-                  <Chip size="small" label="Add" />
-                </ListItemButton>
-              ))}
+              {searchResults.map((r) => {
+                const probeId = `hf:${r.repoId}/${r.filename}`;
+                return (
+                  <ListItemButton
+                    key={probeId}
+                    disableRipple
+                    sx={{ cursor: "default" }}
+                    onClick={() => {}}
+                  >
+                    <ListItemText
+                      primary={`${r.repoId} — ${r.filename}`}
+                      secondary={
+                        <>
+                          {r.sizeBytes ? formatBytes(r.sizeBytes) : "size unknown"} •{" "}
+                          {r.downloads.toLocaleString()} downloads
+                          {r.language ? ` • ${r.language}` : ""}
+                        </>
+                      }
+                    />
+                    {renderDownloadAction(probeId, () => installFromResult(r))}
+                  </ListItemButton>
+                );
+              })}
             </List>
           </Box>
         )}
 
         {tab === "custom" && (
           <Box>
+            {prefs.customModels.length > 0 && (
+              <>
+                <Typography
+                  variant="overline"
+                  color="text.secondary"
+                  sx={{ display: "block", mb: 0.5 }}
+                >
+                  Your custom models
+                </Typography>
+                <List dense disablePadding sx={{ mb: 2 }}>
+                  {prefs.customModels.map((entry) => {
+                    const info = customToModelInfo(entry);
+                    return (
+                      <ListItemButton
+                        key={entry.id}
+                        disableRipple
+                        sx={{ cursor: "default" }}
+                        onClick={() => {}}
+                      >
+                        <ListItemText
+                          primary={entry.label}
+                          secondary={
+                            entry.sizeBytes
+                              ? formatBytes(entry.sizeBytes)
+                              : "Size unknown"
+                          }
+                        />
+                        {renderDownloadAction(
+                          entry.id,
+                          () => downloadModel(info, prefs),
+                          { retry: true },
+                        )}
+                        <IconButton
+                          edge="end"
+                          size="small"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            void removeCustom(entry.id);
+                          }}
+                          title="Remove custom model"
+                          sx={{ ml: 1 }}
+                        >
+                          <DeleteIcon fontSize="small" />
+                        </IconButton>
+                      </ListItemButton>
+                    );
+                  })}
+                </List>
+                <Divider sx={{ mb: 2 }} />
+              </>
+            )}
             <Typography variant="caption" color="text.secondary" sx={{ display: "block", mb: 1 }}>
-              Add a direct URL to a whisper.cpp-compatible GGML model.
+              Paste a direct URL to a whisper.cpp-compatible GGML model. The
+              file is downloaded immediately and added to Models.
             </Typography>
             <TextField
               fullWidth
@@ -345,10 +611,15 @@ export default function DictationSettingsDialog({ open, onClose }: Props) {
             />
             <Button
               variant="contained"
-              onClick={addCustomFromUrl}
-              disabled={!customUrl.trim()}
+              onClick={installFromUrl}
+              disabled={!customUrl.trim() || downloadingId !== null}
+              startIcon={
+                downloadingId === null ? <DownloadIcon /> : (
+                  <CircularProgress size={14} />
+                )
+              }
             >
-              Add model
+              {downloadingId === null ? "Download" : `Downloading ${pct ?? 0}%`}
             </Button>
           </Box>
         )}
