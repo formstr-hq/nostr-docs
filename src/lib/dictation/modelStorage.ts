@@ -48,7 +48,11 @@ function idbPut(key: string, value: Uint8Array): Promise<void> {
     openDb()
       .then((db) => {
         const tx = db.transaction(IDB_STORE, "readwrite");
-        tx.objectStore(IDB_STORE).put(value, key);
+        // Wrap as Blob: structured clone of a Blob serializes a file
+        // reference, so large values bypass the ~1 GB per-entry
+        // structured-clone size cap (hit by Whisper large models in Firefox).
+        const stored = new Blob([value]);
+        tx.objectStore(IDB_STORE).put(stored, key);
         tx.oncomplete = () => resolve();
         tx.onerror = () => reject(tx.error);
       })
