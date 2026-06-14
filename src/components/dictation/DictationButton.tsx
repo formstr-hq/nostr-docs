@@ -60,6 +60,10 @@ export default function DictationButton({
     } else if (state.kind === "needs-permission") {
       await start();
     } else if (state.kind === "needs-setup") {
+      // Re-check — the user may have imported a model in the settings dialog
+      // since the last `needs-setup` was set. start() reloads prefs; if it
+      // succeeds the state moves off needs-setup and the dialog stays closed.
+      await start();
       setSetupDismissed(false);
     }
   }, [state, start, stop]);

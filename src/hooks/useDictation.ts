@@ -121,8 +121,10 @@ export function useDictation(opts: UseDictationOptions): UseDictationReturn {
 
   const start = useCallback(async () => {
     try {
-      const currentPrefs = prefs ?? (await loadPrefs());
-      if (!prefs) setPrefs(currentPrefs);
+      // Always reload — the settings dialog writes prefs directly to storage
+      // without going through this hook, so the captured `prefs` can be stale.
+      const currentPrefs = await loadPrefs();
+      setPrefs(currentPrefs);
       const ok = await ensureModelLoaded(currentPrefs);
       if (!ok) return;
       const handle = await startRecording();
@@ -146,7 +148,7 @@ export function useDictation(opts: UseDictationOptions): UseDictationReturn {
       setState({ kind: "error", message: msg });
       optsRef.current.onError?.(msg);
     }
-  }, [prefs, ensureModelLoaded]);
+  }, [ensureModelLoaded]);
 
   const stop = useCallback(async () => {
     const handle = recorderRef.current;
@@ -155,7 +157,7 @@ export function useDictation(opts: UseDictationOptions): UseDictationReturn {
     setState({ kind: "transcribing" });
     try {
       const { pcm } = await handle.stop();
-      const currentPrefs = prefs ?? (await loadPrefs());
+      const currentPrefs = await loadPrefs();
       const lang = currentPrefs.language;
       const worker = getWorker();
       const result = await new Promise<string>((resolve, reject) => {
@@ -188,7 +190,7 @@ export function useDictation(opts: UseDictationOptions): UseDictationReturn {
       setState({ kind: "error", message: msg });
       optsRef.current.onError?.(msg);
     }
-  }, [prefs]);
+  }, []);
 
   const cancel = useCallback(() => {
     recorderRef.current?.cancel();
