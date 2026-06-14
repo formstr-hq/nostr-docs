@@ -41,7 +41,9 @@ import {
 } from "../../lib/dictation";
 import { loadPrefs, savePrefs } from "../../lib/dictation/prefs";
 import type {
+  BuiltinModelId,
   CustomModelEntry,
+  DictationModelId,
   DictationPrefs,
   ModelInfo,
 } from "../../lib/dictation/types";
@@ -253,8 +255,12 @@ export default function DictationSettingsDialog({ open, onClose }: Props) {
 
   const downloadedModels = useMemo(() => {
     if (!prefs) return [];
-    const out: { id: string; label: string; sub: string; custom: boolean }[] =
-      [];
+    const out: {
+      id: DictationModelId;
+      label: string;
+      sub: string;
+      custom: boolean;
+    }[] = [];
     for (const m of Object.values(BUILTIN_MODELS)) {
       if (!downloadedIds.has(m.id)) continue;
       out.push({
@@ -459,7 +465,9 @@ export default function DictationSettingsDialog({ open, onClose }: Props) {
                       m.englishOnly ? "English" : "Multilingual"
                     }`}
                   />
-                  {renderDownloadAction(m.id, () => downloadBuiltin(m.id))}
+                  {renderDownloadAction(m.id, () =>
+                    downloadBuiltin(m.id as BuiltinModelId),
+                  )}
                 </ListItemButton>
               ))}
             </List>
