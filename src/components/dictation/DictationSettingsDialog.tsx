@@ -63,6 +63,26 @@ function makeCustomId(url: string): `custom:${string}` {
   return `custom:${slug}-${Date.now().toString(36)}`;
 }
 
+function suggestedFilename(url: string): string {
+  try {
+    const last = new URL(url).pathname.split("/").filter(Boolean).pop();
+    if (!last) return "model.bin";
+    return /\.bin$/i.test(last) ? last : `${last}.bin`;
+  } catch {
+    return "model.bin";
+  }
+}
+
+function triggerBrowserDownload(url: string, filename: string) {
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  a.rel = "noopener";
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+}
+
 export default function DictationSettingsDialog({ open, onClose }: Props) {
   const [prefs, setPrefs] = useState<DictationPrefs | null>(null);
   const [tab, setTab] = useState<"models" | "discover" | "custom">("models");
@@ -72,7 +92,6 @@ export default function DictationSettingsDialog({ open, onClose }: Props) {
   const [searchError, setSearchError] = useState<string | null>(null);
   const [searchResults, setSearchResults] = useState<HFModelResult[]>([]);
   const [customUrl, setCustomUrl] = useState("");
-  const [customLabel, setCustomLabel] = useState("");
   const [downloadedIds, setDownloadedIds] = useState<Set<string>>(new Set());
   const [downloadingUrl, setDownloadingUrl] = useState<string | null>(null);
   const [downloadProgress, setDownloadProgress] = useState<{
@@ -166,44 +185,15 @@ export default function DictationSettingsDialog({ open, onClose }: Props) {
     return downloadModel(BUILTIN_MODELS[id], prefs);
   };
 
-  const installFromResult = async (r: HFModelResult) => {
-    if (!prefs) return;
-    const id = makeCustomId(r.url);
-    const entry: CustomModelEntry = {
-      id,
-      label: `${r.repoId} (${r.filename})`,
-      url: r.url,
-      sizeBytes: r.sizeBytes,
-      englishOnly: r.language === "en",
-    };
-    const nextPrefs: DictationPrefs = {
-      ...prefs,
-      customModels: [...prefs.customModels, entry],
-    };
-    // Persist before kicking off the fetch so a closed dialog or a failed
-    // download still leaves the entry in the Custom tab (with a Retry button).
-    await persist(nextPrefs);
-    await downloadModel(customToModelInfo(entry), nextPrefs);
+  const saveResultToDisk = (r: HFModelResult) => {
+    triggerBrowserDownload(r.url, r.filename || suggestedFilename(r.url));
   };
 
-  const installFromUrl = async () => {
-    if (!prefs || !customUrl.trim()) return;
-    const id = makeCustomId(customUrl);
-    const entry: CustomModelEntry = {
-      id,
-      label: customLabel.trim() || customUrl,
-      url: customUrl.trim(),
-      sizeBytes: 0,
-      englishOnly: false,
-    };
-    const nextPrefs: DictationPrefs = {
-      ...prefs,
-      customModels: [...prefs.customModels, entry],
-    };
+  const saveUrlToDisk = () => {
+    const url = customUrl.trim();
+    if (!url) return;
+    triggerBrowserDownload(url, suggestedFilename(url));
     setCustomUrl("");
-    setCustomLabel("");
-    await persist(nextPrefs);
-    await downloadModel(customToModelInfo(entry), nextPrefs);
   };
 
   const importFromFile = async (file: File) => {
@@ -214,7 +204,7 @@ export default function DictationSettingsDialog({ open, onClose }: Props) {
       const id = makeCustomId(file.name);
       const entry: CustomModelEntry = {
         id,
-        label: customLabel.trim() || file.name,
+        label: file.name,
         url: "",
         sizeBytes: file.size,
         englishOnly: false,
@@ -231,7 +221,6 @@ export default function DictationSettingsDialog({ open, onClose }: Props) {
       await persist(nextPrefs);
       setDownloadedIds((prev) => new Set(prev).add(id));
       setCustomUrl("");
-      setCustomLabel("");
       setTab("models");
     } catch (err) {
       setDownloadError(err instanceof Error ? err.message : String(err));
@@ -560,6 +549,11 @@ export default function DictationSettingsDialog({ open, onClose }: Props) {
                   : "Hit Search to browse community models."}
               </Typography>
             )}
+            {searchResults.length > 0 && (
+              <Typography variant="caption" color="text.secondary" sx={{ display: "block", mb: 1 }}>
+                Save a model to your computer, then use <strong>Custom URL → Pick model file</strong> to import it.
+              </Typography>
+            )}
             <List dense disablePadding>
               {searchResults.map((r) => {
                 const probeId = `hf:${r.repoId}/${r.filename}`;
@@ -580,9 +574,18 @@ export default function DictationSettingsDialog({ open, onClose }: Props) {
                         </>
                       }
                     />
-                    {renderDownloadAction(probeId, r.url, () =>
-                      installFromResult(r),
-                    )}
+                    <Button
+                      size="small"
+                      variant="outlined"
+                      startIcon={<DownloadIcon fontSize="small" />}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        saveResultToDisk(r);
+                      }}
+                      sx={{ ml: 1 }}
+                    >
+                      Save to disk
+                    </Button>
                   </ListItemButton>
                 );
               })}
@@ -603,7 +606,6 @@ export default function DictationSettingsDialog({ open, onClose }: Props) {
                 </Typography>
                 <List dense disablePadding sx={{ mb: 2 }}>
                   {prefs.customModels.map((entry) => {
-                    const info = customToModelInfo(entry);
                     return (
                       <ListItemButton
                         key={entry.id}
@@ -616,15 +618,11 @@ export default function DictationSettingsDialog({ open, onClose }: Props) {
                           secondary={
                             entry.sizeBytes
                               ? formatBytes(entry.sizeBytes)
-                              : "Size unknown"
+                              : downloadedIds.has(entry.id)
+                                ? "Imported"
+                                : "Not imported"
                           }
                         />
-                        {renderDownloadAction(
-                          entry.id,
-                          info.url,
-                          () => downloadModel(info, prefs),
-                          { retry: true },
-                        )}
                         <IconButton
                           edge="end"
                           size="small"
@@ -685,11 +683,12 @@ export default function DictationSettingsDialog({ open, onClose }: Props) {
               color="text.secondary"
               sx={{ display: "block", mb: 0.5 }}
             >
-              Download from URL
+              Save from URL
             </Typography>
             <Typography variant="caption" color="text.secondary" sx={{ display: "block", mb: 1 }}>
               Paste a direct URL to a whisper.cpp-compatible GGML model. The
-              file is downloaded immediately and added to Models.
+              browser will save the .bin to your computer — then use
+              <strong> Pick model file</strong> above to import it.
             </Typography>
             <TextField
               fullWidth
@@ -698,27 +697,15 @@ export default function DictationSettingsDialog({ open, onClose }: Props) {
               placeholder="https://…/ggml-base-fr-q5_1.bin"
               value={customUrl}
               onChange={(e) => setCustomUrl(e.target.value)}
-              sx={{ mb: 1 }}
-            />
-            <TextField
-              fullWidth
-              size="small"
-              label="Label (optional)"
-              value={customLabel}
-              onChange={(e) => setCustomLabel(e.target.value)}
               sx={{ mb: 2 }}
             />
             <Button
               variant="contained"
-              onClick={installFromUrl}
-              disabled={!customUrl.trim() || downloadingUrl !== null || importing}
-              startIcon={
-                downloadingUrl === null ? <DownloadIcon /> : (
-                  <CircularProgress size={14} />
-                )
-              }
+              onClick={saveUrlToDisk}
+              disabled={!customUrl.trim()}
+              startIcon={<DownloadIcon />}
             >
-              {downloadingUrl === null ? "Download" : `Downloading ${pct ?? 0}%`}
+              Save to disk
             </Button>
           </Box>
         )}
