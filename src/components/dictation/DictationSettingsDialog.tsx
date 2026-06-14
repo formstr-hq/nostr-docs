@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Dialog,
   DialogTitle,
@@ -27,6 +27,7 @@ import {
 import DeleteIcon from "@mui/icons-material/Delete";
 import DownloadIcon from "@mui/icons-material/Download";
 import SearchIcon from "@mui/icons-material/Search";
+import UploadFileIcon from "@mui/icons-material/UploadFile";
 import {
   BUILTIN_MODELS,
   SUPPORTED_LANGUAGES,
@@ -38,6 +39,7 @@ import {
   clearAllCachedModels,
   hasCachedModel,
   getModelBytes,
+  storeModelBytes,
 } from "../../lib/dictation";
 import { loadPrefs, savePrefs } from "../../lib/dictation/prefs";
 import type {
@@ -72,12 +74,14 @@ export default function DictationSettingsDialog({ open, onClose }: Props) {
   const [customUrl, setCustomUrl] = useState("");
   const [customLabel, setCustomLabel] = useState("");
   const [downloadedIds, setDownloadedIds] = useState<Set<string>>(new Set());
-  const [downloadingId, setDownloadingId] = useState<string | null>(null);
+  const [downloadingUrl, setDownloadingUrl] = useState<string | null>(null);
   const [downloadProgress, setDownloadProgress] = useState<{
     bytes: number;
     total: number;
   }>({ bytes: 0, total: 0 });
   const [downloadError, setDownloadError] = useState<string | null>(null);
+  const [importing, setImporting] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
     if (!open) return;
@@ -135,9 +139,9 @@ export default function DictationSettingsDialog({ open, onClose }: Props) {
     info: ModelInfo,
     basePrefs: DictationPrefs,
   ) => {
-    if (downloadingId) return;
+    if (downloadingUrl || importing) return;
     setDownloadError(null);
-    setDownloadingId(info.id);
+    setDownloadingUrl(info.url);
     setDownloadProgress({ bytes: 0, total: info.sizeBytes });
     try {
       await getModelBytes(info.url, info.storageKey, (p) => {
@@ -153,7 +157,7 @@ export default function DictationSettingsDialog({ open, onClose }: Props) {
     } catch (err) {
       setDownloadError(err instanceof Error ? err.message : String(err));
     } finally {
-      setDownloadingId(null);
+      setDownloadingUrl(null);
     }
   };
 
@@ -176,6 +180,9 @@ export default function DictationSettingsDialog({ open, onClose }: Props) {
       ...prefs,
       customModels: [...prefs.customModels, entry],
     };
+    // Persist before kicking off the fetch so a closed dialog or a failed
+    // download still leaves the entry in the Custom tab (with a Retry button).
+    await persist(nextPrefs);
     await downloadModel(customToModelInfo(entry), nextPrefs);
   };
 
@@ -195,7 +202,42 @@ export default function DictationSettingsDialog({ open, onClose }: Props) {
     };
     setCustomUrl("");
     setCustomLabel("");
+    await persist(nextPrefs);
     await downloadModel(customToModelInfo(entry), nextPrefs);
+  };
+
+  const importFromFile = async (file: File) => {
+    if (!prefs || downloadingUrl || importing) return;
+    setDownloadError(null);
+    setImporting(true);
+    try {
+      const id = makeCustomId(file.name);
+      const entry: CustomModelEntry = {
+        id,
+        label: customLabel.trim() || file.name,
+        url: "",
+        sizeBytes: file.size,
+        englishOnly: false,
+      };
+      const info = customToModelInfo(entry);
+      const bytes = new Uint8Array(await file.arrayBuffer());
+      await storeModelBytes(info.storageKey, bytes);
+      const nextPrefs: DictationPrefs = {
+        ...prefs,
+        customModels: [...prefs.customModels, entry],
+        modelId: id,
+        setupComplete: true,
+      };
+      await persist(nextPrefs);
+      setDownloadedIds((prev) => new Set(prev).add(id));
+      setCustomUrl("");
+      setCustomLabel("");
+      setTab("models");
+    } catch (err) {
+      setDownloadError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setImporting(false);
+    }
   };
 
   const removeCustom = async (id: string) => {
@@ -292,6 +334,7 @@ export default function DictationSettingsDialog({ open, onClose }: Props) {
 
   const renderDownloadAction = (
     id: string,
+    url: string,
     onDownload: () => void | Promise<void>,
     opts?: { retry?: boolean },
   ) => {
@@ -300,7 +343,9 @@ export default function DictationSettingsDialog({ open, onClose }: Props) {
         <Chip size="small" label="Downloaded" color="success" sx={{ ml: 1 }} />
       );
     }
-    if (downloadingId === id) {
+    // Match by URL — the search-result row's row-id (`hf:…`) differs from the
+    // id assigned at install time (`custom:…`), but the URL is stable.
+    if (downloadingUrl === url) {
       return (
         <Box sx={{ ml: 1, minWidth: 110, textAlign: "right" }}>
           <Typography variant="caption" color="text.secondary">
@@ -318,7 +363,7 @@ export default function DictationSettingsDialog({ open, onClose }: Props) {
       <Button
         size="small"
         variant="outlined"
-        disabled={downloadingId !== null}
+        disabled={downloadingUrl !== null || importing}
         startIcon={<DownloadIcon fontSize="small" />}
         onClick={(e) => {
           e.stopPropagation();
@@ -465,7 +510,7 @@ export default function DictationSettingsDialog({ open, onClose }: Props) {
                       m.englishOnly ? "English" : "Multilingual"
                     }`}
                   />
-                  {renderDownloadAction(m.id, () =>
+                  {renderDownloadAction(m.id, m.url, () =>
                     downloadBuiltin(m.id as BuiltinModelId),
                   )}
                 </ListItemButton>
@@ -535,7 +580,9 @@ export default function DictationSettingsDialog({ open, onClose }: Props) {
                         </>
                       }
                     />
-                    {renderDownloadAction(probeId, () => installFromResult(r))}
+                    {renderDownloadAction(probeId, r.url, () =>
+                      installFromResult(r),
+                    )}
                   </ListItemButton>
                 );
               })}
@@ -574,6 +621,7 @@ export default function DictationSettingsDialog({ open, onClose }: Props) {
                         />
                         {renderDownloadAction(
                           entry.id,
+                          info.url,
                           () => downloadModel(info, prefs),
                           { retry: true },
                         )}
@@ -596,6 +644,49 @@ export default function DictationSettingsDialog({ open, onClose }: Props) {
                 <Divider sx={{ mb: 2 }} />
               </>
             )}
+            <Typography
+              variant="overline"
+              color="text.secondary"
+              sx={{ display: "block", mb: 0.5 }}
+            >
+              Import from file
+            </Typography>
+            <Typography variant="caption" color="text.secondary" sx={{ display: "block", mb: 1 }}>
+              Already downloaded the .bin on your computer? Pick it here — no
+              network transfer. Useful for sharing one download across browsers.
+            </Typography>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept=".bin,application/octet-stream"
+              style={{ display: "none" }}
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                if (file) void importFromFile(file);
+                e.target.value = "";
+              }}
+            />
+            <Button
+              variant="outlined"
+              onClick={() => fileInputRef.current?.click()}
+              disabled={importing || downloadingUrl !== null}
+              startIcon={
+                importing ? <CircularProgress size={14} /> : <UploadFileIcon />
+              }
+              sx={{ mb: 2 }}
+            >
+              {importing ? "Importing…" : "Pick model file"}
+            </Button>
+
+            <Divider sx={{ mb: 2 }} />
+
+            <Typography
+              variant="overline"
+              color="text.secondary"
+              sx={{ display: "block", mb: 0.5 }}
+            >
+              Download from URL
+            </Typography>
             <Typography variant="caption" color="text.secondary" sx={{ display: "block", mb: 1 }}>
               Paste a direct URL to a whisper.cpp-compatible GGML model. The
               file is downloaded immediately and added to Models.
@@ -620,14 +711,14 @@ export default function DictationSettingsDialog({ open, onClose }: Props) {
             <Button
               variant="contained"
               onClick={installFromUrl}
-              disabled={!customUrl.trim() || downloadingId !== null}
+              disabled={!customUrl.trim() || downloadingUrl !== null || importing}
               startIcon={
-                downloadingId === null ? <DownloadIcon /> : (
+                downloadingUrl === null ? <DownloadIcon /> : (
                   <CircularProgress size={14} />
                 )
               }
             >
-              {downloadingId === null ? "Download" : `Downloading ${pct ?? 0}%`}
+              {downloadingUrl === null ? "Download" : `Downloading ${pct ?? 0}%`}
             </Button>
           </Box>
         )}

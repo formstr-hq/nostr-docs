@@ -204,6 +204,31 @@ export async function getModelBytes(
   return idbGetOrDownload(url, storageKey, onProgress);
 }
 
+export async function storeModelBytes(
+  storageKey: string,
+  bytes: Uint8Array,
+): Promise<void> {
+  if (isCapacitor) {
+    const { Filesystem, Directory } = await import("@capacitor/filesystem");
+    try {
+      await Filesystem.mkdir({
+        path: MODEL_DIR,
+        directory: Directory.Data,
+        recursive: true,
+      });
+    } catch {
+      // already exists
+    }
+    await Filesystem.writeFile({
+      path: `${MODEL_DIR}/${storageKey}.bin`,
+      directory: Directory.Data,
+      data: bytesToBase64(bytes),
+    });
+    return;
+  }
+  await idbPut(storageKey, bytes);
+}
+
 export async function hasCachedModel(
   _url: string,
   storageKey: string,

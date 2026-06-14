@@ -13,6 +13,7 @@ export {
   clearCachedModel,
   clearAllCachedModels,
   getModelBytes,
+  storeModelBytes,
 } from "./modelStorage";
 export { searchHuggingFace, type HFModelResult } from "./hfSearch";
 export type {
