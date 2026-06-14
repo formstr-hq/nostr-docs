@@ -51,7 +51,7 @@ function idbPut(key: string, value: Uint8Array): Promise<void> {
         // Wrap as Blob: structured clone of a Blob serializes a file
         // reference, so large values bypass the ~1 GB per-entry
         // structured-clone size cap (hit by Whisper large models in Firefox).
-        const stored = new Blob([value]);
+        const stored = new Blob([value as BlobPart]);
         tx.objectStore(IDB_STORE).put(stored, key);
         tx.oncomplete = () => resolve();
         tx.onerror = () => reject(tx.error);
