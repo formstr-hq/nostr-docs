@@ -105,7 +105,7 @@ function AppLayout() {
   const [mobileOpen, setMobileOpen] = React.useState(false);
   const [themeId, setThemeId] = React.useState<ThemeId>(() => {
     const stored = localStorage.getItem("formstr:theme") as ThemeId | null;
-    if (stored) return stored;
+    if (stored && stored in themes) return stored;
     const ids = Object.keys(themes) as ThemeId[];
     return ids[Math.floor(Math.random() * ids.length)];
   });
