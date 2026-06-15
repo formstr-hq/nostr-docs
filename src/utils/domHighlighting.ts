@@ -29,36 +29,56 @@ function collectText(container: HTMLElement): { nodes: Text[]; offsets: number[]
   return { nodes, offsets };
 }
 
-function findTextRange(
+/**
+ * Wraps the text in [from, to) with one or more "comment-highlight" spans,
+ * splitting text nodes as needed so the highlight can span element
+ * boundaries (e.g. across bold/italic/link text). Returns true if any text
+ * was wrapped.
+ *
+ * Must be called with `nodes`/`offsets` from a single `collectText` pass,
+ * processing ranges in descending `from` order — splitting a node only
+ * affects nodes at or after its own offset, so earlier ranges in the same
+ * pass remain valid.
+ */
+function wrapRange(
   nodes: Text[],
   offsets: number[],
   from: number,
   to: number,
-): { startNode: Text; startOffset: number; endNode: Text; endOffset: number } | null {
-  let startNode: Text | null = null;
-  let startOffset = 0;
-  let endNode: Text | null = null;
-  let endOffset = 0;
+  commentId: string,
+): boolean {
+  let wrapped = false;
 
   for (let i = 0; i < nodes.length; i++) {
+    const node = nodes[i];
     const nodeStart = offsets[i];
-    const nodeEnd = nodeStart + nodes[i].length;
+    const nodeEnd = nodeStart + node.length;
+    if (nodeEnd <= from || nodeStart >= to) continue;
 
-    if (!startNode && from < nodeEnd) {
-      startNode = nodes[i];
-      startOffset = from - nodeStart;
-    }
-    if (to <= nodeEnd) {
-      endNode = nodes[i];
-      endOffset = to - nodeStart;
-      break;
-    }
+    const startInNode = Math.max(0, from - nodeStart);
+    const endInNode = Math.min(node.length, to - nodeStart);
+    if (startInNode >= endInNode) continue;
+
+    let target = node;
+    if (endInNode < target.length) target.splitText(endInNode);
+    if (startInNode > 0) target = target.splitText(startInNode);
+
+    const parent = target.parentNode;
+    if (!parent) continue;
+
+    const span = document.createElement("span");
+    span.className = "comment-highlight";
+    span.setAttribute("data-comment-id", commentId);
+    span.style.backgroundColor = "var(--comment-highlight-color, rgba(255, 213, 0, 0.4))";
+    span.style.borderRadius = "2px";
+    span.style.cursor = "pointer";
+
+    parent.insertBefore(span, target);
+    span.appendChild(target);
+    wrapped = true;
   }
 
-  if (!startNode || !endNode) return null;
-  if (startNode !== endNode) return null;
-
-  return { startNode, startOffset, endNode, endOffset };
+  return wrapped;
 }
 
 export function applyDomHighlights(
@@ -69,35 +89,26 @@ export function applyDomHighlights(
 ): void {
   removeHighlights(container);
 
+  const { nodes, offsets } = collectText(container);
+  const fullText = nodes.map((n) => n.data).join("");
+
+  const ranges: { from: number; to: number; commentId: string }[] = [];
+
   for (const comment of comments) {
     if (!comment.quote || resolvedIds.has(comment.id) || isOutdated(comment)) continue;
 
-    const { nodes, offsets } = collectText(container);
-    const fullText = nodes.map((n) => n.data).join("");
     const occurrences = findAllOccurrences(fullText, comment.quote);
-
     if (occurrences.length === 0) continue;
 
     const bestOffset = findBestOccurrence(fullText, occurrences, comment.quote.length, comment.context);
+    ranges.push({ from: bestOffset, to: bestOffset + comment.quote.length, commentId: comment.id });
+  }
 
-    const textRange = findTextRange(nodes, offsets, bestOffset, bestOffset + comment.quote.length);
-    if (!textRange) continue;
+  // Process right-to-left: splitting a node only shifts boundaries at or
+  // after its start, so earlier (lower-offset) ranges stay valid.
+  ranges.sort((a, b) => b.from - a.from);
 
-    try {
-      const range = document.createRange();
-      range.setStart(textRange.startNode, textRange.startOffset);
-      range.setEnd(textRange.endNode, textRange.endOffset);
-
-      const span = document.createElement("span");
-      span.className = "comment-highlight";
-      span.setAttribute("data-comment-id", comment.id);
-      span.style.backgroundColor = "var(--comment-highlight-color, rgba(255, 213, 0, 0.4))";
-      span.style.borderRadius = "2px";
-      span.style.cursor = "pointer";
-
-      range.surroundContents(span);
-    } catch {
-      continue;
-    }
+  for (const { from, to, commentId } of ranges) {
+    wrapRange(nodes, offsets, from, to, commentId);
   }
 }
