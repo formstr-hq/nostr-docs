@@ -10,19 +10,23 @@ import {
   Alert,
   ButtonBase,
   Divider,
+  CircularProgress,
 } from "@mui/material";
 import { ThemeProvider, useTheme } from "@mui/material/styles";
 import VpnKeyOutlinedIcon from "@mui/icons-material/VpnKeyOutlined";
 import LockOutlinedIcon from "@mui/icons-material/LockOutlined";
 import PhonelinkLockOutlinedIcon from "@mui/icons-material/PhonelinkLockOutlined";
 import HubOutlinedIcon from "@mui/icons-material/HubOutlined";
+import QrCode2OutlinedIcon from "@mui/icons-material/QrCode2Outlined";
 import PersonOutlinedIcon from "@mui/icons-material/PersonOutlined";
 import ChevronRightIcon from "@mui/icons-material/ChevronRight";
-import { useState, useEffect, type ReactNode } from "react";
+import { useState, useEffect, useRef, type ReactNode } from "react";
+import QRCode from "qrcode";
 import { signerManager } from "../signer";
+import type { AndroidSignerAppInfo } from "@formstr/signer";
 import { generateSecretKey } from "nostr-tools";
 import { isNativePlatform, isCapacitor } from "../signer/secureStorage";
-import type { AppInfo as SignerAppInfo } from "nostr-signer-capacitor-plugin";
+import { DEFAULT_RELAYS } from "../nostr/relayPool";
 import FormstrLogo from "../assets/formstr-pages-logo.png";
 
 export default function LoginModal({
@@ -35,26 +39,48 @@ export default function LoginModal({
   const theme = useTheme();
   const [showNip46, setShowNip46] = useState(false);
   const [showNsec, setShowNsec] = useState(false);
+  const [showNc, setShowNc] = useState(false);
   const [uri, setUri] = useState("");
   const [nsec, setNsec] = useState("");
+  const [ncRelays, setNcRelays] = useState(DEFAULT_RELAYS.join(", "));
+  const [ncDataUrl, setNcDataUrl] = useState("");
+  const [ncPending, setNcPending] = useState(false);
+  const [ncError, setNcError] = useState("");
   const [error, setError] = useState<string>("");
-  const [installedSigners, setInstalledSigners] = useState<SignerAppInfo[]>([]);
+  const [installedSigners, setInstalledSigners] = useState<
+    AndroidSignerAppInfo[]
+  >([]);
+  const ncAbortRef = useRef<AbortController | null>(null);
 
   useEffect(() => {
     if (!isCapacitor) return;
     const loadSigners = async () => {
-      const { NostrSignerPlugin } = await import("nostr-signer-capacitor-plugin");
-      const { apps } = await NostrSignerPlugin.getInstalledSignerApps();
-      setInstalledSigners(apps);
+      try {
+        const apps = await signerManager.listNip55Apps();
+        setInstalledSigners(apps);
+      } catch {
+        setInstalledSigners([]);
+      }
     };
     loadSigners();
   }, []);
+
+  // Abort any in-flight nostrconnect pairing and clear its transient state,
+  // then close. Used for every close path so a stale QR never lingers.
+  const handleClose = () => {
+    ncAbortRef.current?.abort();
+    ncAbortRef.current = null;
+    setNcDataUrl("");
+    setNcPending(false);
+    setNcError("");
+    onClose();
+  };
 
   const handleNip07 = async () => {
     setError("");
     try {
       await signerManager.loginWithNip07();
-      onClose();
+      handleClose();
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "NIP-07 login failed");
     }
@@ -65,7 +91,7 @@ export default function LoginModal({
     try {
       const key = generateSecretKey();
       await signerManager.createGuestAccount(key);
-      onClose();
+      handleClose();
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "Temporary login failed");
     }
@@ -75,7 +101,7 @@ export default function LoginModal({
     setError("");
     try {
       await signerManager.loginWithNip55(packageName);
-      onClose();
+      handleClose();
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "Signer sign-in failed");
     }
@@ -86,7 +112,7 @@ export default function LoginModal({
     setError("");
     try {
       await signerManager.loginWithNsec(nsec);
-      onClose();
+      handleClose();
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "Invalid nsec");
     }
@@ -97,9 +123,45 @@ export default function LoginModal({
     setError("");
     try {
       await signerManager.loginWithNip46(uri);
-      onClose();
+      handleClose();
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "Bunker login failed");
+    }
+  };
+
+  const handleNostrConnect = async () => {
+    setNcError("");
+    setNcDataUrl("");
+    const relayList = ncRelays
+      .split(",")
+      .map((r) => r.trim())
+      .filter(Boolean);
+    if (relayList.length === 0) {
+      setNcError("Enter at least one relay");
+      return;
+    }
+    setNcPending(true);
+    const controller = new AbortController();
+    ncAbortRef.current = controller;
+    try {
+      await signerManager.loginWithNostrConnect({
+        relays: relayList,
+        signal: controller.signal,
+        onUri: async (ncUri) => {
+          try {
+            setNcDataUrl(await QRCode.toDataURL(ncUri, { width: 240, margin: 1 }));
+          } catch {
+            setNcDataUrl("");
+          }
+        },
+      });
+      handleClose();
+    } catch (e: unknown) {
+      if (!controller.signal.aborted) {
+        setNcError(e instanceof Error ? e.message : "QR pairing failed");
+      }
+    } finally {
+      setNcPending(false);
     }
   };
 
@@ -110,7 +172,7 @@ export default function LoginModal({
     <ThemeProvider theme={theme}>
       <Dialog
         open={open}
-        onClose={onClose}
+        onClose={handleClose}
         maxWidth="xs"
         fullWidth
         PaperProps={{
@@ -214,28 +276,35 @@ export default function LoginModal({
           )}
 
           {/* NIP-55 external signers — Capacitor (Android) only */}
-          {isCapacitor && installedSigners.map((signer) => (
-            <OptionButton
-              key={signer.packageName}
-              icon={
-                signer.iconUrl
-                  ? <img src={signer.iconUrl} alt={signer.name} style={{ width: 24, height: 24, borderRadius: 4 }} />
-                  : <PhonelinkLockOutlinedIcon />
-              }
-              title={signer.name}
-              description="Sign with external Android signer"
-              accentColor={theme.palette.secondary.main}
-              accentAlpha={accentAlpha}
-              onClick={() => handleNip55(signer.packageName)}
-            />
-          ))}
+          {isCapacitor &&
+            installedSigners.map((signer) => (
+              <OptionButton
+                key={signer.packageName}
+                icon={
+                  signer.iconUrl ? (
+                    <img
+                      src={signer.iconUrl}
+                      alt={signer.name}
+                      style={{ width: 24, height: 24, borderRadius: 4 }}
+                    />
+                  ) : (
+                    <PhonelinkLockOutlinedIcon />
+                  )
+                }
+                title={signer.name}
+                description="Sign with external Android signer"
+                accentColor={theme.palette.secondary.main}
+                accentAlpha={accentAlpha}
+                onClick={() => handleNip55(signer.packageName)}
+              />
+            ))}
 
-          {/* NIP-46 */}
+          {/* NIP-46 — bunker URI */}
           <Box>
             <OptionButton
               icon={<HubOutlinedIcon />}
               title="Nostr Bunker"
-              description="Connect via NIP-46"
+              description="Connect via NIP-46 URI"
               accentColor={theme.palette.secondary.main}
               accentAlpha={accentAlpha}
               onClick={() => setShowNip46((p) => !p)}
@@ -271,6 +340,81 @@ export default function LoginModal({
             </Collapse>
           </Box>
 
+          {/* NIP-46 — nostrconnect (QR) */}
+          <Box>
+            <OptionButton
+              icon={<QrCode2OutlinedIcon />}
+              title="Remote Signer (QR)"
+              description="Scan with your signer app"
+              accentColor={theme.palette.secondary.main}
+              accentAlpha={accentAlpha}
+              onClick={() => setShowNc((p) => !p)}
+              chevronRotated={showNc}
+            />
+            <Collapse in={showNc}>
+              <Box
+                sx={{
+                  px: 2,
+                  pb: 2,
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: 1,
+                  bgcolor: `${theme.palette.secondary.main}${accentAlpha}`,
+                }}
+              >
+                {ncError && (
+                  <Alert severity="error" sx={{ borderRadius: 2 }}>
+                    {ncError}
+                  </Alert>
+                )}
+                <TextField
+                  fullWidth
+                  size="small"
+                  label="Relays (comma-separated)"
+                  value={ncRelays}
+                  onChange={(e) => setNcRelays(e.target.value)}
+                  disabled={ncPending}
+                />
+                {ncDataUrl ? (
+                  <Box
+                    sx={{
+                      display: "flex",
+                      flexDirection: "column",
+                      alignItems: "center",
+                      gap: 1,
+                      py: 1,
+                    }}
+                  >
+                    <img
+                      src={ncDataUrl}
+                      alt="nostrconnect QR"
+                      style={{ width: 200, height: 200, borderRadius: 8 }}
+                    />
+                    <Box
+                      sx={{ display: "flex", alignItems: "center", gap: 1 }}
+                    >
+                      <CircularProgress size={14} />
+                      <Typography variant="caption" color="text.secondary">
+                        Waiting for your signer…
+                      </Typography>
+                    </Box>
+                  </Box>
+                ) : (
+                  <Button
+                    variant="contained"
+                    onClick={handleNostrConnect}
+                    disabled={ncPending}
+                    startIcon={
+                      ncPending ? <CircularProgress size={16} /> : undefined
+                    }
+                  >
+                    {ncPending ? "Generating…" : "Generate QR"}
+                  </Button>
+                )}
+              </Box>
+            </Collapse>
+          </Box>
+
           {/* Guest */}
           <OptionButton
             icon={<PersonOutlinedIcon />}
@@ -294,7 +438,7 @@ export default function LoginModal({
             fullWidth
             variant="text"
             color="inherit"
-            onClick={onClose}
+            onClick={handleClose}
             sx={{ color: "text.secondary", fontSize: "0.8rem" }}
           >
             Cancel

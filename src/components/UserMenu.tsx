@@ -4,6 +4,7 @@ import {
   Avatar,
   Box,
   Collapse,
+  IconButton,
   Menu,
   MenuItem,
   Typography,
@@ -17,9 +18,10 @@ import ExpandLessIcon from "@mui/icons-material/ExpandLess";
 import PaletteIcon from "@mui/icons-material/Palette";
 import LoginIcon from "@mui/icons-material/Login";
 import LogoutIcon from "@mui/icons-material/Logout";
+import PersonAddAltOutlinedIcon from "@mui/icons-material/PersonAddAltOutlined";
 import CloudUploadIcon from "@mui/icons-material/CloudUpload";
 import { useUser } from "../contexts/UserContext";
-import LoginModal from "./LoginModal";
+import type { AuthMethod } from "../signer";
 import BlossomServersModal from "./BlossomServersModal";
 import { themes } from "../theme";
 import type { ThemeId, ThemeDefinition } from "../theme";
@@ -29,10 +31,18 @@ type Props = {
   onSelectTheme: (id: ThemeId) => void;
 };
 
+const METHOD_LABEL: Record<AuthMethod, string> = {
+  extension: "Browser extension",
+  nip46: "Remote signer",
+  android: "Android signer",
+  guest: "Temporary account",
+  nsec: "Private key",
+};
+
 export default function UserMenu({ themeId, onSelectTheme }: Props) {
-  const { user, logout } = useUser();
+  const { user, accounts, activeAccount, switchAccount, addAccount, logout } =
+    useUser();
   const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
-  const [loginOpen, setLoginOpen] = useState(false);
   const [themeOpen, setThemeOpen] = useState(false);
   const [blossomOpen, setBlossomOpen] = useState(false);
 
@@ -50,6 +60,9 @@ export default function UserMenu({ themeId, onSelectTheme }: Props) {
     ? user.name?.[0]?.toUpperCase() || user.pubkey?.slice(0, 2)?.toUpperCase()
     : undefined;
 
+  const accountLabel = (pubkey: string, name?: string) =>
+    name || `${pubkey.slice(0, 8)}…`;
+
   return (
     <>
       <Avatar
@@ -62,13 +75,52 @@ export default function UserMenu({ themeId, onSelectTheme }: Props) {
       </Avatar>
 
       <Menu anchorEl={anchorEl} open={Boolean(anchorEl)} onClose={handleClose}>
-        {/* Identity row */}
-        {user ? (
-          <MenuItem disabled sx={{ opacity: "1 !important" }}>
-            <Typography variant="body2" fontWeight={600}>
-              {displayName}
-            </Typography>
-          </MenuItem>
+        {/* Accounts */}
+        {accounts.length > 0 ? (
+          accounts.map((acct) => {
+            const isActive = acct.pubkey === activeAccount?.pubkey;
+            return (
+              <MenuItem
+                key={acct.pubkey}
+                selected={isActive}
+                onClick={() => {
+                  if (!isActive) switchAccount(acct.pubkey);
+                  handleClose();
+                }}
+                sx={{ pr: 1 }}
+              >
+                <ListItemIcon>
+                  <Avatar
+                    src={acct.avatar || undefined}
+                    sx={{ width: 26, height: 26, fontSize: 12 }}
+                  >
+                    {(acct.name?.[0] || acct.pubkey.slice(0, 2)).toUpperCase()}
+                  </Avatar>
+                </ListItemIcon>
+                <ListItemText
+                  primary={accountLabel(acct.pubkey, acct.name)}
+                  secondary={METHOD_LABEL[acct.method]}
+                  secondaryTypographyProps={{ variant: "caption" }}
+                />
+                {isActive && (
+                  <CheckIcon
+                    fontSize="small"
+                    sx={{ ml: 1, mr: 0.5, opacity: 0.7 }}
+                  />
+                )}
+                <IconButton
+                  size="small"
+                  aria-label="Log out account"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    logout(acct.pubkey);
+                  }}
+                >
+                  <LogoutIcon fontSize="small" />
+                </IconButton>
+              </MenuItem>
+            );
+          })
         ) : (
           <MenuItem disabled sx={{ opacity: "1 !important" }}>
             <Typography variant="body2" color="text.secondary">
@@ -76,6 +128,23 @@ export default function UserMenu({ themeId, onSelectTheme }: Props) {
             </Typography>
           </MenuItem>
         )}
+
+        {/* Add / Login */}
+        <MenuItem
+          onClick={() => {
+            addAccount();
+            handleClose();
+          }}
+        >
+          <ListItemIcon>
+            {accounts.length > 0 ? (
+              <PersonAddAltOutlinedIcon fontSize="small" />
+            ) : (
+              <LoginIcon fontSize="small" />
+            )}
+          </ListItemIcon>
+          <ListItemText primary={accounts.length > 0 ? "Add account" : "Login"} />
+        </MenuItem>
 
         <Divider />
 
@@ -131,51 +200,33 @@ export default function UserMenu({ themeId, onSelectTheme }: Props) {
                     <CheckIcon fontSize="small" sx={{ ml: 1, opacity: 0.7 }} />
                   )}
                 </MenuItem>
-              )
+              ),
             )}
           </Box>
         </Collapse>
 
         {/* Blossom servers */}
-        <MenuItem onClick={() => { setBlossomOpen(true); handleClose(); }}>
+        <MenuItem
+          onClick={() => {
+            setBlossomOpen(true);
+            handleClose();
+          }}
+        >
           <ListItemIcon>
             <CloudUploadIcon fontSize="small" />
           </ListItemIcon>
-          <ListItemText primary="Blossom Servers" secondary="File upload servers" secondaryTypographyProps={{ variant: "caption" }} />
+          <ListItemText
+            primary="Blossom Servers"
+            secondary="File upload servers"
+            secondaryTypographyProps={{ variant: "caption" }}
+          />
         </MenuItem>
-
-        <Divider />
-
-        {/* Login / Logout */}
-        {user ? (
-          <MenuItem
-            onClick={() => {
-              logout();
-              handleClose();
-            }}
-          >
-            <ListItemIcon>
-              <LogoutIcon fontSize="small" />
-            </ListItemIcon>
-            <ListItemText primary="Logout" />
-          </MenuItem>
-        ) : (
-          <MenuItem
-            onClick={() => {
-              setLoginOpen(true);
-              handleClose();
-            }}
-          >
-            <ListItemIcon>
-              <LoginIcon fontSize="small" />
-            </ListItemIcon>
-            <ListItemText primary="Login" />
-          </MenuItem>
-        )}
       </Menu>
 
-      <LoginModal open={loginOpen} onClose={() => setLoginOpen(false)} />
-      <BlossomServersModal open={blossomOpen} onClose={() => setBlossomOpen(false)} />
+      <BlossomServersModal
+        open={blossomOpen}
+        onClose={() => setBlossomOpen(false)}
+      />
     </>
   );
 }

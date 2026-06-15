@@ -1,82 +1,58 @@
-import { generateSecretKey } from "nostr-tools";
-import { bytesToHex, hexToBytes } from "@noble/hashes/utils";
+// App-local storage helpers for the hybrid signer.
+//
+// `@formstr/signer` owns persistence for its own accounts
+// (extension / bunker / android) under its own storage adapter. The helpers
+// here cover only the bits the package does NOT manage:
+//   - the app-local guest and nsec identities, and
+//   - the `active` marker that records which provider owns the current
+//     session, so cold-start restore knows whether to unlock a package
+//     account or rehydrate an app-local key.
 
-const LOCAL_APP_SECRET_KEY = "formstr:client-secret";
 const LOCAL_NSEC_FLAG = "formstr:nsec-stored";
-const LOCAL_BUNKER_URI = "formstr:bunkerUri";
-const LOCAL_STORAGE_KEYS = "formstr:keys";
-const LOCAL_STORAGE_GUEST_KEY = "formstr:guest-secret";
+const LOCAL_NSEC_PUBKEY = "formstr:nsec-pubkey";
+// Kept under the original key name so existing guest users aren't stranded.
+const LOCAL_GUEST_SECRET = "formstr:guest-secret";
+const LOCAL_ACTIVE = "formstr:active";
 
-type BunkerUri = { bunkerUri: string };
+/** Which provider owns the active session. Authoritative for restore routing. */
+export type ActiveMarker = {
+  method: "package" | "guest" | "nsec";
+  pubkey: string;
+};
 
-type Keys = { pubkey: string };
-
-export const getAppSecretKeyFromLocalStorage = () => {
-  let hexSecretKey = localStorage.getItem(LOCAL_APP_SECRET_KEY);
-  if (!hexSecretKey) {
-    const newSecret = generateSecretKey();
-    hexSecretKey = bytesToHex(newSecret);
-    localStorage.setItem(LOCAL_APP_SECRET_KEY, hexSecretKey);
-    return newSecret;
+export const readActiveMarker = (): ActiveMarker | null => {
+  const raw = localStorage.getItem(LOCAL_ACTIVE);
+  if (!raw) return null;
+  try {
+    return JSON.parse(raw) as ActiveMarker;
+  } catch {
+    return null;
   }
-  return hexToBytes(hexSecretKey);
 };
 
-export const getBunkerUriInLocalStorage = () => {
-  return JSON.parse(
-    localStorage.getItem(LOCAL_BUNKER_URI) || "{}"
-  ) as BunkerUri;
+export const writeActiveMarker = (marker: ActiveMarker) => {
+  localStorage.setItem(LOCAL_ACTIVE, JSON.stringify(marker));
 };
 
-export const getKeysFromLocalStorage = () => {
-  return JSON.parse(localStorage.getItem(LOCAL_STORAGE_KEYS) || "{}") as Keys;
+export const clearActiveMarker = () => {
+  localStorage.removeItem(LOCAL_ACTIVE);
 };
 
-export const setBunkerUriInLocalStorage = (bunkerUri: string) => {
-  localStorage.setItem(LOCAL_BUNKER_URI, JSON.stringify({ bunkerUri }));
+// ── Guest (app-local raw key, persisted in localStorage) ──
+
+export const setGuestSecret = (secretHex: string) => {
+  localStorage.setItem(LOCAL_GUEST_SECRET, secretHex);
 };
 
-export const setKeysInLocalStorage = (pubkey: string) => {
-  localStorage.setItem(LOCAL_STORAGE_KEYS, JSON.stringify({ pubkey }));
+export const getGuestSecret = (): string | null => {
+  return localStorage.getItem(LOCAL_GUEST_SECRET);
 };
 
-export const removeKeysFromLocalStorage = () => {
-  localStorage.removeItem(LOCAL_STORAGE_KEYS);
+export const removeGuestSecret = () => {
+  localStorage.removeItem(LOCAL_GUEST_SECRET);
 };
 
-export const removeBunkerUriFromLocalStorage = () => {
-  localStorage.removeItem(LOCAL_BUNKER_URI);
-};
-
-export const removeAppSecretFromLocalStorage = () => {
-  localStorage.removeItem(LOCAL_APP_SECRET_KEY);
-};
-
-export const setGuestSecretInSession = (secret: string) => {
-  localStorage.setItem(LOCAL_STORAGE_GUEST_KEY, secret);
-};
-
-export const getGuestSecretFromSession = (): string | null => {
-  return localStorage.getItem(LOCAL_STORAGE_GUEST_KEY);
-};
-
-export const removeGuestSecretFromSession = () => {
-  localStorage.removeItem(LOCAL_STORAGE_GUEST_KEY);
-};
-
-const LOCAL_NIP55_PACKAGE = "formstr:nip55-package";
-
-export const setNip55Package = (packageName: string) => {
-  localStorage.setItem(LOCAL_NIP55_PACKAGE, packageName);
-};
-
-export const getNip55Package = (): string | null => {
-  return localStorage.getItem(LOCAL_NIP55_PACKAGE);
-};
-
-export const removeNip55Package = () => {
-  localStorage.removeItem(LOCAL_NIP55_PACKAGE);
-};
+// ── nsec (app-local raw key, secret in device secure-storage; flag + pubkey here) ──
 
 export const setNsecFlag = () => {
   localStorage.setItem(LOCAL_NSEC_FLAG, "1");
@@ -88,4 +64,16 @@ export const getNsecFlag = (): boolean => {
 
 export const removeNsecFlag = () => {
   localStorage.removeItem(LOCAL_NSEC_FLAG);
+};
+
+export const setNsecPubkey = (pubkey: string) => {
+  localStorage.setItem(LOCAL_NSEC_PUBKEY, pubkey);
+};
+
+export const getNsecPubkey = (): string | null => {
+  return localStorage.getItem(LOCAL_NSEC_PUBKEY);
+};
+
+export const removeNsecPubkey = () => {
+  localStorage.removeItem(LOCAL_NSEC_PUBKEY);
 };
