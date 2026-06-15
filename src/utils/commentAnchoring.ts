@@ -38,10 +38,10 @@ export function locateComment(
 
   if (occurrences.length === 0) return null;
 
-  const bestOffset = findBestOccurrence(fullText, occurrences, quote.length, context);
+  const best = findBestOccurrence(fullText, occurrences, context);
 
-  const from = textOffsetToPos(doc, bestOffset);
-  const to = textOffsetToPos(doc, bestOffset + quote.length);
+  const from = textOffsetToPos(doc, best.start);
+  const to = textOffsetToPos(doc, best.end);
 
   return from >= 0 && to >= 0 ? { from, to } : null;
 }

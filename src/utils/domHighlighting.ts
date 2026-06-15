@@ -100,8 +100,8 @@ export function applyDomHighlights(
     const occurrences = findAllOccurrences(fullText, comment.quote);
     if (occurrences.length === 0) continue;
 
-    const bestOffset = findBestOccurrence(fullText, occurrences, comment.quote.length, comment.context);
-    ranges.push({ from: bestOffset, to: bestOffset + comment.quote.length, commentId: comment.id });
+    const best = findBestOccurrence(fullText, occurrences, comment.context);
+    ranges.push({ from: best.start, to: best.end, commentId: comment.id });
   }
 
   // Process right-to-left: splitting a node only shifts boundaries at or

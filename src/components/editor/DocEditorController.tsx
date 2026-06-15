@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Box,
   Button,
@@ -532,6 +532,19 @@ export function DocumentEditorController({
       setCharCount(editor.storage.characterCount.characters());
     }
   }, [mode, editor]);
+
+  /* ── Plain-text view of the doc for the comment layer ──── */
+  // Comments anchor to plain rendered text, but `md` is the markdown source
+  // (with `**`/`_`/`[](…)` markers and `\n\n` block breaks). Matching a
+  // plain-text quote against markdown wrongly flags comments on bold/italic/
+  // link/multi-paragraph text as outdated and hides their highlight. Use the
+  // editor's plain text instead. Recomputed whenever `md` changes so it stays
+  // current in edit and preview.
+  const docPlainText = useMemo(
+    () => editor?.getText() ?? "",
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [editor, md],
+  );
 
   /* ── Keyboard shortcuts ─────────────────────────────────── */
   // Use a ref so the keydown listener always calls the latest handleSave
@@ -1395,7 +1408,7 @@ export function DocumentEditorController({
 
   if (commentsEnabled) {
     return (
-      <CommentProvider viewKey={viewKey!} docAddress={selectedDocumentId!} currentDocText={md}>
+      <CommentProvider viewKey={viewKey!} docAddress={selectedDocumentId!} currentDocText={docPlainText}>
         <CommentHighlightEffect editor={editor} mode={mode} />
         {editorJsx}
       </CommentProvider>
