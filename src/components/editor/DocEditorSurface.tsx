@@ -278,10 +278,8 @@ export function DocEditorSurface({
   /* ── Edit mode — TipTap WYSIWYG ───────────────────────── */
   const handleEditorClick = (e: React.MouseEvent) => {
     const handled = handleHighlightClick(e);
-    if (!handled) {
-      editor?.commands.focus();
-      if (isMobile && showComments) onCloseComments();
-    }
+    editor?.commands.focus();
+    if (!handled && isMobile && showComments) onCloseComments();
   };
 
   return (

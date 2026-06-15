@@ -4,6 +4,7 @@ import { findAllOccurrences, findBestOccurrence } from "./textMatching";
 function textOffsetToPos(doc: PMNode, offset: number): number {
   let accumulated = 0;
   let result = -1;
+  let lastTextEnd = 0;
 
   doc.descendants((node, pos) => {
     if (result !== -1) return false;
@@ -15,12 +16,16 @@ function textOffsetToPos(doc: PMNode, offset: number): number {
         return false;
       }
       accumulated += len;
+      lastTextEnd = pos + len;
     }
 
     return true;
   });
 
-  return result === -1 ? doc.content.size : result;
+  // offset === total text length: point just past the last text node, not
+  // doc.content.size, so trailing non-text nodes (e.g. file/form embeds)
+  // aren't included in the highlight range.
+  return result === -1 ? lastTextEnd : result;
 }
 
 export function locateComment(

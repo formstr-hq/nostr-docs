@@ -113,6 +113,35 @@ function insertSorted(
   return [...prev, next].sort((a, b) => a.createdAt - b.createdAt);
 }
 
+type ResolverMap = Map<string, Map<string, { resolved: boolean; createdAt: number }>>;
+
+function setResolution(
+  prev: ResolverMap,
+  commentId: string,
+  pubkey: string,
+  resolved: boolean,
+  createdAt: number,
+): ResolverMap {
+  const existing = prev.get(commentId)?.get(pubkey);
+  if (existing && createdAt <= existing.createdAt) return prev;
+
+  const next = new Map(prev);
+  const byPubkey = new Map(next.get(commentId));
+  byPubkey.set(pubkey, { resolved, createdAt });
+  next.set(commentId, byPubkey);
+  return next;
+}
+
+/** A comment is resolved iff the most recent resolution event for it (from any
+ * viewKey holder) marked it resolved — last writer wins across resolvers. */
+function isResolvedByLatest(byPubkey: Map<string, { resolved: boolean; createdAt: number }>): boolean {
+  let latest: { resolved: boolean; createdAt: number } | null = null;
+  for (const entry of byPubkey.values()) {
+    if (!latest || entry.createdAt > latest.createdAt) latest = entry;
+  }
+  return latest?.resolved ?? false;
+}
+
 function applyCommentHighlights(
   editor: Editor,
   comments: DecryptedComment[],
@@ -151,7 +180,8 @@ export const CommentProvider: React.FC<{
 }) => {
   const { relays } = useRelays();
   const [comments, setComments] = useState<DecryptedComment[]>([]);
-  const [resolverMap, setResolverMap] = useState<Map<string, { resolved: boolean; createdAt: number }>>(new Map());
+  // commentId -> pubkey -> latest resolution from that pubkey (deduped for out-of-order relay delivery)
+  const [resolverMap, setResolverMap] = useState<Map<string, Map<string, { resolved: boolean; createdAt: number }>>>(new Map());
   const subRef = useRef<SubCloser | null>(null);
   const resolutionsSubRef = useRef<SubCloser | null>(null);
 
@@ -172,12 +202,7 @@ export const CommentProvider: React.FC<{
       const result = decryptResolutionEvent(event, viewKey);
       if (!result) return;
 
-      const tsKey = `${event.pubkey}:${result.commentId}`;
-      setResolverMap((prev) => {
-        const existing = prev.get(tsKey);
-        if (existing && event.created_at <= existing.createdAt) return prev;
-        return new Map(prev).set(tsKey, { resolved: result.resolved, createdAt: event.created_at });
-      });
+      setResolverMap((prev) => setResolution(prev, result.commentId, event.pubkey, result.resolved, event.created_at));
     });
 
     return () => {
@@ -190,8 +215,8 @@ export const CommentProvider: React.FC<{
 
   const resolvedIds = useMemo(() => {
     const ids = new Set<string>();
-    for (const [tsKey, { resolved }] of resolverMap) {
-      if (resolved) ids.add(tsKey.split(":")[1]);
+    for (const [commentId, byPubkey] of resolverMap) {
+      if (isResolvedByLatest(byPubkey)) ids.add(commentId);
     }
     return ids;
   }, [resolverMap]);
@@ -222,17 +247,14 @@ export const CommentProvider: React.FC<{
     setComments((prev) => insertSorted(prev, comment));
   };
 
-  const resolveComment = async (commentId: string): Promise<void> => {
-    const event = await publishResolution(commentId, viewKey, docAddress, relays, true);
-    const tsKey = `${event.pubkey}:${commentId}`;
-    setResolverMap((m) => new Map(m).set(tsKey, { resolved: true, createdAt: event.created_at }));
+  const setCommentResolution = async (commentId: string, resolved: boolean): Promise<void> => {
+    const event = await publishResolution(commentId, viewKey, docAddress, relays, resolved);
+    setResolverMap((m) => setResolution(m, commentId, event.pubkey, resolved, event.created_at));
   };
 
-  const unresolveComment = async (commentId: string): Promise<void> => {
-    const event = await publishResolution(commentId, viewKey, docAddress, relays, false);
-    const tsKey = `${event.pubkey}:${commentId}`;
-    setResolverMap((m) => new Map(m).set(tsKey, { resolved: false, createdAt: event.created_at }));
-  };
+  const resolveComment = (commentId: string) => setCommentResolution(commentId, true);
+
+  const unresolveComment = (commentId: string) => setCommentResolution(commentId, false);
 
   const isOutdated = useCallback(
     (comment: DecryptedComment) => {
