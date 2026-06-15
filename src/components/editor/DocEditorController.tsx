@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import {
   Box,
+  Button,
   Paper,
   Snackbar,
   Alert,
@@ -11,6 +12,7 @@ import {
   CircularProgress,
   IconButton,
   Tooltip,
+  useTheme,
 } from "@mui/material";
 import InsertDriveFileIcon from "@mui/icons-material/InsertDriveFile";
 import LabelOutlinedIcon from "@mui/icons-material/LabelOutlined";
@@ -28,8 +30,23 @@ import { Markdown } from "tiptap-markdown";
 import Link from "@tiptap/extension-link";
 import Placeholder from "@tiptap/extension-placeholder";
 import CharacterCount from "@tiptap/extension-character-count";
+import { Table } from "@tiptap/extension-table";
+import { TableRow } from "@tiptap/extension-table-row";
+import { TableHeader } from "@tiptap/extension-table-header";
+import { TableCell } from "@tiptap/extension-table-cell";
 import { EncryptedFileNode } from "./extensions/EncryptedFileNode";
 import { CommentHighlight } from "./extensions/CommentHighlight";
+import { FormNode } from "./extensions/FormNode";
+import { SlashCommand } from "./extensions/SlashCommand";
+import { Indent } from "./extensions/Indent";
+import { TableHandles } from "./extensions/TableHandles";
+import { SlashCommandMenu } from "./SlashCommandMenu";
+import type { SlashCommandItem } from "./extensions/SlashCommand";
+import type { SlashCommandMenuHandle } from "./SlashCommandMenu";
+import CreateFormDialog from "../CreateFormDialog";
+import MyFormsPickerDialog from "../MyFormsPickerDialog";
+import type { FormsSigner } from "@formstr/sdk";
+import { createPortal } from "react-dom";
 
 import { useDocumentContext } from "../../contexts/DocumentContext";
 import { useUser } from "../../contexts/UserContext";
@@ -52,7 +69,7 @@ import { DocEditorSurface } from "./DocEditorSurface";
 import { deleteEvent } from "../../nostr/deleteRequest";
 import ConfirmModal from "../common/ConfirmModal";
 import ShareModal from "../ShareModal";
-import { handleGeneratePrivateLink, handleSharePublic } from "./utils";
+import { buildShareUrl, buildSharedDocPath, handleGeneratePrivateLink, handleSharePublic } from "./utils";
 import { encryptContent } from "../../utils/encryption";
 import { encryptFile } from "../../utils/fileEncryption";
 import { uploadToBlossom } from "../../blossom/client";
@@ -65,7 +82,7 @@ import {
   exportAsHtml,
   exportAsPlainText,
   exportAsPdf,
-  exportAsDoc,
+  exportAsDocx,
 } from "../../utils/exportDocument";
 
 // Delay after the last edit before auto-save fires (ms)
@@ -170,19 +187,35 @@ export function DocumentEditorController({
     localOnlyAddresses,
     markLocalOnly,
   } = useDocumentContext();
-  const { addSharedDoc } = useSharedPages();
+  const { addSharedDoc, getKeys } = useSharedPages();
+  const { setDocSharedAs, docSharedAs } = useDocMetadata();
 
   const navigate = useNavigate();
   const { relays } = useRelays();
 
   const isDraft = selectedDocumentId === null;
   const isMobile = useMediaQuery("(max-width:900px)");
+  const theme = useTheme();
+
+  useEffect(() => {
+    const root = document.documentElement;
+    root.style.setProperty("--tbl-menu-bg", theme.palette.background.paper);
+    root.style.setProperty("--tbl-menu-text", theme.palette.text.primary);
+    root.style.setProperty("--tbl-menu-text-secondary", theme.palette.text.secondary);
+    root.style.setProperty("--tbl-menu-border", theme.palette.divider);
+    root.style.setProperty("--tbl-menu-hover", theme.palette.action.hover);
+    root.style.setProperty("--tbl-menu-danger", theme.palette.error.main);
+  }, [theme]);
+
   // viewKey present but no editKey = shared read-only link
   const { user } = useUser();
   const history = selectedDocumentId ? documents.get(selectedDocumentId) : null;
   const isOwner = !!user?.pubkey && !!history?.versions[0]?.event.pubkey && user.pubkey === history.versions[0].event.pubkey;
-  const isViewOnly = !!viewKey && !editKey && !isOwner;
+  const sharedAsAddress = selectedDocumentId ? (docSharedAs.get(selectedDocumentId) ?? null) : null;
+  const isViewOnly = (!!viewKey && !editKey && !isOwner) || !!sharedAsAddress;
   const commentsEnabled = !!viewKey && !!selectedDocumentId;
+
+  const sharedAsUrl = sharedAsAddress ? buildSharedDocPath(sharedAsAddress, getKeys) : null;
 
   const versions =
     history?.versions.map((v) => ({
@@ -229,6 +262,16 @@ export function DocumentEditorController({
   const pendingDeleteLocalOnlyRef = useRef<boolean>(false);
   const [showComments, setShowComments] = useState(false);
   const [activeCommentId, setActiveCommentId] = useState<string | null>(null);
+  const [formDialogOpen, setFormDialogOpen] = useState(false);
+  const [formsPickerOpen, setFormsPickerOpen] = useState(false);
+
+  // Slash command menu state
+  const slashMenuRef = useRef<SlashCommandMenuHandle | null>(null);
+  const [slashMenuProps, setSlashMenuProps] = useState<{
+    items: SlashCommandItem[];
+    command: (item: SlashCommandItem) => void;
+    rect: DOMRect;
+  } | null>(null);
 
   const { servers: blossomServers } = useBlossomServers();
 
@@ -254,7 +297,7 @@ export function DocumentEditorController({
   isViewOnlyRef.current = isViewOnly;
 
   // Always-current upload function — avoids stale closures in editorProps handlers
-  const uploadFileRef = useRef<(file: File) => Promise<void>>(async () => {});
+  const uploadFileRef = useRef<(file: File) => Promise<void>>(async () => { });
 
   /* ── TipTap editor instance ────────────────────────────── */
   const editor = useEditor({
@@ -267,8 +310,172 @@ export function DocumentEditorController({
         placeholder: "Start writing your page here…",
       }),
       CharacterCount,
+      Table.configure({ resizable: false }),
+      TableRow,
+      TableHeader,
+      TableCell,
+      Indent,
+      TableHandles,
       EncryptedFileNode,
       CommentHighlight,
+      FormNode,
+      SlashCommand.configure({
+        suggestion: {
+          items: ({ query }) => {
+            const all: SlashCommandItem[] = [
+              {
+                id: "h1",
+                label: "Heading 1",
+                description: "Large section heading",
+                icon: "H₁",
+                keywords: ["h1", "heading", "title", "large"],
+                command: ({ editor, range }) =>
+                  editor.deleteRange(range).toggleHeading({ level: 1 }).run(),
+              },
+              {
+                id: "h2",
+                label: "Heading 2",
+                description: "Medium section heading",
+                icon: "H₂",
+                keywords: ["h2", "heading", "subtitle", "medium"],
+                command: ({ editor, range }) =>
+                  editor.deleteRange(range).toggleHeading({ level: 2 }).run(),
+              },
+              {
+                id: "h3",
+                label: "Heading 3",
+                description: "Small section heading",
+                icon: "H₃",
+                keywords: ["h3", "heading", "subheading", "small"],
+                command: ({ editor, range }) =>
+                  editor.deleteRange(range).toggleHeading({ level: 3 }).run(),
+              },
+              {
+                id: "bullet",
+                label: "Bullet list",
+                description: "Simple unordered list",
+                icon: "•",
+                keywords: ["bullet", "list", "unordered", "ul"],
+                command: ({ editor, range }) =>
+                  editor.deleteRange(range).toggleBulletList().run(),
+              },
+              {
+                id: "numbered",
+                label: "Numbered list",
+                description: "Ordered list with numbers",
+                icon: "1.",
+                keywords: ["numbered", "ordered", "list", "ol"],
+                command: ({ editor, range }) =>
+                  editor.deleteRange(range).toggleOrderedList().run(),
+              },
+              {
+                id: "quote",
+                label: "Quote",
+                description: "Capture a quotation",
+                icon: "❝",
+                keywords: ["quote", "blockquote", "callout"],
+                command: ({ editor, range }) =>
+                  editor.deleteRange(range).toggleBlockquote().run(),
+              },
+              {
+                id: "code",
+                label: "Code block",
+                description: "Monospace code snippet",
+                icon: "</>",
+                keywords: ["code", "codeblock", "pre", "snippet", "mono"],
+                command: ({ editor, range }) =>
+                  editor.deleteRange(range).toggleCodeBlock().run(),
+              },
+              {
+                id: "divider",
+                label: "Divider",
+                description: "Horizontal separator line",
+                icon: "—",
+                keywords: ["divider", "hr", "separator", "rule"],
+                command: ({ editor, range }) =>
+                  editor.deleteRange(range).setHorizontalRule().run(),
+              },
+              {
+                id: "table",
+                label: "Table",
+                description: "Insert a 3×3 table",
+                icon: "⊞",
+                keywords: ["table", "grid", "rows", "columns", "spreadsheet"],
+                command: ({ editor, range }) =>
+                  editor
+                    .deleteRange(range)
+                    .insertTable({ rows: 3, cols: 3, withHeaderRow: true })
+                    .run(),
+              },
+              {
+                id: "form",
+                label: "Form",
+                description: "Create and embed a Nostr form",
+                icon: "📋",
+                keywords: ["form", "survey", "nostr", "embed", "questionnaire", "create"],
+                command: ({ editor, range }) => {
+                  editor.deleteRange(range).run();
+                  setFormDialogOpen(true);
+                },
+              },
+              {
+                id: "my-forms",
+                label: "My forms",
+                description: "Embed one of your existing forms",
+                icon: "📂",
+                keywords: ["my forms", "existing", "reuse", "embed", "library"],
+                command: ({ editor, range }) => {
+                  editor.deleteRange(range).run();
+                  setFormsPickerOpen(true);
+                },
+              },
+            ];
+            if (!query) return all;
+            const q = query.toLowerCase();
+            return all.filter(
+              (item) =>
+                item.label.toLowerCase().includes(q) ||
+                item.keywords.some((k) => k.includes(q)),
+            );
+          },
+          render: () => {
+            let component: SlashCommandMenuHandle | null = null;
+
+            return {
+              onStart(props) {
+                const rect = props.clientRect?.();
+                if (!rect) return;
+                setSlashMenuProps({
+                  items: props.items as SlashCommandItem[],
+                  command: (item) => props.command(item),
+                  rect,
+                });
+              },
+              onUpdate(props) {
+                const rect = props.clientRect?.();
+                if (!rect) return;
+                setSlashMenuProps({
+                  items: props.items as SlashCommandItem[],
+                  command: (item) => props.command(item),
+                  rect,
+                });
+                component = slashMenuRef.current;
+              },
+              onKeyDown(props) {
+                if (props.event.key === "Escape") {
+                  setSlashMenuProps(null);
+                  return true;
+                }
+                component = slashMenuRef.current;
+                return component?.onKeyDown(props.event) ?? false;
+              },
+              onExit() {
+                setSlashMenuProps(null);
+              },
+            };
+          },
+        },
+      }),
     ],
     editorProps: {
       attributes: { class: "tiptap" },
@@ -330,7 +537,7 @@ export function DocumentEditorController({
   // Use a ref so the keydown listener always calls the latest handleSave
   // without needing to re-register on every render.
   const handleSaveRef = useRef<(silent?: boolean) => Promise<void>>(
-    async () => {},
+    async () => { },
   );
 
   useEffect(() => {
@@ -671,7 +878,7 @@ export function DocumentEditorController({
         eventIds: history?.versions.map((v) => v.event.id) ?? [],
       });
       removeDocument(address);
-      removeLocalEvent(address).catch(() => {});
+      removeLocalEvent(address).catch(() => { });
       navigate("/");
       return;
     }
@@ -699,7 +906,7 @@ export function DocumentEditorController({
   const handleExportHtml = () => {
     if (!editor) return;
     const html = editor.getHTML();
-    exportAsHtml(html, getDocTitle());
+    void exportAsHtml(html, getDocTitle());
   };
 
   const handleExportPlainText = () => {
@@ -708,13 +915,40 @@ export function DocumentEditorController({
 
   const handleExportPdf = () => {
     if (!editor) return;
-    exportAsPdf(editor.getHTML(), getDocTitle());
+    void exportAsPdf(editor.getHTML(), getDocTitle());
   };
 
   const handleExportDoc = () => {
     if (!editor) return;
-    exportAsDoc(editor.getHTML(), getDocTitle());
+    void exportAsDocx(editor.getHTML(), getDocTitle());
   };
+
+  const handleFormCreated = (naddr: string, nkeys?: string) => {
+    if (!editor) return;
+    editor
+      .chain()
+      .focus()
+      .insertContent({ type: "nostrForm", attrs: { naddr, nkeys: nkeys ?? null } })
+      .run();
+  };
+
+  /* Build a FormsSigner adapter from the app's signerManager */
+  const formsSigner: FormsSigner | null = user
+    ? {
+      getPublicKey: () => signerManager.getSigner().then((s) => s.getPublicKey()),
+      signEvent: (ev) => signerManager.getSigner().then((s) => s.signEvent(ev)),
+      nip44Encrypt: (pub, pt) =>
+        signerManager.getSigner().then((s) => {
+          if (!s.nip44Encrypt) throw new Error("Signer does not support NIP-44");
+          return s.nip44Encrypt(pub, pt);
+        }),
+      nip44Decrypt: (pub, ct) =>
+        signerManager.getSigner().then((s) => {
+          if (!s.nip44Decrypt) throw new Error("Signer does not support NIP-44");
+          return s.nip44Decrypt(pub, ct);
+        }),
+    }
+    : null;
 
   /* ── Render ────────────────────────────────────────────── */
 
@@ -735,6 +969,38 @@ export function DocumentEditorController({
         }),
       }}
     >
+      {sharedAsUrl && (
+        <Box
+          sx={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            px: 2,
+            py: 0.75,
+            borderRadius: 2,
+            bgcolor: (t) => t.palette.mode === "dark"
+              ? "rgba(255,255,255,0.05)"
+              : "rgba(0,0,0,0.04)",
+            border: "1px solid",
+            borderColor: "divider",
+            flexShrink: 0,
+          }}
+        >
+          <Typography variant="caption" color="text.secondary">
+            This is a backup — the live shared copy is the editable version.
+          </Typography>
+          <Button
+            size="small"
+            variant="outlined"
+            color="secondary"
+            onClick={() => navigate(sharedAsUrl)}
+            sx={{ ml: 2, whiteSpace: "nowrap", fontSize: "0.72rem" }}
+          >
+            Go to live version
+          </Button>
+        </Box>
+      )}
+
       {!isViewOnly && (
         <EditorToolbar
           saving={saving}
@@ -768,6 +1034,9 @@ export function DocumentEditorController({
           onExportDoc={handleExportDoc}
           showComments={commentsEnabled ? showComments : undefined}
           onToggleComments={commentsEnabled ? () => setShowComments((s) => !s) : undefined}
+          documentAddress={selectedDocumentId ?? undefined}
+          heuristicTitle={getDocTitle()}
+          hasEditKey={!!editKey}
         />
       )}
       {isViewOnly && commentsEnabled && (
@@ -921,7 +1190,7 @@ export function DocumentEditorController({
             }
           }
           removeDocument(address);
-          await trashLocalEvent(address).catch(() => {});
+          await trashLocalEvent(address).catch(() => { });
           navigate("/");
         }}
         onCancel={() => {
@@ -1025,11 +1294,62 @@ export function DocumentEditorController({
         </Paper>
       )}
 
+      {/* ── Slash command menu portal ─────────────────────── */}
+      {slashMenuProps &&
+        createPortal(
+          <div
+            style={{
+              position: "fixed",
+              top: slashMenuProps.rect.bottom + 4,
+              left: slashMenuProps.rect.left,
+              zIndex: 9999,
+            }}
+          >
+            <SlashCommandMenu
+              ref={(handle) => {
+                slashMenuRef.current = handle;
+              }}
+              items={slashMenuProps.items}
+              command={(item) => {
+                slashMenuProps.command(item);
+                setSlashMenuProps(null);
+              }}
+            />
+          </div>,
+          document.body,
+        )}
+
+      {/* ── Create form dialog ────────────────────────────── */}
+      <CreateFormDialog
+        open={formDialogOpen}
+        onClose={() => setFormDialogOpen(false)}
+        onCreated={handleFormCreated}
+        signer={formsSigner}
+      />
+
+      {/* ── My forms picker ───────────────────────────────── */}
+      <MyFormsPickerDialog
+        open={formsPickerOpen}
+        onClose={() => setFormsPickerOpen(false)}
+        onPick={handleFormCreated}
+      />
+
       <ShareModal
         open={shareOpen}
         onClose={() => setShareOpen(false)}
         onPublicPost={() => handleSharePublic()}
+        hasEditShare={!!sharedAsAddress}
         onPrivateLink={async (canEdit) => {
+          // Edit-access re-share: reuse the existing keys and skip publishing.
+          // Republishing would push our stale local copy over any edits the
+          // collaborator has made through the live shared link.
+          if (canEdit && selectedDocumentId && sharedAsAddress) {
+            const existing = getKeys(sharedAsAddress);
+            if (existing[0] && existing[1]) {
+              return buildShareUrl(sharedAsAddress, existing[0], existing[1]);
+            }
+          }
+
           const result = await handleGeneratePrivateLink(
             canEdit,
             selectedDocumentId,
@@ -1045,6 +1365,12 @@ export function DocumentEditorController({
             ...(result.editKey ? [result.editKey] : []),
           ];
           await addSharedDoc(sharedDocTag);
+
+          // Mark the original doc as a backup pointing to the shared copy.
+          // Only makes sense when the logged-in owner is sharing their own doc.
+          if (result.editKey && selectedDocumentId && isOwner) {
+            await setDocSharedAs(selectedDocumentId, result.address);
+          }
 
           return result.url;
         }}

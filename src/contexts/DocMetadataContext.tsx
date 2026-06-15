@@ -8,14 +8,18 @@ import React, {
 import { useUser } from "./UserContext";
 import { useRelays } from "./RelayContext";
 import { signerManager } from "../signer";
-import { fetchAllDocMetadata, saveDocMetadata } from "../nostr/docMetadata";
+import { fetchAllDocMetadata, saveDocMetadata, type DocMetadata } from "../nostr/docMetadata";
 
 interface DocMetadataContextValue {
   docTags: Map<string, string[]>;
+  docTitles: Map<string, string>;
+  docSharedAs: Map<string, string>;
   allTags: string[];
   selectedTag: string | null;
   setSelectedTag: (tag: string | null) => void;
   setDocTags: (address: string, tags: string[]) => Promise<void>;
+  setDocTitle: (address: string, title: string) => Promise<void>;
+  setDocSharedAs: (address: string, sharedAs: string) => Promise<void>;
   loading: boolean;
 }
 
@@ -28,13 +32,20 @@ export const DocMetadataProvider: React.FC<{ children: React.ReactNode }> = ({
 }) => {
   const { user } = useUser();
   const { relays } = useRelays();
-  const [docTags, setDocTagsState] = useState<Map<string, string[]>>(new Map());
+  // Full metadata kept internally so per-field setters preserve viewKey/editKey/etc.
+  const [metadataMap, setMetadataMap] = useState<Map<string, DocMetadata>>(new Map());
+  const [docTagsState, setDocTagsState] = useState<Map<string, string[]>>(new Map());
+  const [docTitles, setDocTitlesState] = useState<Map<string, string>>(new Map());
+  const [docSharedAs, setDocSharedAsState] = useState<Map<string, string>>(new Map());
   const [selectedTag, setSelectedTag] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
     if (!user) {
+      setMetadataMap(new Map());
       setDocTagsState(new Map());
+      setDocTitlesState(new Map());
+      setDocSharedAsState(new Map());
       return;
     }
 
@@ -45,11 +56,18 @@ export const DocMetadataProvider: React.FC<{ children: React.ReactNode }> = ({
         if (!signer) return;
         const pubkey = await signer.getPublicKey();
         const metadata = await fetchAllDocMetadata(relays, pubkey);
+        setMetadataMap(metadata);
         const tagsMap = new Map<string, string[]>();
+        const titlesMap = new Map<string, string>();
+        const sharedAsMap = new Map<string, string>();
         for (const [address, meta] of metadata) {
           if (meta.tags.length > 0) tagsMap.set(address, meta.tags);
+          if (meta.title) titlesMap.set(address, meta.title);
+          if (meta.sharedAs) sharedAsMap.set(address, meta.sharedAs);
         }
         setDocTagsState(tagsMap);
+        setDocTitlesState(titlesMap);
+        setDocSharedAsState(sharedAsMap);
       } catch (err) {
         console.error("Failed to fetch doc metadata:", err);
       } finally {
@@ -60,14 +78,21 @@ export const DocMetadataProvider: React.FC<{ children: React.ReactNode }> = ({
 
   const allTags = useMemo(() => {
     const set = new Set<string>();
-    for (const tags of docTags.values()) {
+    for (const tags of docTagsState.values()) {
       for (const tag of tags) set.add(tag);
     }
     return Array.from(set).sort();
-  }, [docTags]);
+  }, [docTagsState]);
 
   const setDocTags = async (address: string, tags: string[]) => {
-    await saveDocMetadata(address, { tags }, relays);
+    const existing = metadataMap.get(address) ?? { tags: [] };
+    const newMeta: DocMetadata = { ...existing, tags };
+    await saveDocMetadata(address, newMeta, relays);
+    setMetadataMap((prev) => {
+      const next = new Map(prev);
+      next.set(address, newMeta);
+      return next;
+    });
     setDocTagsState((prev) => {
       const next = new Map(prev);
       if (tags.length === 0) next.delete(address);
@@ -76,9 +101,53 @@ export const DocMetadataProvider: React.FC<{ children: React.ReactNode }> = ({
     });
   };
 
+  const setDocTitle = async (address: string, title: string) => {
+    const existing = metadataMap.get(address) ?? { tags: [] };
+    const newMeta: DocMetadata = { ...existing, title: title || undefined };
+    await saveDocMetadata(address, newMeta, relays);
+    setMetadataMap((prev) => {
+      const next = new Map(prev);
+      next.set(address, newMeta);
+      return next;
+    });
+    setDocTitlesState((prev) => {
+      const next = new Map(prev);
+      if (!title) next.delete(address);
+      else next.set(address, title);
+      return next;
+    });
+  };
+
+  const setDocSharedAs = async (address: string, sharedAs: string) => {
+    const existing = metadataMap.get(address) ?? { tags: [] };
+    const newMeta: DocMetadata = { ...existing, sharedAs };
+    await saveDocMetadata(address, newMeta, relays);
+    setMetadataMap((prev) => {
+      const next = new Map(prev);
+      next.set(address, newMeta);
+      return next;
+    });
+    setDocSharedAsState((prev) => {
+      const next = new Map(prev);
+      next.set(address, sharedAs);
+      return next;
+    });
+  };
+
   return (
     <DocMetadataContext.Provider
-      value={{ docTags, allTags, selectedTag, setSelectedTag, setDocTags, loading }}
+      value={{
+        docTags: docTagsState,
+        docTitles,
+        docSharedAs,
+        allTags,
+        selectedTag,
+        setSelectedTag,
+        setDocTags,
+        setDocTitle,
+        setDocSharedAs,
+        loading,
+      }}
     >
       {children}
     </DocMetadataContext.Provider>

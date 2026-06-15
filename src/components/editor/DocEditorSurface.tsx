@@ -8,6 +8,7 @@ import type { Editor } from "@tiptap/react";
 import EditIcon from "@mui/icons-material/Edit";
 import { EncryptedFilePreview } from "./EncryptedFilePreview";
 import type { EncryptedFileAttrs } from "./EncryptedFilePreview";
+import { FormFiller } from "./FormFiller";
 import { CommentComposer } from "../comments/CommentComposer";
 import { CommentSidebar } from "../comments/CommentSidebar";
 import { useComments } from "../../contexts/CommentContext";
@@ -57,14 +58,42 @@ const markdownSxBase = {
     margin: "0.5em 0",
     opacity: 0.85,
   },
+  "& .md-table-scroll": {
+    overflowX: "auto",
+    WebkitOverflowScrolling: "touch",
+    display: "block",
+    margin: "1em 0",
+  },
+  "& table": {
+    borderCollapse: "collapse",
+    minWidth: "360px",
+    width: "100%",
+  },
+  "& td, & th": {
+    border: "1px solid rgba(128,128,128,0.3)",
+    padding: "6px 12px",
+    textAlign: "left",
+    verticalAlign: "top",
+    wordBreak: "break-word",
+  },
+  "& th": {
+    background: "rgba(128,128,128,0.1)",
+    fontWeight: 700,
+  },
 };
 
-// Custom component map for ReactMarkdown — handles <encrypted-file> HTML elements
-// that tiptap-markdown serializes into the document markdown.
+// Custom component map for ReactMarkdown — handles custom HTML elements that
+// tiptap-markdown serializes into the document markdown.
 // Cast to any: react-markdown's Components type only covers known HTML tags,
 // but rehype-raw passes custom elements through as-is.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const markdownComponents: any = {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  table: ({ children, ...props }: any) => (
+    <div className="md-table-scroll">
+      <table {...props}>{children}</table>
+    </div>
+  ),
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   "encrypted-file": (props: any) => {
     const attrs: EncryptedFileAttrs = {
@@ -77,6 +106,15 @@ const markdownComponents: any = {
     };
     if (!attrs.src || !attrs.decryptionKey) return null;
     return <EncryptedFilePreview {...attrs} />;
+  },
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  "nostr-form": (props: any) => {
+    const naddr = props["data-naddr"] ?? "";
+    const nkeys = props["data-nkeys"] ?? undefined;
+
+    if (!naddr) return null;
+
+    return <FormFiller naddr={naddr} nkeys={nkeys} />;
   },
 };
 

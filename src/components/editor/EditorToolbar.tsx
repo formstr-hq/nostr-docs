@@ -14,6 +14,7 @@ import {
   Tooltip,
   Typography,
 } from "@mui/material";
+import VpnKeyIcon from "@mui/icons-material/VpnKey";
 import EditIcon from "@mui/icons-material/Edit";
 import VisibilityIcon from "@mui/icons-material/Visibility";
 import EditNoteIcon from "@mui/icons-material/EditNote";
@@ -36,6 +37,7 @@ import UndoIcon from "@mui/icons-material/Undo";
 import RedoIcon from "@mui/icons-material/Redo";
 import FormatIndentIncreaseIcon from "@mui/icons-material/FormatIndentIncrease";
 import FormatIndentDecreaseIcon from "@mui/icons-material/FormatIndentDecrease";
+import TableChartIcon from "@mui/icons-material/TableChart";
 import AttachFileIcon from "@mui/icons-material/AttachFile";
 import FileDownloadIcon from "@mui/icons-material/FileDownload";
 import DescriptionIcon from "@mui/icons-material/Description";
@@ -43,8 +45,11 @@ import HtmlIcon from "@mui/icons-material/Html";
 import TextSnippetIcon from "@mui/icons-material/TextSnippet";
 import PictureAsPdfIcon from "@mui/icons-material/PictureAsPdf";
 import ArticleOutlinedIcon from "@mui/icons-material/ArticleOutlined";
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
+import { InputBase } from "@mui/material";
 import { useUser } from "../../contexts/UserContext";
+import { useDocMetadata } from "../../contexts/DocMetadataContext";
+import { useEditorState } from "@tiptap/react";
 import type { Editor } from "@tiptap/react";
 
 type EditorMode = "edit" | "preview" | "split";
@@ -79,6 +84,9 @@ type Props = {
   onExportDoc?: () => void;
   showComments?: boolean;
   onToggleComments?: () => void;
+  documentAddress?: string;
+  heuristicTitle?: string;
+  hasEditKey?: boolean;
 };
 
 export function EditorToolbar({
@@ -106,10 +114,15 @@ export function EditorToolbar({
   onExportDoc,
   showComments,
   onToggleComments,
+  documentAddress,
+  heuristicTitle,
+  hasEditKey = false,
 }: Props) {
   const { user, loginModal } = useUser();
   const [menuAnchor, setMenuAnchor] = useState<null | HTMLElement>(null);
   const [historyAnchor, setHistoryAnchor] = useState<null | HTMLElement>(null);
+  const [tableMenuAnchor, setTableMenuAnchor] = useState<null | HTMLElement>(null);
+  const tableMenuOpen = Boolean(tableMenuAnchor);
 
   const exportButtonRef = useRef<HTMLLIElement>(null);
   const hideExportTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
@@ -132,6 +145,10 @@ export function EditorToolbar({
   const historyOpen = Boolean(historyAnchor);
 
   const showFormatting = (mode === "edit" || mode === "split") && !!editor;
+  const isInTable = useEditorState({
+    editor,
+    selector: ({ editor: e }) => e?.isActive("table") ?? false,
+  });
 
   const handleLink = () => {
     if (!editor) return;
@@ -162,38 +179,44 @@ export function EditorToolbar({
           gap: 1,
         }}
       >
-        {/* Left: mode toggle — hidden for view-only shared links */}
-        {!isViewOnly && (
-          <ToggleButtonGroup
-            value={mode}
-            exclusive
-            size="small"
-            onChange={(_, val) => val && onSetMode(val as EditorMode)}
-            sx={{ "& .MuiToggleButton-root": { px: 1.5 } }}
-          >
-            <ToggleButton value="edit" title="WYSIWYG editor">
-              <EditIcon fontSize="small" />
-            </ToggleButton>
-            <ToggleButton value="split" title="Markdown source">
-              <EditNoteIcon fontSize="small" />
-            </ToggleButton>
-            <ToggleButton value="preview" title="Rendered preview">
-              <VisibilityIcon fontSize="small" />
-            </ToggleButton>
-          </ToggleButtonGroup>
-        )}
-        {isViewOnly && <Box />}
+        <Box sx={{ display: "flex", alignItems: "center", gap: 2, flex: 1, minWidth: 0 }}>
+          {/* Left: mode toggle — hidden for view-only shared links */}
+          {!isViewOnly && (
+            <ToggleButtonGroup
+              value={mode}
+              exclusive
+              size="small"
+              onChange={(_, val) => val && onSetMode(val as EditorMode)}
+              sx={{ "& .MuiToggleButton-root": { px: 1.5 } }}
+            >
+              <ToggleButton value="edit" title="WYSIWYG editor">
+                <EditIcon fontSize="small" />
+              </ToggleButton>
+              <ToggleButton value="split" title="Markdown source">
+                <EditNoteIcon fontSize="small" />
+              </ToggleButton>
+              <ToggleButton value="preview" title="Rendered preview">
+                <VisibilityIcon fontSize="small" />
+              </ToggleButton>
+            </ToggleButtonGroup>
+          )}
+          
+          {/* Title right next to toggles */}
+          {documentAddress && heuristicTitle && (
+            <ToolbarTitle address={documentAddress} heuristicTitle={heuristicTitle} canEdit={!isViewOnly} />
+          )}
+        </Box>
 
         {/* Right: save + focus + overflow menu */}
         <Box sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
-          {!isViewOnly && (user ? (
-            <Tooltip title={isLocalOnly ? "Saving to device only" : ""}>
+          {!isViewOnly && (user || hasEditKey ? (
+            <Tooltip title={hasEditKey ? "Saving with shared key" : isLocalOnly ? "Saving to device only" : ""}>
               <Button
                 variant="contained"
                 color="secondary"
                 size="small"
                 onClick={onSave}
-                startIcon={isLocalOnly ? <SmartphoneIcon fontSize="small" /> : undefined}
+                startIcon={hasEditKey ? <VpnKeyIcon fontSize="small" /> : isLocalOnly ? <SmartphoneIcon fontSize="small" /> : undefined}
                 sx={{ fontWeight: 700, px: 2 }}
               >
                 {saving ? "Saving…" : "Save"}
@@ -277,7 +300,7 @@ export function EditorToolbar({
               onClick={(e) => {
                 e.stopPropagation();
                 // For mobile, a click can toggle it too if hover isn't available
-                setExportOpen(!exportOpen); 
+                setExportOpen(!exportOpen);
               }}
               sx={{ display: "flex", justifyContent: "space-between" }}
             >
@@ -371,7 +394,7 @@ export function EditorToolbar({
                 <ArticleOutlinedIcon fontSize="small" />
               </ListItemIcon>
               <ListItemText
-                primary="Word (.doc)"
+                primary="Word (.docx)"
                 secondary="Microsoft Word / Google Docs"
                 secondaryTypographyProps={{ sx: { fontSize: "0.7rem" } }}
               />
@@ -587,31 +610,33 @@ export function EditorToolbar({
                 <FormatListNumberedIcon fontSize="small" />
               </IconButton>
             </Tooltip>
-            <Tooltip title="Indent list item (Tab)">
-              <span>
-                <IconButton
-                  size="small"
-                  onClick={() =>
-                    editor.chain().focus().sinkListItem("listItem").run()
+            <Tooltip title="Indent (Tab)">
+              <IconButton
+                size="small"
+                onClick={() => {
+                  if (editor.isActive("listItem")) {
+                    editor.chain().focus().sinkListItem("listItem").run();
+                  } else {
+                    editor.chain().focus().indent().run();
                   }
-                  disabled={!editor.can().sinkListItem("listItem")}
-                >
-                  <FormatIndentIncreaseIcon fontSize="small" />
-                </IconButton>
-              </span>
+                }}
+              >
+                <FormatIndentIncreaseIcon fontSize="small" />
+              </IconButton>
             </Tooltip>
-            <Tooltip title="Unindent list item (Shift+Tab)">
-              <span>
-                <IconButton
-                  size="small"
-                  onClick={() =>
-                    editor.chain().focus().liftListItem("listItem").run()
+            <Tooltip title="Outdent (Shift+Tab)">
+              <IconButton
+                size="small"
+                onClick={() => {
+                  if (editor.isActive("listItem")) {
+                    editor.chain().focus().liftListItem("listItem").run();
+                  } else {
+                    editor.chain().focus().outdent().run();
                   }
-                  disabled={!editor.can().liftListItem("listItem")}
-                >
-                  <FormatIndentDecreaseIcon fontSize="small" />
-                </IconButton>
-              </span>
+                }}
+              >
+                <FormatIndentDecreaseIcon fontSize="small" />
+              </IconButton>
             </Tooltip>
             <Tooltip title="Blockquote">
               <IconButton
@@ -649,6 +674,124 @@ export function EditorToolbar({
               </ButtonBase>
             </Tooltip>
 
+            {/* Table */}
+            <Divider orientation="vertical" flexItem sx={{ mx: 0.5 }} />
+            <Tooltip title="Insert table">
+              <IconButton
+                size="small"
+                onClick={() =>
+                  editor
+                    .chain()
+                    .focus()
+                    .insertTable({ rows: 3, cols: 3, withHeaderRow: true })
+                    .run()
+                }
+                color={isInTable ? "secondary" : "default"}
+              >
+                <TableChartIcon fontSize="small" />
+              </IconButton>
+            </Tooltip>
+            {isInTable && (
+              <>
+                <Tooltip title="Table options">
+                  <ButtonBase
+                    onClick={(e) => setTableMenuAnchor(e.currentTarget)}
+                    sx={{
+                      height: 28,
+                      px: 0.75,
+                      borderRadius: 1,
+                      fontSize: "0.7rem",
+                      fontWeight: 700,
+                      fontFamily: "inherit",
+                      color: "secondary.main",
+                      bgcolor: "action.selected",
+                      "&:hover": { bgcolor: "action.hover" },
+                      transition: "background-color 0.15s, color 0.15s",
+                    }}
+                  >
+                    Table ▾
+                  </ButtonBase>
+                </Tooltip>
+                <Menu
+                  anchorEl={tableMenuAnchor}
+                  open={tableMenuOpen}
+                  onClose={() => setTableMenuAnchor(null)}
+                >
+                  <MenuItem
+                    onClick={() => {
+                      editor.chain().focus().addRowBefore().run();
+                      setTableMenuAnchor(null);
+                    }}
+                  >
+                    <ListItemText primary="Add row above" />
+                  </MenuItem>
+                  <MenuItem
+                    onClick={() => {
+                      editor.chain().focus().addRowAfter().run();
+                      setTableMenuAnchor(null);
+                    }}
+                  >
+                    <ListItemText primary="Add row below" />
+                  </MenuItem>
+                  <MenuItem
+                    onClick={() => {
+                      editor.chain().focus().deleteRow().run();
+                      setTableMenuAnchor(null);
+                    }}
+                  >
+                    <ListItemText primary="Delete row" />
+                  </MenuItem>
+                  <Divider />
+                  <MenuItem
+                    onClick={() => {
+                      editor.chain().focus().addColumnBefore().run();
+                      setTableMenuAnchor(null);
+                    }}
+                  >
+                    <ListItemText primary="Add column before" />
+                  </MenuItem>
+                  <MenuItem
+                    onClick={() => {
+                      editor.chain().focus().addColumnAfter().run();
+                      setTableMenuAnchor(null);
+                    }}
+                  >
+                    <ListItemText primary="Add column after" />
+                  </MenuItem>
+                  <MenuItem
+                    onClick={() => {
+                      editor.chain().focus().deleteColumn().run();
+                      setTableMenuAnchor(null);
+                    }}
+                  >
+                    <ListItemText primary="Delete column" />
+                  </MenuItem>
+                  <Divider />
+                  <MenuItem
+                    onClick={() => {
+                      editor.chain().focus().toggleHeaderRow().run();
+                      setTableMenuAnchor(null);
+                    }}
+                  >
+                    <ListItemText primary="Toggle header row" />
+                  </MenuItem>
+                  <Divider />
+                  <MenuItem
+                    onClick={() => {
+                      editor.chain().focus().deleteTable().run();
+                      setTableMenuAnchor(null);
+                    }}
+                    sx={{ color: "error.main" }}
+                  >
+                    <ListItemIcon sx={{ color: "error.main" }}>
+                      <DeleteIcon fontSize="small" />
+                    </ListItemIcon>
+                    <ListItemText primary="Delete table" />
+                  </MenuItem>
+                </Menu>
+              </>
+            )}
+
             {/* Attach file */}
             {onAttachFile && (
               <>
@@ -684,5 +827,107 @@ export function EditorToolbar({
         </>
       )}
     </Paper>
+  );
+}
+
+function ToolbarTitle({ address, heuristicTitle, canEdit }: { address: string; heuristicTitle: string; canEdit: boolean }) {
+  const { docTitles, setDocTitle } = useDocMetadata();
+  const customTitle = docTitles.get(address) || "";
+  const displayTitle = customTitle || heuristicTitle;
+
+  const [input, setInput] = useState(displayTitle);
+  const [saving, setSaving] = useState(false);
+  const [editing, setEditing] = useState(false);
+
+  useEffect(() => {
+    if (!editing) {
+      setInput(displayTitle);
+    }
+  }, [displayTitle, editing]);
+
+  const handleSave = async () => {
+    let newTitle = input.trim();
+    if (newTitle === "" || newTitle === heuristicTitle) {
+      newTitle = "";
+    }
+    if (newTitle === customTitle) {
+      setEditing(false);
+      return;
+    }
+    setSaving(true);
+    try {
+      await setDocTitle(address, newTitle);
+      setEditing(false);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <Box
+      sx={{
+        display: "flex",
+        alignItems: "center",
+        flex: 1,
+        justifyContent: "flex-start",
+        minWidth: 0,
+        "&:hover .edit-icon": { opacity: 1 }
+      }}
+      onDoubleClick={() => canEdit && setEditing(true)}
+    >
+      {editing ? (
+        <InputBase
+          autoFocus
+          value={input}
+          onChange={(e) => setInput(e.target.value)}
+          onBlur={handleSave}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") handleSave();
+            if (e.key === "Escape") {
+              setInput(displayTitle);
+              setEditing(false);
+            }
+          }}
+          disabled={saving}
+          placeholder="Enter document title..."
+          sx={{
+            fontSize: "0.9rem",
+            fontWeight: 700,
+            width: "100%",
+            maxWidth: 400,
+          }}
+          inputProps={{ style: { textAlign: 'left' } }}
+        />
+      ) : (
+        <>
+          <Typography
+            variant="body2"
+            sx={{
+              fontWeight: 700,
+              cursor: canEdit ? "text" : "default",
+              whiteSpace: "nowrap",
+              overflow: "hidden",
+              textOverflow: "ellipsis",
+              maxWidth: 400,
+            }}
+            title={displayTitle}
+          >
+            {displayTitle}
+          </Typography>
+          {canEdit && (
+            <Tooltip title="Rename Document">
+              <IconButton 
+                className="edit-icon"
+                size="small" 
+                onClick={() => setEditing(true)} 
+                sx={{ opacity: 0, transition: "opacity 0.2s", p: 0.25, ml: 0.5 }}
+              >
+                <EditIcon sx={{ fontSize: 14 }} />
+              </IconButton>
+            </Tooltip>
+          )}
+        </>
+      )}
+    </Box>
   );
 }

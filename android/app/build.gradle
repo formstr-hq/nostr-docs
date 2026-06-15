@@ -7,13 +7,14 @@ android {
         applicationId "com.formstr.pages"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 10
-        versionName "0.9.3"
+        versionCode 13
+        versionName "0.9.7"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
              // Default: https://android.googlesource.com/platform/frameworks/base/+/282e181b58cf72b6ca770dc7ca5f91f135444502/tools/aapt/AaptAssets.cpp#61
             ignoreAssetsPattern '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
+            cruncherEnabled false
         }
     }
     signingConfigs {
@@ -52,6 +53,25 @@ dependencies {
 }
 
 apply from: 'capacitor.build.gradle'
+
+// AAPT2 optimize crashes on Raspberry Pi ARM — if the optimized resource package
+// is missing after the task runs, fall back to the unoptimized version.
+afterEvaluate {
+    tasks.named('optimizeReleaseResources').configure { task ->
+        doLast {
+            def outDir = new File(buildDir, 'intermediates/optimized_processed_res/release/optimizeReleaseResources')
+            def optimized = new File(outDir, 'resources-release-optimize.ap_')
+            if (!optimized.exists()) {
+                def source = new File(buildDir, 'intermediates/linked_resources_binary_format/release/processReleaseResources/linked-resources-binary-format-release.ap_')
+                if (source.exists()) {
+                    outDir.mkdirs()
+                    java.nio.file.Files.copy(source.toPath(), optimized.toPath(), java.nio.file.StandardCopyOption.REPLACE_EXISTING)
+                    logger.lifecycle('AAPT2 optimize unavailable on this platform — using unoptimized resources.')
+                }
+            }
+        }
+    }
+}
 
 try {
     def servicesJSON = file('google-services.json')

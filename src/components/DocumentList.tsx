@@ -10,6 +10,13 @@ import {
 } from "../lib/localStore.ts";
 import { publishEvent } from "../nostr/publish.ts";
 import {
+  useDocSearch,
+  buildSnippet,
+  heuristicTitle,
+  type DocOrigin,
+  type DocumentHistory,
+} from "../lib/docSearch.ts";
+import {
   Box,
   Typography,
   List,
@@ -22,10 +29,15 @@ import {
   Chip,
   Divider,
   Tooltip,
+  InputAdornment,
+  TextField,
 } from "@mui/material";
 import AddIcon from "@mui/icons-material/Add";
 import DeleteForeverIcon from "@mui/icons-material/DeleteForever";
 import SmartphoneIcon from "@mui/icons-material/Smartphone";
+import SearchIcon from "@mui/icons-material/Search";
+import CloseIcon from "@mui/icons-material/Close";
+import ArchiveOutlinedIcon from "@mui/icons-material/ArchiveOutlined";
 import { useDocumentContext } from "../contexts/DocumentContext.tsx";
 import { signerManager } from "../signer/index.ts";
 import { useRelays } from "../contexts/RelayContext.tsx";
@@ -36,8 +48,12 @@ import { useNavigate } from "react-router-dom";
 import { useSharedPages } from "../contexts/SharedDocsContext.tsx";
 import TrashDialog from "./TrashDialog.tsx";
 import { encodeNKeys } from "../utils/nkeys.ts";
+import { buildSharedDocPath } from "./editor/utils.ts";
 import { getEventAddress } from "../utils/helpers.ts";
 import { useDocMetadata } from "../contexts/DocMetadataContext.tsx";
+import RenameDialog from "./RenameDialog.tsx";
+import EditOutlinedIcon from "@mui/icons-material/EditOutlined";
+import { IconButton } from "@mui/material";
 
 /** Deterministic hue (0–359) from a tag string. */
 function tagHue(tag: string): number {
@@ -109,14 +125,28 @@ export default function DocumentList({
   const [docRelays, setDocRelays] = useState<Map<string, string[]>>(new Map());
 
   const { sharedDocuments, getKeys } = useSharedPages();
-  const { docTags, allTags, selectedTag, setSelectedTag } = useDocMetadata();
+  const { docTags, docTitles, setDocTitle, docSharedAs, allTags, selectedTag, setSelectedTag } = useDocMetadata();
   const [loading, setLoading] = useState(true);
   const [tab, setTab] = useState<"personal" | "shared" | "visited">("personal");
   const [trashOpen, setTrashOpen] = useState(false);
+  const [renameOpen, setRenameOpen] = useState(false);
+  const [renamingAddress, setRenamingAddress] = useState<string | null>(null);
+  const [renamingInitialTitle, setRenamingInitialTitle] = useState("");
   const [trashCount, setTrashCount] = useState(0);
+  const [query, setQuery] = useState("");
   const { user } = useUser();
   const { relays } = useRelays();
   const navigate = useNavigate();
+
+  const searchHits = useDocSearch(
+    visibleDocuments,
+    sharedDocuments,
+    visitedDocuments,
+    docTitles,
+    docTags,
+    query,
+  );
+  const isSearching = searchHits !== null;
 
   const handleDocumentSelect = (doc: Event) => {
     const dTag = doc.tags.find((t) => t[0] === "d")?.[1];
@@ -253,13 +283,46 @@ export default function DocumentList({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedDocumentId]);
 
-  const docsToShow = selectedTag
-    ? new Map(
-        [...allDocs.entries()].filter(([address]) =>
-          (docTags.get(address) ?? []).includes(selectedTag),
-        ),
-      )
-    : allDocs;
+  type RenderEntry = {
+    address: string;
+    history: DocumentHistory;
+    origin: DocOrigin;
+    terms?: string[];
+  };
+
+  const matchesTagFilter = (address: string) =>
+    !selectedTag || (docTags.get(address) ?? []).includes(selectedTag);
+
+  // Search spans all three maps; resolve which one an address came from.
+  const resolveDoc = (
+    address: string,
+  ): { history: DocumentHistory; origin: DocOrigin } | null => {
+    const personal = visibleDocuments.get(address);
+    if (personal) return { history: personal, origin: "personal" };
+    const shared = sharedDocuments.get(address);
+    if (shared) return { history: shared, origin: "shared" };
+    const visit = visitedDocuments.get(address);
+    if (visit) return { history: visit, origin: "visited" };
+    return null;
+  };
+
+  const entries: RenderEntry[] = isSearching
+    ? (searchHits!
+        .map((hit) => {
+          if (!matchesTagFilter(hit.address)) return null;
+          const resolved = resolveDoc(hit.address);
+          if (!resolved) return null;
+          return { address: hit.address, ...resolved, terms: hit.terms };
+        })
+        .filter(Boolean) as RenderEntry[])
+    : [...allDocs.entries()]
+        .filter(([address]) => matchesTagFilter(address))
+        .sort(([, a], [, b]) => {
+          const aTime = a.versions.at(-1)?.event.created_at ?? 0;
+          const bTime = b.versions.at(-1)?.event.created_at ?? 0;
+          return bTime - aTime;
+        })
+        .map(([address, history]) => ({ address, history, origin: tab }));
 
   const personalCount = visibleDocuments.size;
   const sharedCount = sharedDocuments.size;
@@ -287,6 +350,36 @@ export default function DocumentList({
         >
           New Document
         </Button>
+      </Box>
+
+      {/* Search */}
+      <Box sx={{ px: 2, pb: 1, flexShrink: 0 }}>
+        <TextField
+          fullWidth
+          size="small"
+          placeholder="Search all pages"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          InputProps={{
+            startAdornment: (
+              <InputAdornment position="start">
+                <SearchIcon sx={{ fontSize: 18, opacity: 0.6 }} />
+              </InputAdornment>
+            ),
+            endAdornment: query ? (
+              <InputAdornment position="end">
+                <IconButton
+                  size="small"
+                  onClick={() => setQuery("")}
+                  sx={{ p: 0.25 }}
+                >
+                  <CloseIcon sx={{ fontSize: 16 }} />
+                </IconButton>
+              </InputAdornment>
+            ) : null,
+            sx: { fontSize: "0.85rem", borderRadius: 2 },
+          }}
+        />
       </Box>
 
       {/* Tab switcher */}
@@ -393,7 +486,7 @@ export default function DocumentList({
               </Box>
             ))}
           </Box>
-        ) : docsToShow.size === 0 ? (
+        ) : entries.length === 0 ? (
           <Box
             sx={{
               pt: 4,
@@ -408,13 +501,15 @@ export default function DocumentList({
               color="text.secondary"
               textAlign="center"
             >
-              {tab === "personal"
+              {isSearching
+                ? `No matches for "${query.trim()}".`
+                : tab === "personal"
                 ? "No documents yet.\nCreate your first page!"
                 : tab === "visited"
                 ? "No visited pages yet.\nOpen a shared link to see it here."
                 : "No shared documents found."}
             </Typography>
-            {tab === "personal" && (
+            {!isSearching && tab === "personal" && (
               <Button
                 variant="outlined"
                 color="secondary"
@@ -429,13 +524,7 @@ export default function DocumentList({
           </Box>
         ) : (
           <List disablePadding>
-            {Array.from(docsToShow.entries())
-              .sort(([, a], [, b]) => {
-                const aTime = a.versions.at(-1)?.event.created_at ?? 0;
-                const bTime = b.versions.at(-1)?.event.created_at ?? 0;
-                return bTime - aTime;
-              })
-              .map(([address, history], idx) => {
+            {entries.map(({ address, history, origin, terms }, idx) => {
               const latest = history.versions.at(-1);
               if (!latest) return null;
 
@@ -444,17 +533,20 @@ export default function DocumentList({
               const tags = docTags.get(address) ?? [];
               const relays = docRelays.get(address) ?? [];
 
-              const firstLine =
-                (decryptedContent ?? "").split("\n").find((l) => l.trim()) ??
-                "Untitled";
-              const title = firstLine
-                .replace(/^#+\s*/, "")
-                .slice(0, 42)
-                .trim();
-              const displayTitle = title || "Untitled";
+              const customTitle = docTitles.get(address);
+              const displayTitle =
+                customTitle || heuristicTitle(decryptedContent ?? "", 42) || "Untitled";
+
+              const snippet =
+                isSearching && terms
+                  ? buildSnippet(decryptedContent ?? "", terms)
+                  : null;
 
               return (
-                <Box key={address}>
+                <Box
+                  key={address}
+                  sx={{ position: "relative", "&:hover .rename-btn": { opacity: 1 } }}
+                >
                   {idx > 0 && (
                     <Divider
                       sx={{ my: 0.25, borderColor: "rgba(255,255,255,0.05)" }}
@@ -484,15 +576,101 @@ export default function DocumentList({
                     }}
                   >
                     <ListItemText
-                      primary={displayTitle}
+                      primary={
+                        <Box sx={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                          <Box
+                            component="span"
+                            sx={{
+                              flex: 1,
+                              minWidth: 0,
+                              overflow: "hidden",
+                              textOverflow: "ellipsis",
+                              whiteSpace: "nowrap",
+                            }}
+                          >
+                            {displayTitle}
+                          </Box>
+                          <IconButton
+                            className="rename-btn"
+                            size="small"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setRenamingAddress(address);
+                              setRenamingInitialTitle(displayTitle);
+                              setRenameOpen(true);
+                            }}
+                            sx={{
+                              opacity: isSelected ? 1 : 0,
+                              transition: "opacity 0.2s",
+                              p: 0.25,
+                            }}
+                          >
+                            <EditOutlinedIcon sx={{ fontSize: 16 }} />
+                          </IconButton>
+                        </Box>
+                      }
                       secondary={
                         <Box component="span" sx={{ display: "block" }}>
-                          <Box component="span" sx={{ opacity: 0.6, fontSize: "0.7rem" }}>
+                          <Box component="span" sx={{ opacity: 0.6, fontSize: "0.7rem", display: "flex", alignItems: "center", gap: 0.5 }}>
                             {new Date(event.created_at * 1000).toLocaleDateString(
                               undefined,
                               { month: "short", day: "numeric", year: "numeric" },
                             )}
+                            {isSearching && (
+                              <Box
+                                component="span"
+                                sx={{
+                                  fontSize: "0.58rem",
+                                  fontWeight: 600,
+                                  textTransform: "uppercase",
+                                  letterSpacing: 0.4,
+                                  opacity: 0.7,
+                                  bgcolor: (t) => alpha(t.palette.secondary.main, 0.15),
+                                  color: "secondary.main",
+                                  borderRadius: 0.75,
+                                  px: 0.6,
+                                  py: 0.1,
+                                  lineHeight: 1.6,
+                                }}
+                              >
+                                {origin === "personal" ? "Mine" : origin === "shared" ? "Shared" : "Visited"}
+                              </Box>
+                            )}
                           </Box>
+                          {snippet && (
+                            <Box
+                              component="span"
+                              sx={{
+                                display: "-webkit-box",
+                                WebkitLineClamp: 2,
+                                WebkitBoxOrient: "vertical",
+                                overflow: "hidden",
+                                fontSize: "0.72rem",
+                                opacity: 0.75,
+                                mt: 0.35,
+                                lineHeight: 1.35,
+                              }}
+                            >
+                              {snippet.map((seg, i) =>
+                                seg.match ? (
+                                  <Box
+                                    key={i}
+                                    component="mark"
+                                    sx={{
+                                      bgcolor: (t) => alpha(t.palette.secondary.main, 0.35),
+                                      color: "inherit",
+                                      borderRadius: 0.5,
+                                      px: 0.25,
+                                    }}
+                                  >
+                                    {seg.text}
+                                  </Box>
+                                ) : (
+                                  <span key={i}>{seg.text}</span>
+                                ),
+                              )}
+                            </Box>
+                          )}
                           {tags.length > 0 && (
                             <Box
                               component="span"
@@ -512,6 +690,37 @@ export default function DocumentList({
                               ))}
                             </Box>
                           )}
+                          {docSharedAs.has(address) && (() => {
+                            const sharedAddr = docSharedAs.get(address)!;
+                            const sharedPath = buildSharedDocPath(sharedAddr, getKeys);
+                            return (
+                              <Tooltip title="Go to live shared version">
+                                <Box
+                                  component="span"
+                                  onClick={(e) => { e.stopPropagation(); navigate(sharedPath); }}
+                                  sx={{ display: "flex", alignItems: "center", gap: 0.3, mt: 0.4, cursor: "pointer" }}
+                                >
+                                  <ArchiveOutlinedIcon sx={{ fontSize: "0.58rem", opacity: 0.55 }} />
+                                  <Box
+                                    component="span"
+                                    sx={{
+                                      fontSize: "0.58rem",
+                                      fontFamily: "monospace",
+                                      opacity: 0.55,
+                                      bgcolor: (t) => alpha(t.palette.text.primary, 0.07),
+                                      borderRadius: 0.75,
+                                      px: 0.6,
+                                      py: 0.1,
+                                      lineHeight: 1.6,
+                                      "&:hover": { opacity: 1 },
+                                    }}
+                                  >
+                                    backup
+                                  </Box>
+                                </Box>
+                              </Tooltip>
+                            );
+                          })()}
                           {localOnlyAddresses.has(address) ? (
                             <Box
                               component="span"
@@ -620,6 +829,21 @@ export default function DocumentList({
           refreshTrashCount();
         }}
       />
+      {renamingAddress && (
+        <RenameDialog
+          open={renameOpen}
+          initialTitle={renamingInitialTitle}
+          onClose={() => setRenameOpen(false)}
+          onSave={async (newTitle) => {
+            // If they clear it, we'll save empty string to remove custom title.
+            // If they didn't change it from the initial title, we don't need to save
+            if (newTitle === docTitles.get(renamingAddress)) {
+              return;
+            }
+            await setDocTitle(renamingAddress, newTitle);
+          }}
+        />
+      )}
     </Box>
   );
 }
