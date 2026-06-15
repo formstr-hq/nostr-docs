@@ -14,6 +14,7 @@ import { Decoration, DecorationSet } from "@tiptap/pm/view";
 import { commentHighlightPluginKey } from "../utils/commentHighlightKey";
 import { useRelays } from "./RelayContext";
 import { locateComment } from "../utils/commentAnchoring";
+import { findAllOccurrences } from "../utils/textMatching";
 import {
   fetchComments,
   fetchResolutions,
@@ -171,6 +172,7 @@ export const CommentProvider: React.FC<{
   children: React.ReactNode;
   viewKey: string;
   docAddress: string;
+  /** Plain text of the document (not markdown) — used to detect outdated quotes. */
   currentDocText: string;
 }> = ({
   children,
@@ -260,7 +262,11 @@ export const CommentProvider: React.FC<{
     (comment: DecryptedComment) => {
       if (!comment.quote) return false;
       if (!currentDocText) return false;
-      return !currentDocText.includes(comment.quote);
+      // `currentDocText` is the document's plain text (not markdown) and the
+      // match ignores whitespace, so a quote that spans paragraph breaks or
+      // sits inside bold/italic/link formatting is still found and not flagged
+      // outdated. See findAllOccurrences in textMatching.ts.
+      return findAllOccurrences(currentDocText, comment.quote).length === 0;
     },
     [currentDocText],
   );
