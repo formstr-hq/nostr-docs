@@ -1,8 +1,6 @@
 import React from "react";
 import "./App.css";
 import {
-  CssBaseline,
-  GlobalStyles,
   Box,
   Drawer,
   IconButton,
@@ -12,7 +10,6 @@ import {
   useMediaQuery,
 } from "@mui/material";
 import MenuIcon from "@mui/icons-material/Menu";
-import { ThemeProvider } from "@mui/material/styles";
 import {
   createBrowserRouter,
   createHashRouter,
@@ -25,8 +22,7 @@ import DocumentList from "./components/DocumentList";
 import UserMenu from "./components/UserMenu";
 import { DocumentProvider } from "./contexts/DocumentContext";
 import { UserProvider } from "./contexts/UserContext";
-import { themes } from "./theme";
-import type { ThemeId } from "./theme";
+import { ThemeModeProvider, useThemeMode } from "./contexts/ThemeModeContext";
 import FormstrLogo from "./assets/formstr-pages-logo.png";
 import DocPage from "./components/DocPage";
 import { SharedPagesProvider } from "./contexts/SharedDocsContext";
@@ -78,53 +74,40 @@ const router = createRouter([
 
 /* ── App root — providers only, no router JSX ───────────── */
 export default function App() {
+  // ThemeModeProvider sits above everything (including UserProvider) so the
+  // auth modals rendered by UserProvider inherit the app theme too.
   return (
-    <UserProvider>
-      <RelayProvider>
-        <BlossomProvider>
-          <MyFormsProvider>
-          <DocumentProvider>
-            <SharedPagesProvider>
-              <DocMetadataProvider>
-                <RouterProvider router={router} />
-              </DocMetadataProvider>
-            </SharedPagesProvider>
-          </DocumentProvider>
-          </MyFormsProvider>
-        </BlossomProvider>
-      </RelayProvider>
-    </UserProvider>
+    <ThemeModeProvider>
+      <UserProvider>
+        <RelayProvider>
+          <BlossomProvider>
+            <MyFormsProvider>
+              <DocumentProvider>
+                <SharedPagesProvider>
+                  <DocMetadataProvider>
+                    <RouterProvider router={router} />
+                  </DocMetadataProvider>
+                </SharedPagesProvider>
+              </DocumentProvider>
+            </MyFormsProvider>
+          </BlossomProvider>
+        </RelayProvider>
+      </UserProvider>
+    </ThemeModeProvider>
   );
 }
 
 /* ── Layout shell ───────────────────────────────────────── */
 // Lives inside the router so hooks like useLocation / useBlocker work here
-// and in any descendant. ThemeProvider + CssBaseline also live here because
-// darkMode state needs to be co-located with the toggle handler.
+// and in any descendant. The theme itself is provided by ThemeModeProvider at
+// the app root; here we just read/set the active theme id for the switcher.
 function AppLayout() {
   const [mobileOpen, setMobileOpen] = React.useState(false);
-  const [themeId, setThemeId] = React.useState<ThemeId>(() => {
-    const stored = localStorage.getItem("formstr:theme") as ThemeId | null;
-    if (stored) return stored;
-    const ids = Object.keys(themes) as ThemeId[];
-    return ids[Math.floor(Math.random() * ids.length)];
-  });
+  const { themeId, setThemeId } = useThemeMode();
   const isDesktop = useMediaQuery("(min-width:900px)");
 
-  const theme = themes[themeId].theme;
-
-  const handleSelectTheme = (id: ThemeId) => {
-    setThemeId(id);
-    localStorage.setItem("formstr:theme", id);
-  };
-
   return (
-    <ThemeProvider theme={theme}>
-      <CssBaseline />
-      <GlobalStyles styles={(t) => ({
-        ".tiptap a": { color: t.palette.secondary.main },
-      })} />
-
+    <>
       {/* ===== TOP BAR ===== */}
       <AppBar
         position="fixed"
@@ -156,10 +139,7 @@ function AppLayout() {
           </Box>
 
           <Box sx={{ display: "flex", alignItems: "center", gap: 2 }}>
-            <UserMenu
-              themeId={themeId}
-              onSelectTheme={handleSelectTheme}
-            />
+            <UserMenu themeId={themeId} onSelectTheme={setThemeId} />
           </Box>
         </Toolbar>
       </AppBar>
@@ -241,6 +221,6 @@ function AppLayout() {
           <Outlet />
         </Box>
       </Box>
-    </ThemeProvider>
+    </>
   );
 }
