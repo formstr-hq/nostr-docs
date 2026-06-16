@@ -11,20 +11,21 @@ import {
   ButtonBase,
   Divider,
   CircularProgress,
+  IconButton,
 } from "@mui/material";
-import { ThemeProvider, useTheme } from "@mui/material/styles";
+import { useTheme } from "@mui/material/styles";
 import VpnKeyOutlinedIcon from "@mui/icons-material/VpnKeyOutlined";
-import LockOutlinedIcon from "@mui/icons-material/LockOutlined";
+import KeyOutlinedIcon from "@mui/icons-material/KeyOutlined";
+import PersonAddAltOutlinedIcon from "@mui/icons-material/PersonAddAltOutlined";
 import PhonelinkLockOutlinedIcon from "@mui/icons-material/PhonelinkLockOutlined";
 import HubOutlinedIcon from "@mui/icons-material/HubOutlined";
 import QrCode2OutlinedIcon from "@mui/icons-material/QrCode2Outlined";
-import PersonOutlinedIcon from "@mui/icons-material/PersonOutlined";
+import ContentCopyOutlinedIcon from "@mui/icons-material/ContentCopyOutlined";
 import ChevronRightIcon from "@mui/icons-material/ChevronRight";
 import { useState, useEffect, useRef, type ReactNode } from "react";
 import QRCode from "qrcode";
 import { signerManager } from "../signer";
 import type { AndroidSignerAppInfo } from "@formstr/signer";
-import { generateSecretKey } from "nostr-tools";
 import { isNativePlatform, isCapacitor } from "../signer/secureStorage";
 import { DEFAULT_RELAYS } from "../nostr/relayPool";
 import FormstrLogo from "../assets/formstr-pages-logo.png";
@@ -38,14 +39,25 @@ export default function LoginModal({
 }) {
   const theme = useTheme();
   const [showNip46, setShowNip46] = useState(false);
-  const [showNsec, setShowNsec] = useState(false);
   const [showNc, setShowNc] = useState(false);
+  const [showCreate, setShowCreate] = useState(false);
+  const [showExisting, setShowExisting] = useState(false);
+
   const [uri, setUri] = useState("");
-  const [nsec, setNsec] = useState("");
   const [ncRelays, setNcRelays] = useState(DEFAULT_RELAYS.join(", "));
   const [ncDataUrl, setNcDataUrl] = useState("");
   const [ncPending, setNcPending] = useState(false);
   const [ncError, setNcError] = useState("");
+
+  const [createPass, setCreatePass] = useState("");
+  const [createConfirm, setCreateConfirm] = useState("");
+  const [createLoading, setCreateLoading] = useState(false);
+  const [backupNcryptsec, setBackupNcryptsec] = useState("");
+  const [backupNpub, setBackupNpub] = useState("");
+
+  const [existingNcryptsec, setExistingNcryptsec] = useState("");
+  const [existingPass, setExistingPass] = useState("");
+
   const [error, setError] = useState<string>("");
   const [installedSigners, setInstalledSigners] = useState<
     AndroidSignerAppInfo[]
@@ -56,8 +68,7 @@ export default function LoginModal({
     if (!isCapacitor) return;
     const loadSigners = async () => {
       try {
-        const apps = await signerManager.listNip55Apps();
-        setInstalledSigners(apps);
+        setInstalledSigners(await signerManager.listNip55Apps());
       } catch {
         setInstalledSigners([]);
       }
@@ -65,8 +76,8 @@ export default function LoginModal({
     loadSigners();
   }, []);
 
-  // Abort any in-flight nostrconnect pairing and clear its transient state,
-  // then close. Used for every close path so a stale QR never lingers.
+  // Abort any in-flight nostrconnect pairing and clear transient state, then
+  // close. Used for every close path so a stale QR never lingers.
   const handleClose = () => {
     ncAbortRef.current?.abort();
     ncAbortRef.current = null;
@@ -86,17 +97,6 @@ export default function LoginModal({
     }
   };
 
-  const handleGuest = async () => {
-    setError("");
-    try {
-      const key = generateSecretKey();
-      await signerManager.createGuestAccount(key);
-      handleClose();
-    } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : "Temporary login failed");
-    }
-  };
-
   const handleNip55 = async (packageName: string) => {
     setError("");
     try {
@@ -104,17 +104,6 @@ export default function LoginModal({
       handleClose();
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "Signer sign-in failed");
-    }
-  };
-
-  const handleNsec = async () => {
-    if (!nsec) return;
-    setError("");
-    try {
-      await signerManager.loginWithNsec(nsec);
-      handleClose();
-    } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : "Invalid nsec");
     }
   };
 
@@ -126,6 +115,40 @@ export default function LoginModal({
       handleClose();
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "Bunker login failed");
+    }
+  };
+
+  const handleCreate = async () => {
+    if (!createPass || createPass !== createConfirm || createLoading) return;
+    setError("");
+    setCreateLoading(true);
+    try {
+      const { ncryptsec, npub } = await signerManager.createAccount(createPass);
+      // Surface the recovery key in its own dialog, then close the login modal.
+      // The backup dialog is controlled by `backupNcryptsec`, so it survives
+      // the login modal closing.
+      setBackupNpub(npub);
+      setBackupNcryptsec(ncryptsec);
+      setCreatePass("");
+      setCreateConfirm("");
+      handleClose();
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : "Could not create account");
+    } finally {
+      setCreateLoading(false);
+    }
+  };
+
+  const handleExisting = async () => {
+    if (!existingNcryptsec || !existingPass) return;
+    setError("");
+    try {
+      await signerManager.loginWithNcryptsec(existingNcryptsec.trim(), existingPass);
+      setExistingNcryptsec("");
+      setExistingPass("");
+      handleClose();
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : "Wrong passphrase or key");
     }
   };
 
@@ -167,9 +190,11 @@ export default function LoginModal({
 
   const isDark = theme.palette.mode === "dark";
   const accentAlpha = isDark ? "22" : "18";
+  const createMismatch =
+    createConfirm.length > 0 && createPass !== createConfirm;
 
   return (
-    <ThemeProvider theme={theme}>
+    <>
       <Dialog
         open={open}
         onClose={handleClose}
@@ -219,60 +244,120 @@ export default function LoginModal({
 
         {/* ── Options ── */}
         <Stack divider={<Divider />}>
+          {/* Create account (NIP-49) */}
+          <Box>
+            <OptionButton
+              icon={<PersonAddAltOutlinedIcon />}
+              title="Create Account"
+              description="New key, secured by a passphrase"
+              accentColor={theme.palette.primary.main}
+              accentAlpha={accentAlpha}
+              onClick={() => setShowCreate((p) => !p)}
+              chevronRotated={showCreate}
+            />
+            <Collapse in={showCreate}>
+              <Box
+                sx={{
+                  px: 2,
+                  pb: 2,
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: 1,
+                  bgcolor: `${theme.palette.primary.main}${accentAlpha}`,
+                }}
+              >
+                <TextField
+                  fullWidth
+                  size="small"
+                  label="Passphrase"
+                  type="password"
+                  value={createPass}
+                  onChange={(e) => setCreatePass(e.target.value)}
+                />
+                <TextField
+                  fullWidth
+                  size="small"
+                  label="Confirm passphrase"
+                  type="password"
+                  value={createConfirm}
+                  error={createMismatch}
+                  helperText={createMismatch ? "Passphrases don't match" : undefined}
+                  onChange={(e) => setCreateConfirm(e.target.value)}
+                  onKeyDown={(e) => e.key === "Enter" && handleCreate()}
+                />
+                <Button
+                  variant="contained"
+                  onClick={handleCreate}
+                  disabled={!createPass || createMismatch || createLoading}
+                  startIcon={
+                    createLoading ? <CircularProgress size={16} /> : undefined
+                  }
+                >
+                  {createLoading ? "Creating…" : "Create account"}
+                </Button>
+              </Box>
+            </Collapse>
+          </Box>
+
+          {/* Existing key (ncryptsec) */}
+          <Box>
+            <OptionButton
+              icon={<KeyOutlinedIcon />}
+              title="Existing Key"
+              description="Sign in with an ncryptsec"
+              accentColor={theme.palette.primary.main}
+              accentAlpha={accentAlpha}
+              onClick={() => setShowExisting((p) => !p)}
+              chevronRotated={showExisting}
+            />
+            <Collapse in={showExisting}>
+              <Box
+                sx={{
+                  px: 2,
+                  pb: 2,
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: 1,
+                  bgcolor: `${theme.palette.primary.main}${accentAlpha}`,
+                }}
+              >
+                <TextField
+                  fullWidth
+                  size="small"
+                  label="ncryptsec1..."
+                  value={existingNcryptsec}
+                  onChange={(e) => setExistingNcryptsec(e.target.value)}
+                />
+                <TextField
+                  fullWidth
+                  size="small"
+                  label="Passphrase"
+                  type="password"
+                  value={existingPass}
+                  onChange={(e) => setExistingPass(e.target.value)}
+                  onKeyDown={(e) => e.key === "Enter" && handleExisting()}
+                />
+                <Button
+                  variant="contained"
+                  onClick={handleExisting}
+                  disabled={!existingNcryptsec || !existingPass}
+                >
+                  Sign in
+                </Button>
+              </Box>
+            </Collapse>
+          </Box>
+
           {/* NIP-07 — web only */}
           {!isNativePlatform && (
             <OptionButton
               icon={<VpnKeyOutlinedIcon />}
               title="Browser Extension"
               description="Alby, nos2x, Flamingo"
-              accentColor={theme.palette.primary.main}
+              accentColor={theme.palette.secondary.main}
               accentAlpha={accentAlpha}
               onClick={handleNip07}
             />
-          )}
-
-          {/* nsec — native only (Tauri / Capacitor) */}
-          {isNativePlatform && (
-            <Box>
-              <OptionButton
-                icon={<LockOutlinedIcon />}
-                title="Private Key (nsec)"
-                description="Stored securely on this device"
-                accentColor={theme.palette.primary.main}
-                accentAlpha={accentAlpha}
-                onClick={() => setShowNsec((p) => !p)}
-                chevronRotated={showNsec}
-              />
-              <Collapse in={showNsec}>
-                <Box
-                  sx={{
-                    px: 2,
-                    pb: 2,
-                    display: "flex",
-                    gap: 1,
-                    bgcolor: `${theme.palette.primary.main}${accentAlpha}`,
-                  }}
-                >
-                  <TextField
-                    fullWidth
-                    size="small"
-                    label="nsec1..."
-                    type="password"
-                    value={nsec}
-                    onChange={(e) => setNsec(e.target.value)}
-                    onKeyDown={(e) => e.key === "Enter" && handleNsec()}
-                  />
-                  <Button
-                    variant="contained"
-                    onClick={handleNsec}
-                    disabled={!nsec}
-                    sx={{ flexShrink: 0 }}
-                  >
-                    Sign in
-                  </Button>
-                </Box>
-              </Collapse>
-            </Box>
           )}
 
           {/* NIP-55 external signers — Capacitor (Android) only */}
@@ -390,9 +475,7 @@ export default function LoginModal({
                       alt="nostrconnect QR"
                       style={{ width: 200, height: 200, borderRadius: 8 }}
                     />
-                    <Box
-                      sx={{ display: "flex", alignItems: "center", gap: 1 }}
-                    >
+                    <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
                       <CircularProgress size={14} />
                       <Typography variant="caption" color="text.secondary">
                         Waiting for your signer…
@@ -414,16 +497,6 @@ export default function LoginModal({
               </Box>
             </Collapse>
           </Box>
-
-          {/* Guest */}
-          <OptionButton
-            icon={<PersonOutlinedIcon />}
-            title="Temporary Account"
-            description="Quick access, no keys needed"
-            accentColor={theme.palette.text.secondary}
-            accentAlpha={accentAlpha}
-            onClick={handleGuest}
-          />
         </Stack>
 
         {/* ── Footer ── */}
@@ -445,7 +518,87 @@ export default function LoginModal({
           </Button>
         </Box>
       </Dialog>
-    </ThemeProvider>
+
+      {/* Recovery-key backup — its own dialog so it survives the login modal
+          auto-closing once the new account becomes active. */}
+      <RecoveryKeyDialog
+        ncryptsec={backupNcryptsec}
+        npub={backupNpub}
+        onDone={() => {
+          setBackupNcryptsec("");
+          setBackupNpub("");
+        }}
+      />
+    </>
+  );
+}
+
+/* ── Recovery key backup dialog ── */
+function RecoveryKeyDialog({
+  ncryptsec,
+  npub,
+  onDone,
+}: {
+  ncryptsec: string;
+  npub: string;
+  onDone: () => void;
+}) {
+  const theme = useTheme();
+  const [copied, setCopied] = useState(false);
+
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(ncryptsec);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    } catch {
+      /* clipboard may be unavailable */
+    }
+  };
+
+  return (
+    <Dialog
+      open={Boolean(ncryptsec)}
+      onClose={onDone}
+      maxWidth="xs"
+      fullWidth
+      PaperProps={{ sx: { borderRadius: 3, bgcolor: "background.paper" } }}
+    >
+      <Box sx={{ p: 3, display: "flex", flexDirection: "column", gap: 2 }}>
+        <Typography variant="h6" fontWeight={700}>
+          Save your recovery key
+        </Typography>
+        <Typography variant="body2" color="text.secondary">
+          This passphrase-encrypted key (<code>ncryptsec</code>) is the only way
+          to recover {npub ? `${npub.slice(0, 12)}…` : "your account"} on another
+          device. Store it somewhere safe — we can't recover it for you.
+        </Typography>
+        <Box
+          sx={{
+            display: "flex",
+            alignItems: "flex-start",
+            gap: 1,
+            p: 1.5,
+            borderRadius: 2,
+            bgcolor: theme.palette.action.hover,
+            wordBreak: "break-all",
+          }}
+        >
+          <Typography
+            variant="caption"
+            sx={{ fontFamily: "monospace", flex: 1 }}
+          >
+            {ncryptsec}
+          </Typography>
+          <IconButton size="small" onClick={copy} aria-label="Copy recovery key">
+            <ContentCopyOutlinedIcon fontSize="small" />
+          </IconButton>
+        </Box>
+        <Button variant="contained" onClick={onDone}>
+          {copied ? "Copied — I've saved it" : "I've saved it"}
+        </Button>
+      </Box>
+    </Dialog>
   );
 }
 
