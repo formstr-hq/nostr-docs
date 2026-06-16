@@ -5,8 +5,7 @@ import type { Event, EventTemplate } from "nostr-tools";
  * site only uses getPublicKey/signEvent/nip44Encrypt/nip44Decrypt. The
  * `encrypt`/`decrypt` (NIP-04) methods are kept optional for completeness
  * but are unused. `signerManager.getSigner()` resolves to one of these,
- * regardless of whether the underlying signer is package-managed
- * (extension/bunker/android) or an app-local key (guest/nsec).
+ * adapted from `@formstr/signer`'s `ActiveSigner`.
  */
 export interface NostrSigner {
   getPublicKey: () => Promise<string>;
@@ -18,17 +17,13 @@ export interface NostrSigner {
 }
 
 /**
- * How an account's key material is held. The first three are owned by
- * `@formstr/signer`; `guest` and `nsec` are app-local raw-key providers
- * the package deliberately doesn't support (no guest mode, no raw-nsec
- * import). See the README's security model.
+ * How an account's key material is held — all four are owned by
+ * `@formstr/signer`. `ncryptsec` is a NIP-49 passphrase-encrypted key
+ * (decrypted into memory only while unlocked).
  */
-export type AuthMethod = "extension" | "nip46" | "android" | "guest" | "nsec";
+export type AuthMethod = "extension" | "nip46" | "android" | "ncryptsec";
 
-/**
- * A single identity in the unified account list — package-managed accounts
- * plus the (at most one) app-local guest and nsec identities.
- */
+/** A single identity in the account list. */
 export interface AccountSummary {
   pubkey: string;
   npub?: string;
