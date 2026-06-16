@@ -18,6 +18,7 @@ import ExpandLessIcon from "@mui/icons-material/ExpandLess";
 import PaletteIcon from "@mui/icons-material/Palette";
 import LoginIcon from "@mui/icons-material/Login";
 import LogoutIcon from "@mui/icons-material/Logout";
+import LockOpenOutlinedIcon from "@mui/icons-material/LockOpenOutlined";
 import PersonAddAltOutlinedIcon from "@mui/icons-material/PersonAddAltOutlined";
 import CloudUploadIcon from "@mui/icons-material/CloudUpload";
 import { useUser } from "../contexts/UserContext";
@@ -35,13 +36,20 @@ const METHOD_LABEL: Record<AuthMethod, string> = {
   extension: "Browser extension",
   nip46: "Remote signer",
   android: "Android signer",
-  guest: "Temporary account",
-  nsec: "Private key",
+  ncryptsec: "Passphrase key",
 };
 
 export default function UserMenu({ themeId, onSelectTheme }: Props) {
-  const { user, accounts, activeAccount, switchAccount, addAccount, logout } =
-    useUser();
+  const {
+    user,
+    accounts,
+    activeAccount,
+    locked,
+    switchAccount,
+    addAccount,
+    unlock,
+    logout,
+  } = useUser();
   const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
   const [themeOpen, setThemeOpen] = useState(false);
   const [blossomOpen, setBlossomOpen] = useState(false);
@@ -126,6 +134,25 @@ export default function UserMenu({ themeId, onSelectTheme }: Props) {
             <Typography variant="body2" color="text.secondary">
               Not logged in
             </Typography>
+          </MenuItem>
+        )}
+
+        {/* Unlock (active account is a locked passphrase key) */}
+        {locked && (
+          <MenuItem
+            onClick={() => {
+              unlock();
+              handleClose();
+            }}
+          >
+            <ListItemIcon>
+              <LockOpenOutlinedIcon fontSize="small" color="primary" />
+            </ListItemIcon>
+            <ListItemText
+              primary="Unlock"
+              secondary="Enter your passphrase"
+              secondaryTypographyProps={{ variant: "caption" }}
+            />
           </MenuItem>
         )}
 

@@ -13,6 +13,8 @@ import { fetchProfile } from "../nostr/fetchProfile"; // function to fetch kind-
 import { withTimeout } from "../utils/timeout";
 import { useRelays } from "./RelayContext";
 import LoginModal from "../components/LoginModal";
+import UnlockModal from "../components/UnlockModal";
+import MigrationModal from "../components/MigrationModal";
 
 export type UserProfile = {
   pubkey?: string;
@@ -28,9 +30,13 @@ interface UserContextType {
   user: UserProfile | null;
   accounts: Account[];
   activeAccount: AccountSummary | null;
+  /** Active account exists but its signer is locked (ncryptsec). */
+  locked: boolean;
   loginModal: () => Promise<void>;
   /** Open the login modal to add another identity (keeps existing ones). */
   addAccount: () => void;
+  /** Prompt for the passphrase to unlock the active locked account. */
+  unlock: () => void;
   switchAccount: (pubkey: string) => Promise<void>;
   /** Remove an account (defaults to the active one). */
   logout: (pubkey?: string) => void;
@@ -49,12 +55,21 @@ export const UserProvider: React.FC<{ children: React.ReactNode }> = ({
   const [activeAccount, setActiveAccount] = useState<AccountSummary | null>(
     null,
   );
-  const [showLoginModal, setShowLoginModal] = useState<boolean>(false);
+  const [locked, setLocked] = useState(false);
+  const [showLoginModal, setShowLoginModal] = useState(false);
+  const [showUnlockModal, setShowUnlockModal] = useState(false);
+  const [showMigration, setShowMigration] = useState(false);
+  const [pendingMigration, setPendingMigration] = useState<{
+    pubkey: string;
+    source: "guest" | "nsec";
+  } | null>(null);
   const relays = useRelays();
 
   // Refs avoid stale closures inside the once-registered signer listener.
   const loginHandlerRef = useRef<(() => void) | null>(null);
   const cancelHandlerRef = useRef<(() => void) | null>(null);
+  const unlockResolveRef = useRef<(() => void) | null>(null);
+  const unlockRejectRef = useRef<((e: Error) => void) | null>(null);
   const profileCache = useRef<Map<string, UserProfile>>(new Map());
   const relaysRef = useRef(relays);
   useEffect(() => {
@@ -104,9 +119,14 @@ export const UserProvider: React.FC<{ children: React.ReactNode }> = ({
 
   // Re-read the full account list + active identity from the signer.
   const syncFromSigner = useCallback(async () => {
+    const migration = signerManager.getPendingMigration();
+    setPendingMigration(migration);
+    setShowMigration(Boolean(migration));
+
     const list = await signerManager.listAccounts();
     const active = signerManager.getActiveAccount();
     setActiveAccount(active);
+    setLocked(signerManager.isLocked());
     setAccounts(
       list.map((a) => {
         const p = profileCache.current.get(a.pubkey);
@@ -115,9 +135,10 @@ export const UserProvider: React.FC<{ children: React.ReactNode }> = ({
     );
 
     if (active) {
-      // Resolve any pending login-modal promise now that a signer exists.
-      loginHandlerRef.current?.();
-      loginHandlerRef.current = null;
+      if (!signerManager.isLocked()) {
+        loginHandlerRef.current?.();
+        loginHandlerRef.current = null;
+      }
       const cached = profileCache.current.get(active.pubkey);
       const profile = { pubkey: active.pubkey, ...cached };
       setUser(profile);
@@ -132,8 +153,7 @@ export const UserProvider: React.FC<{ children: React.ReactNode }> = ({
     });
   }, [fetchProfileFor]);
 
-  // syncFromSigner is stable (its only dep, fetchProfileFor, has no deps), so
-  // this effect registers the modal + listener and restores exactly once.
+  // syncFromSigner is stable, so this registers callbacks + restores once.
   useEffect(() => {
     signerManager.registerLoginModal(() => {
       return new Promise<void>((resolve, reject) => {
@@ -146,6 +166,14 @@ export const UserProvider: React.FC<{ children: React.ReactNode }> = ({
           setShowLoginModal(false);
           reject(new Error("Login cancelled by user"));
         };
+      });
+    });
+
+    signerManager.registerUnlockModal(() => {
+      return new Promise<void>((resolve, reject) => {
+        setShowUnlockModal(true);
+        unlockResolveRef.current = resolve;
+        unlockRejectRef.current = reject;
       });
     });
 
@@ -174,8 +202,13 @@ export const UserProvider: React.FC<{ children: React.ReactNode }> = ({
     setShowLoginModal(true);
   };
 
+  const unlock = () => {
+    setShowUnlockModal(true);
+  };
+
   const switchAccount = async (pubkey: string) => {
     await signerManager.switchAccount(pubkey); // notify → syncFromSigner
+    if (signerManager.isLocked()) setShowUnlockModal(true);
   };
 
   const logout = (pubkey?: string) => {
@@ -189,14 +222,42 @@ export const UserProvider: React.FC<{ children: React.ReactNode }> = ({
     await fetchProfileFor(active.pubkey);
   };
 
+  // ── Unlock modal handlers ──
+  const handleUnlockSubmit = async (passphrase: string) => {
+    await signerManager.unlockActive(passphrase); // throws on wrong passphrase
+    setShowUnlockModal(false);
+    unlockResolveRef.current?.();
+    unlockResolveRef.current = null;
+    unlockRejectRef.current = null;
+  };
+
+  const handleUnlockCancel = () => {
+    setShowUnlockModal(false);
+    unlockRejectRef.current?.(new Error("Unlock cancelled"));
+    unlockResolveRef.current = null;
+    unlockRejectRef.current = null;
+  };
+
+  // ── Migration modal handlers ──
+  const handleMigrate = async (passphrase: string) => {
+    await signerManager.migrate(passphrase); // notify → syncFromSigner hides it
+  };
+
+  const handleMigrationDismiss = () => {
+    // Keep the legacy key for a later attempt; just hide for this session.
+    setShowMigration(false);
+  };
+
   return (
     <UserContext.Provider
       value={{
         user,
         accounts,
         activeAccount,
+        locked,
         loginModal,
         addAccount,
+        unlock,
         switchAccount,
         logout,
         refreshProfile,
@@ -211,6 +272,20 @@ export const UserProvider: React.FC<{ children: React.ReactNode }> = ({
           setShowLoginModal(false);
         }}
       />
+      <UnlockModal
+        open={showUnlockModal}
+        npub={activeAccount?.npub}
+        onSubmit={handleUnlockSubmit}
+        onCancel={handleUnlockCancel}
+      />
+      {pendingMigration && (
+        <MigrationModal
+          open={showMigration}
+          source={pendingMigration.source}
+          onMigrate={handleMigrate}
+          onDismiss={handleMigrationDismiss}
+        />
+      )}
     </UserContext.Provider>
   );
 };
