@@ -94,7 +94,11 @@ export const UserProvider: React.FC<{ children: React.ReactNode }> = ({
       const profile = (await withTimeout(
         fetchProfile(pubkey, relaysRef.current.relays),
         3000,
-      )) as UserProfile;
+      )) as UserProfile | null;
+      // A freshly created account (NIP-49) has no kind-0 metadata yet, so
+      // fetchProfile resolves null. Keep the pubkey-only entry and let a later
+      // sync pick up the profile once the user publishes one.
+      if (!profile) return;
       profileCache.current.set(pubkey, profile);
       setAccounts((prev) =>
         prev.map((a) =>
