@@ -28,17 +28,19 @@ import QRCode from "qrcode";
 import { signerManager } from "../signer";
 import type { AndroidSignerAppInfo } from "@formstr/signer";
 import { isNativePlatform, isCapacitor } from "../signer/secureStorage";
-import { DEFAULT_RELAYS } from "../nostr/relayPool";
 import FormstrLogo from "../assets/formstr-pages-logo.png";
 
+// Default relay for NIP-46 nostrconnect (QR) pairing.
+const NIP46_DEFAULT_RELAY = "wss://relay.nsec.app";
+
 // Which detail screen the two-step chooser is showing. `null` == the menu.
-type DetailKey = "create" | "existing" | "ext" | "nip55" | "bunker" | "qr";
+// NIP-07 / NIP-55 are one-tap actions fired straight from the menu, so they
+// have no detail screen.
+type DetailKey = "create" | "existing" | "bunker" | "qr";
 
 const DETAIL_TITLES: Record<DetailKey, string> = {
   create: "Create Account",
   existing: "Existing Key",
-  ext: "Browser Extension",
-  nip55: "External Signer",
   bunker: "Nostr Bunker",
   qr: "Remote Signer",
 };
@@ -55,16 +57,12 @@ export default function LoginModal({
 
   // Two-step navigation: null = method menu, otherwise the focused detail form.
   const [detail, setDetail] = useState<DetailKey | null>(null);
-  const [selectedSigner, setSelectedSigner] =
-    useState<AndroidSignerAppInfo | null>(null);
-  // Keep the last-shown detail mounted while sliding back to the menu so the
-  // outgoing pane doesn't blank out mid-transition.
-  const lastDetailRef = useRef<DetailKey | null>(null);
-  if (detail) lastDetailRef.current = detail;
-  const detailKey = detail ?? lastDetailRef.current ?? "create";
+  // The detail pane keeps rendering the last-opened form while sliding back to
+  // the menu, so the outgoing pane doesn't blank out mid-transition.
+  const [renderedDetail, setRenderedDetail] = useState<DetailKey>("create");
 
   const [uri, setUri] = useState("");
-  const [ncRelays, setNcRelays] = useState(DEFAULT_RELAYS.join(", "));
+  const [ncRelays, setNcRelays] = useState(NIP46_DEFAULT_RELAY);
   const [ncDataUrl, setNcDataUrl] = useState("");
   const [ncPending, setNcPending] = useState(false);
   const [ncError, setNcError] = useState("");
@@ -119,9 +117,9 @@ export default function LoginModal({
   };
 
   // Open a focused detail form.
-  const goDetail = (key: DetailKey, signer?: AndroidSignerAppInfo) => {
+  const goDetail = (key: DetailKey) => {
     setError("");
-    if (signer) setSelectedSigner(signer);
+    setRenderedDetail(key);
     setDetail(key);
   };
 
@@ -134,6 +132,15 @@ export default function LoginModal({
 
   const handleNip07 = async () => {
     setError("");
+    // The package reads `globalThis.nostr`; surface a clear, actionable message
+    // when no extension has injected it (common on localhost, or if disabled
+    // for this site) instead of the cryptic "globalThis.nostr is undefined".
+    if (typeof window !== "undefined" && !("nostr" in window)) {
+      setError(
+        "No Nostr browser extension detected. Install one (e.g. Alby or nos2x) and enable it for this site, then try again."
+      );
+      return;
+    }
     try {
       await signerManager.loginWithNip07();
       handleClose();
@@ -318,45 +325,6 @@ export default function LoginModal({
           </>
         );
 
-      case "ext":
-        return (
-          <>
-            <SecurityNote>
-              You'll be prompted by your browser extension (Alby, nos2x,
-              Flamingo) to approve the connection.
-            </SecurityNote>
-            <Button
-              fullWidth
-              variant="contained"
-              onClick={handleNip07}
-              sx={{ mt: 1.5 }}
-            >
-              Connect extension
-            </Button>
-          </>
-        );
-
-      case "nip55":
-        return (
-          <>
-            <SecurityNote>
-              {selectedSigner?.name ?? "Your signer app"} will open to approve
-              this sign-in, then return you here.
-            </SecurityNote>
-            <Button
-              fullWidth
-              variant="contained"
-              onClick={() =>
-                selectedSigner && handleNip55(selectedSigner.packageName)
-              }
-              disabled={!selectedSigner}
-              sx={{ mt: 1.5 }}
-            >
-              Open {selectedSigner?.name ?? "signer"}
-            </Button>
-          </>
-        );
-
       case "bunker":
         return (
           <>
@@ -483,6 +451,12 @@ export default function LoginModal({
               Choose how you'd like to access your documents
             </Typography>
           </Box>
+
+          {error && (
+            <Alert severity="error" sx={{ width: "100%", borderRadius: 2 }}>
+              {error}
+            </Alert>
+          )}
         </Box>
 
         {/* ── Sliding body: menu ⇄ detail ── */}
@@ -516,18 +490,18 @@ export default function LoginModal({
               </Divider>
 
               <Box sx={{ display: "flex", flexDirection: "column", gap: 0.5 }}>
-                {/* NIP-07 — web only */}
+                {/* NIP-07 — web only, one-tap */}
                 {!isNativePlatform && (
                   <MethodRow
                     icon={<VpnKeyOutlinedIcon />}
                     title="Browser Extension"
                     description="Alby, nos2x, Flamingo"
                     accent={theme.palette.secondary.main}
-                    onClick={() => goDetail("ext")}
+                    onClick={handleNip07}
                   />
                 )}
 
-                {/* NIP-55 external signers — Capacitor (Android) only */}
+                {/* NIP-55 external signers — Capacitor (Android) only, one-tap */}
                 {isCapacitor &&
                   installedSigners.map((signer) => (
                     <MethodRow
@@ -546,7 +520,7 @@ export default function LoginModal({
                       title={signer.name}
                       description="External Android signer"
                       accent={theme.palette.secondary.main}
-                      onClick={() => goDetail("nip55", signer)}
+                      onClick={() => handleNip55(signer.packageName)}
                     />
                   ))}
 
@@ -586,17 +560,11 @@ export default function LoginModal({
                   <ArrowBackIcon fontSize="small" />
                 </IconButton>
                 <Typography variant="subtitle1" fontWeight={700}>
-                  {DETAIL_TITLES[detailKey]}
+                  {DETAIL_TITLES[renderedDetail]}
                 </Typography>
               </Box>
 
-              {error && (
-                <Alert severity="error" sx={{ borderRadius: 2, mb: 1.5 }}>
-                  {error}
-                </Alert>
-              )}
-
-              {renderDetail(detailKey)}
+              {renderDetail(renderedDetail)}
             </Box>
           </Box>
         </Box>
