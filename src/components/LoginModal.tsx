@@ -1,19 +1,18 @@
 // src/components/LoginModal.tsx
 import {
   Dialog,
-  Stack,
   Button,
   TextField,
   Typography,
-  Collapse,
   Box,
   Alert,
   ButtonBase,
   Divider,
   CircularProgress,
   IconButton,
+  useMediaQuery,
 } from "@mui/material";
-import { useTheme } from "@mui/material/styles";
+import { useTheme, alpha } from "@mui/material/styles";
 import VpnKeyOutlinedIcon from "@mui/icons-material/VpnKeyOutlined";
 import KeyOutlinedIcon from "@mui/icons-material/KeyOutlined";
 import PersonAddAltOutlinedIcon from "@mui/icons-material/PersonAddAltOutlined";
@@ -22,6 +21,8 @@ import HubOutlinedIcon from "@mui/icons-material/HubOutlined";
 import QrCode2OutlinedIcon from "@mui/icons-material/QrCode2Outlined";
 import ContentCopyOutlinedIcon from "@mui/icons-material/ContentCopyOutlined";
 import ChevronRightIcon from "@mui/icons-material/ChevronRight";
+import ArrowBackIcon from "@mui/icons-material/ArrowBack";
+import ShieldOutlinedIcon from "@mui/icons-material/ShieldOutlined";
 import { useState, useEffect, useRef, type ReactNode } from "react";
 import QRCode from "qrcode";
 import { signerManager } from "../signer";
@@ -29,6 +30,18 @@ import type { AndroidSignerAppInfo } from "@formstr/signer";
 import { isNativePlatform, isCapacitor } from "../signer/secureStorage";
 import { DEFAULT_RELAYS } from "../nostr/relayPool";
 import FormstrLogo from "../assets/formstr-pages-logo.png";
+
+// Which detail screen the two-step chooser is showing. `null` == the menu.
+type DetailKey = "create" | "existing" | "ext" | "nip55" | "bunker" | "qr";
+
+const DETAIL_TITLES: Record<DetailKey, string> = {
+  create: "Create Account",
+  existing: "Existing Key",
+  ext: "Browser Extension",
+  nip55: "External Signer",
+  bunker: "Nostr Bunker",
+  qr: "Remote Signer",
+};
 
 export default function LoginModal({
   open,
@@ -38,10 +51,17 @@ export default function LoginModal({
   onClose: () => void;
 }) {
   const theme = useTheme();
-  const [showNip46, setShowNip46] = useState(false);
-  const [showNc, setShowNc] = useState(false);
-  const [showCreate, setShowCreate] = useState(false);
-  const [showExisting, setShowExisting] = useState(false);
+  const fullScreen = useMediaQuery(theme.breakpoints.down("sm"));
+
+  // Two-step navigation: null = method menu, otherwise the focused detail form.
+  const [detail, setDetail] = useState<DetailKey | null>(null);
+  const [selectedSigner, setSelectedSigner] =
+    useState<AndroidSignerAppInfo | null>(null);
+  // Keep the last-shown detail mounted while sliding back to the menu so the
+  // outgoing pane doesn't blank out mid-transition.
+  const lastDetailRef = useRef<DetailKey | null>(null);
+  if (detail) lastDetailRef.current = detail;
+  const detailKey = detail ?? lastDetailRef.current ?? "create";
 
   const [uri, setUri] = useState("");
   const [ncRelays, setNcRelays] = useState(DEFAULT_RELAYS.join(", "));
@@ -76,15 +96,40 @@ export default function LoginModal({
     loadSigners();
   }, []);
 
-  // Abort any in-flight nostrconnect pairing and clear transient state, then
-  // close. Used for every close path so a stale QR never lingers.
-  const handleClose = () => {
+  // Abort any in-flight nostrconnect pairing and clear transient QR state.
+  const abortPairing = () => {
     ncAbortRef.current?.abort();
     ncAbortRef.current = null;
     setNcDataUrl("");
     setNcPending(false);
     setNcError("");
+  };
+
+  // Close the modal: abort pairing, clear sensitive inputs, reset to the menu.
+  const handleClose = () => {
+    abortPairing();
+    setError("");
+    setDetail(null);
+    setCreatePass("");
+    setCreateConfirm("");
+    setExistingNcryptsec("");
+    setExistingPass("");
+    setUri("");
     onClose();
+  };
+
+  // Open a focused detail form.
+  const goDetail = (key: DetailKey, signer?: AndroidSignerAppInfo) => {
+    setError("");
+    if (signer) setSelectedSigner(signer);
+    setDetail(key);
+  };
+
+  // Slide back to the method menu (and abort a pairing if we were on the QR).
+  const goMenu = () => {
+    abortPairing();
+    setError("");
+    setDetail(null);
   };
 
   const handleNip07 = async () => {
@@ -143,7 +188,10 @@ export default function LoginModal({
     if (!existingNcryptsec || !existingPass) return;
     setError("");
     try {
-      await signerManager.loginWithNcryptsec(existingNcryptsec.trim(), existingPass);
+      await signerManager.loginWithNcryptsec(
+        existingNcryptsec.trim(),
+        existingPass
+      );
       setExistingNcryptsec("");
       setExistingPass("");
       handleClose();
@@ -172,7 +220,9 @@ export default function LoginModal({
         signal: controller.signal,
         onUri: async (ncUri) => {
           try {
-            setNcDataUrl(await QRCode.toDataURL(ncUri, { width: 240, margin: 1 }));
+            setNcDataUrl(
+              await QRCode.toDataURL(ncUri, { width: 240, margin: 1 })
+            );
           } catch {
             setNcDataUrl("");
           }
@@ -188,10 +238,204 @@ export default function LoginModal({
     }
   };
 
-  const isDark = theme.palette.mode === "dark";
-  const accentAlpha = isDark ? "22" : "18";
   const createMismatch =
     createConfirm.length > 0 && createPass !== createConfirm;
+
+  // ── The focused detail form for the right-hand pane ──
+  const renderDetail = (key: DetailKey): ReactNode => {
+    switch (key) {
+      case "create":
+        return (
+          <>
+            <TextField
+              fullWidth
+              size="small"
+              label="Passphrase"
+              type="password"
+              value={createPass}
+              onChange={(e) => setCreatePass(e.target.value)}
+              sx={{ mb: 1.25 }}
+            />
+            <TextField
+              fullWidth
+              size="small"
+              label="Confirm passphrase"
+              type="password"
+              value={createConfirm}
+              error={createMismatch}
+              helperText={createMismatch ? "Passphrases don't match" : undefined}
+              onChange={(e) => setCreateConfirm(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && handleCreate()}
+              sx={{ mb: 1.5 }}
+            />
+            <Button
+              fullWidth
+              variant="contained"
+              onClick={handleCreate}
+              disabled={!createPass || createMismatch || createLoading}
+              startIcon={
+                createLoading ? <CircularProgress size={16} /> : undefined
+              }
+            >
+              {createLoading ? "Creating…" : "Create account"}
+            </Button>
+            <SecurityNote>
+              We'll generate a recovery key (<code>ncryptsec</code>) you must
+              save — it's the only way to restore this account elsewhere.
+            </SecurityNote>
+          </>
+        );
+
+      case "existing":
+        return (
+          <>
+            <TextField
+              fullWidth
+              size="small"
+              label="ncryptsec1…"
+              value={existingNcryptsec}
+              onChange={(e) => setExistingNcryptsec(e.target.value)}
+              sx={{ mb: 1.25 }}
+            />
+            <TextField
+              fullWidth
+              size="small"
+              label="Passphrase"
+              type="password"
+              value={existingPass}
+              onChange={(e) => setExistingPass(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && handleExisting()}
+              sx={{ mb: 1.5 }}
+            />
+            <Button
+              fullWidth
+              variant="contained"
+              onClick={handleExisting}
+              disabled={!existingNcryptsec || !existingPass}
+            >
+              Sign in
+            </Button>
+          </>
+        );
+
+      case "ext":
+        return (
+          <>
+            <SecurityNote>
+              You'll be prompted by your browser extension (Alby, nos2x,
+              Flamingo) to approve the connection.
+            </SecurityNote>
+            <Button
+              fullWidth
+              variant="contained"
+              onClick={handleNip07}
+              sx={{ mt: 1.5 }}
+            >
+              Connect extension
+            </Button>
+          </>
+        );
+
+      case "nip55":
+        return (
+          <>
+            <SecurityNote>
+              {selectedSigner?.name ?? "Your signer app"} will open to approve
+              this sign-in, then return you here.
+            </SecurityNote>
+            <Button
+              fullWidth
+              variant="contained"
+              onClick={() =>
+                selectedSigner && handleNip55(selectedSigner.packageName)
+              }
+              disabled={!selectedSigner}
+              sx={{ mt: 1.5 }}
+            >
+              Open {selectedSigner?.name ?? "signer"}
+            </Button>
+          </>
+        );
+
+      case "bunker":
+        return (
+          <>
+            <TextField
+              fullWidth
+              size="small"
+              label="Bunker URI (bunker://…)"
+              value={uri}
+              onChange={(e) => setUri(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && handleNip46()}
+              sx={{ mb: 1.5 }}
+            />
+            <Button
+              fullWidth
+              variant="contained"
+              onClick={handleNip46}
+              disabled={!uri}
+            >
+              Connect
+            </Button>
+          </>
+        );
+
+      case "qr":
+        return (
+          <>
+            {ncError && (
+              <Alert severity="error" sx={{ borderRadius: 2, mb: 1.25 }}>
+                {ncError}
+              </Alert>
+            )}
+            <TextField
+              fullWidth
+              size="small"
+              label="Relays (comma-separated)"
+              value={ncRelays}
+              onChange={(e) => setNcRelays(e.target.value)}
+              disabled={ncPending}
+              sx={{ mb: 1.5 }}
+            />
+            {ncDataUrl ? (
+              <Box
+                sx={{
+                  display: "flex",
+                  flexDirection: "column",
+                  alignItems: "center",
+                  gap: 1,
+                  py: 1,
+                }}
+              >
+                <img
+                  src={ncDataUrl}
+                  alt="nostrconnect QR"
+                  style={{ width: 200, height: 200, borderRadius: 8 }}
+                />
+                <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+                  <CircularProgress size={14} />
+                  <Typography variant="caption" color="text.secondary">
+                    Waiting for your signer…
+                  </Typography>
+                </Box>
+              </Box>
+            ) : (
+              <Button
+                fullWidth
+                variant="contained"
+                onClick={handleNostrConnect}
+                disabled={ncPending}
+                startIcon={
+                  ncPending ? <CircularProgress size={16} /> : undefined
+                }
+              >
+                {ncPending ? "Generating…" : "Generate QR"}
+              </Button>
+            )}
+          </>
+        );
+    }
+  };
 
   return (
     <>
@@ -200,31 +444,36 @@ export default function LoginModal({
         onClose={handleClose}
         maxWidth="xs"
         fullWidth
+        fullScreen={fullScreen}
         PaperProps={{
           sx: {
-            borderRadius: 3,
+            borderRadius: fullScreen ? 0 : 3,
             overflow: "hidden",
             bgcolor: "background.paper",
+            display: "flex",
+            flexDirection: "column",
+            ...(fullScreen ? {} : { maxHeight: "min(660px, 92vh)" }),
           },
         }}
       >
-        {/* ── Header ── */}
+        {/* ── Header (persistent) ── */}
         <Box
           sx={{
             px: 3,
-            pt: 4,
-            pb: 3,
+            pt: 3.5,
+            pb: 2.5,
             display: "flex",
             flexDirection: "column",
             alignItems: "center",
-            gap: 1.5,
+            gap: 1.25,
             borderBottom: `1px solid ${theme.palette.divider}`,
+            flexShrink: 0,
           }}
         >
           <img
             src={FormstrLogo}
             alt="Pages by Form*"
-            style={{ width: 56, height: 56, borderRadius: 14 }}
+            style={{ width: 52, height: 52, borderRadius: 14 }}
           />
           <Box textAlign="center">
             <Typography variant="h6" fontWeight={700}>
@@ -234,277 +483,131 @@ export default function LoginModal({
               Choose how you'd like to access your documents
             </Typography>
           </Box>
-
-          {error && (
-            <Alert severity="error" sx={{ width: "100%", borderRadius: 2 }}>
-              {error}
-            </Alert>
-          )}
         </Box>
 
-        {/* ── Options ── */}
-        <Stack divider={<Divider />}>
-          {/* Create account (NIP-49) */}
-          <Box>
-            <OptionButton
-              icon={<PersonAddAltOutlinedIcon />}
-              title="Create Account"
-              description="New key, secured by a passphrase"
-              accentColor={theme.palette.primary.main}
-              accentAlpha={accentAlpha}
-              onClick={() => setShowCreate((p) => !p)}
-              chevronRotated={showCreate}
-            />
-            <Collapse in={showCreate}>
-              <Box
-                sx={{
-                  px: 2,
-                  pb: 2,
-                  display: "flex",
-                  flexDirection: "column",
-                  gap: 1,
-                  bgcolor: `${theme.palette.primary.main}${accentAlpha}`,
-                }}
-              >
-                <TextField
-                  fullWidth
-                  size="small"
-                  label="Passphrase"
-                  type="password"
-                  value={createPass}
-                  onChange={(e) => setCreatePass(e.target.value)}
-                />
-                <TextField
-                  fullWidth
-                  size="small"
-                  label="Confirm passphrase"
-                  type="password"
-                  value={createConfirm}
-                  error={createMismatch}
-                  helperText={createMismatch ? "Passphrases don't match" : undefined}
-                  onChange={(e) => setCreateConfirm(e.target.value)}
-                  onKeyDown={(e) => e.key === "Enter" && handleCreate()}
-                />
-                <Button
-                  variant="contained"
-                  onClick={handleCreate}
-                  disabled={!createPass || createMismatch || createLoading}
-                  startIcon={
-                    createLoading ? <CircularProgress size={16} /> : undefined
-                  }
+        {/* ── Sliding body: menu ⇄ detail ── */}
+        <Box sx={{ flex: 1, overflowY: "auto", overflowX: "hidden" }}>
+          <Box
+            sx={{
+              display: "flex",
+              width: "200%",
+              alignItems: "flex-start",
+              transition: "transform .34s cubic-bezier(.4,0,.2,1)",
+              transform: detail ? "translateX(-50%)" : "none",
+            }}
+          >
+            {/* Pane 1 — method menu */}
+            <Box sx={{ width: "50%", flexShrink: 0, p: 2.5 }}>
+              <HeroCard onClick={() => goDetail("create")} />
+
+              <Divider sx={{ my: 2 }}>
+                <Typography
+                  variant="caption"
+                  color="text.secondary"
+                  sx={{
+                    textTransform: "uppercase",
+                    letterSpacing: ".08em",
+                    fontWeight: 700,
+                    fontSize: "0.65rem",
+                  }}
                 >
-                  {createLoading ? "Creating…" : "Create account"}
-                </Button>
-              </Box>
-            </Collapse>
-          </Box>
+                  Already have an identity?
+                </Typography>
+              </Divider>
 
-          {/* Existing key (ncryptsec) */}
-          <Box>
-            <OptionButton
-              icon={<KeyOutlinedIcon />}
-              title="Existing Key"
-              description="Sign in with an ncryptsec"
-              accentColor={theme.palette.primary.main}
-              accentAlpha={accentAlpha}
-              onClick={() => setShowExisting((p) => !p)}
-              chevronRotated={showExisting}
-            />
-            <Collapse in={showExisting}>
-              <Box
-                sx={{
-                  px: 2,
-                  pb: 2,
-                  display: "flex",
-                  flexDirection: "column",
-                  gap: 1,
-                  bgcolor: `${theme.palette.primary.main}${accentAlpha}`,
-                }}
-              >
-                <TextField
-                  fullWidth
-                  size="small"
-                  label="ncryptsec1..."
-                  value={existingNcryptsec}
-                  onChange={(e) => setExistingNcryptsec(e.target.value)}
-                />
-                <TextField
-                  fullWidth
-                  size="small"
-                  label="Passphrase"
-                  type="password"
-                  value={existingPass}
-                  onChange={(e) => setExistingPass(e.target.value)}
-                  onKeyDown={(e) => e.key === "Enter" && handleExisting()}
-                />
-                <Button
-                  variant="contained"
-                  onClick={handleExisting}
-                  disabled={!existingNcryptsec || !existingPass}
-                >
-                  Sign in
-                </Button>
-              </Box>
-            </Collapse>
-          </Box>
-
-          {/* NIP-07 — web only */}
-          {!isNativePlatform && (
-            <OptionButton
-              icon={<VpnKeyOutlinedIcon />}
-              title="Browser Extension"
-              description="Alby, nos2x, Flamingo"
-              accentColor={theme.palette.secondary.main}
-              accentAlpha={accentAlpha}
-              onClick={handleNip07}
-            />
-          )}
-
-          {/* NIP-55 external signers — Capacitor (Android) only */}
-          {isCapacitor &&
-            installedSigners.map((signer) => (
-              <OptionButton
-                key={signer.packageName}
-                icon={
-                  signer.iconUrl ? (
-                    <img
-                      src={signer.iconUrl}
-                      alt={signer.name}
-                      style={{ width: 24, height: 24, borderRadius: 4 }}
-                    />
-                  ) : (
-                    <PhonelinkLockOutlinedIcon />
-                  )
-                }
-                title={signer.name}
-                description="Sign with external Android signer"
-                accentColor={theme.palette.secondary.main}
-                accentAlpha={accentAlpha}
-                onClick={() => handleNip55(signer.packageName)}
-              />
-            ))}
-
-          {/* NIP-46 — bunker URI */}
-          <Box>
-            <OptionButton
-              icon={<HubOutlinedIcon />}
-              title="Nostr Bunker"
-              description="Connect via NIP-46 URI"
-              accentColor={theme.palette.secondary.main}
-              accentAlpha={accentAlpha}
-              onClick={() => setShowNip46((p) => !p)}
-              chevronRotated={showNip46}
-            />
-            <Collapse in={showNip46}>
-              <Box
-                sx={{
-                  px: 2,
-                  pb: 2,
-                  display: "flex",
-                  gap: 1,
-                  bgcolor: `${theme.palette.secondary.main}${accentAlpha}`,
-                }}
-              >
-                <TextField
-                  fullWidth
-                  size="small"
-                  label="Bunker URI"
-                  value={uri}
-                  onChange={(e) => setUri(e.target.value)}
-                  onKeyDown={(e) => e.key === "Enter" && handleNip46()}
-                />
-                <Button
-                  variant="contained"
-                  onClick={handleNip46}
-                  disabled={!uri}
-                  sx={{ flexShrink: 0 }}
-                >
-                  Connect
-                </Button>
-              </Box>
-            </Collapse>
-          </Box>
-
-          {/* NIP-46 — nostrconnect (QR) */}
-          <Box>
-            <OptionButton
-              icon={<QrCode2OutlinedIcon />}
-              title="Remote Signer (QR)"
-              description="Scan with your signer app"
-              accentColor={theme.palette.secondary.main}
-              accentAlpha={accentAlpha}
-              onClick={() => setShowNc((p) => !p)}
-              chevronRotated={showNc}
-            />
-            <Collapse in={showNc}>
-              <Box
-                sx={{
-                  px: 2,
-                  pb: 2,
-                  display: "flex",
-                  flexDirection: "column",
-                  gap: 1,
-                  bgcolor: `${theme.palette.secondary.main}${accentAlpha}`,
-                }}
-              >
-                {ncError && (
-                  <Alert severity="error" sx={{ borderRadius: 2 }}>
-                    {ncError}
-                  </Alert>
+              <Box sx={{ display: "flex", flexDirection: "column", gap: 0.5 }}>
+                {/* NIP-07 — web only */}
+                {!isNativePlatform && (
+                  <MethodRow
+                    icon={<VpnKeyOutlinedIcon />}
+                    title="Browser Extension"
+                    description="Alby, nos2x, Flamingo"
+                    accent={theme.palette.secondary.main}
+                    onClick={() => goDetail("ext")}
+                  />
                 )}
-                <TextField
-                  fullWidth
-                  size="small"
-                  label="Relays (comma-separated)"
-                  value={ncRelays}
-                  onChange={(e) => setNcRelays(e.target.value)}
-                  disabled={ncPending}
-                />
-                {ncDataUrl ? (
-                  <Box
-                    sx={{
-                      display: "flex",
-                      flexDirection: "column",
-                      alignItems: "center",
-                      gap: 1,
-                      py: 1,
-                    }}
-                  >
-                    <img
-                      src={ncDataUrl}
-                      alt="nostrconnect QR"
-                      style={{ width: 200, height: 200, borderRadius: 8 }}
+
+                {/* NIP-55 external signers — Capacitor (Android) only */}
+                {isCapacitor &&
+                  installedSigners.map((signer) => (
+                    <MethodRow
+                      key={signer.packageName}
+                      icon={
+                        signer.iconUrl ? (
+                          <img
+                            src={signer.iconUrl}
+                            alt={signer.name}
+                            style={{ width: 24, height: 24, borderRadius: 4 }}
+                          />
+                        ) : (
+                          <PhonelinkLockOutlinedIcon />
+                        )
+                      }
+                      title={signer.name}
+                      description="External Android signer"
+                      accent={theme.palette.secondary.main}
+                      onClick={() => goDetail("nip55", signer)}
                     />
-                    <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
-                      <CircularProgress size={14} />
-                      <Typography variant="caption" color="text.secondary">
-                        Waiting for your signer…
-                      </Typography>
-                    </Box>
-                  </Box>
-                ) : (
-                  <Button
-                    variant="contained"
-                    onClick={handleNostrConnect}
-                    disabled={ncPending}
-                    startIcon={
-                      ncPending ? <CircularProgress size={16} /> : undefined
-                    }
-                  >
-                    {ncPending ? "Generating…" : "Generate QR"}
-                  </Button>
-                )}
+                  ))}
+
+                <MethodRow
+                  icon={<KeyOutlinedIcon />}
+                  title="Existing Key"
+                  description="Sign in with an ncryptsec"
+                  accent={theme.palette.primary.main}
+                  onClick={() => goDetail("existing")}
+                />
+                <MethodRow
+                  icon={<HubOutlinedIcon />}
+                  title="Nostr Bunker"
+                  description="Connect via NIP-46 URI"
+                  accent={theme.palette.secondary.main}
+                  onClick={() => goDetail("bunker")}
+                />
+                <MethodRow
+                  icon={<QrCode2OutlinedIcon />}
+                  title="Remote Signer (QR)"
+                  description="Scan with your signer app"
+                  accent={theme.palette.secondary.main}
+                  onClick={() => goDetail("qr")}
+                />
               </Box>
-            </Collapse>
+            </Box>
+
+            {/* Pane 2 — focused detail */}
+            <Box sx={{ width: "50%", flexShrink: 0, p: 2.5 }}>
+              <Box sx={{ display: "flex", alignItems: "center", gap: 0.5, mb: 2 }}>
+                <IconButton
+                  size="small"
+                  onClick={goMenu}
+                  aria-label="Back to options"
+                  sx={{ ml: -0.5 }}
+                >
+                  <ArrowBackIcon fontSize="small" />
+                </IconButton>
+                <Typography variant="subtitle1" fontWeight={700}>
+                  {DETAIL_TITLES[detailKey]}
+                </Typography>
+              </Box>
+
+              {error && (
+                <Alert severity="error" sx={{ borderRadius: 2, mb: 1.5 }}>
+                  {error}
+                </Alert>
+              )}
+
+              {renderDetail(detailKey)}
+            </Box>
           </Box>
-        </Stack>
+        </Box>
 
         {/* ── Footer ── */}
         <Box
           sx={{
             px: 3,
-            py: 1.5,
+            py: 1.25,
             borderTop: `1px solid ${theme.palette.divider}`,
+            flexShrink: 0,
           }}
         >
           <Button
@@ -530,6 +633,34 @@ export default function LoginModal({
         }}
       />
     </>
+  );
+}
+
+/* ── Security/info callout ── */
+function SecurityNote({ children }: { children: ReactNode }) {
+  return (
+    <Box
+      sx={{
+        display: "flex",
+        gap: 1,
+        alignItems: "flex-start",
+        p: 1.25,
+        mt: 1.25,
+        borderRadius: 2,
+        bgcolor: "action.hover",
+      }}
+    >
+      <ShieldOutlinedIcon
+        sx={{ fontSize: 18, color: "secondary.main", mt: "1px", flexShrink: 0 }}
+      />
+      <Typography
+        variant="caption"
+        color="text.secondary"
+        sx={{ lineHeight: 1.5 }}
+      >
+        {children}
+      </Typography>
+    </Box>
   );
 }
 
@@ -602,24 +733,11 @@ function RecoveryKeyDialog({
   );
 }
 
-/* ── Option row component ── */
-function OptionButton({
-  icon,
-  title,
-  description,
-  accentColor,
-  accentAlpha,
-  onClick,
-  chevronRotated = false,
-}: {
-  icon: ReactNode;
-  title: string;
-  description: string;
-  accentColor: string;
-  accentAlpha: string;
-  onClick: () => void;
-  chevronRotated?: boolean;
-}) {
+/* ── Hero "Create account" CTA (menu, primary path) ── */
+function HeroCard({ onClick }: { onClick: () => void }) {
+  const theme = useTheme();
+  const p = theme.palette.primary.main;
+  const s = theme.palette.secondary.main;
   return (
     <ButtonBase
       onClick={onClick}
@@ -627,32 +745,97 @@ function OptionButton({
         width: "100%",
         display: "flex",
         alignItems: "center",
-        gap: 2,
-        px: 2.5,
-        py: 1.75,
+        gap: 1.75,
+        p: 2,
         textAlign: "left",
-        transition: "background 0.15s",
-        "&:hover": { bgcolor: `${accentColor}${accentAlpha}` },
+        borderRadius: 2.5,
+        border: `1.5px solid ${alpha(p, 0.3)}`,
+        background: `linear-gradient(135deg, ${alpha(p, 0.13)}, ${alpha(
+          s,
+          0.07
+        )})`,
+        transition: "transform .14s, box-shadow .14s",
+        "&:hover": {
+          transform: "translateY(-1px)",
+          boxShadow: `0 8px 20px ${alpha(p, 0.18)}`,
+        },
       }}
     >
-      {/* Icon badge */}
       <Box
         sx={{
-          width: 40,
-          height: 40,
+          width: 44,
+          height: 44,
           borderRadius: 2,
-          bgcolor: `${accentColor}${accentAlpha}`,
+          flexShrink: 0,
           display: "flex",
           alignItems: "center",
           justifyContent: "center",
-          color: accentColor,
+          bgcolor: alpha(p, 0.16),
+          color: p,
+        }}
+      >
+        <PersonAddAltOutlinedIcon />
+      </Box>
+      <Box flex={1} minWidth={0}>
+        <Typography variant="body1" fontWeight={700} lineHeight={1.3}>
+          Create a new account
+        </Typography>
+        <Typography variant="caption" color="text.secondary">
+          Fresh key, protected by a passphrase
+        </Typography>
+      </Box>
+      <ChevronRightIcon sx={{ color: "text.secondary", flexShrink: 0 }} />
+    </ButtonBase>
+  );
+}
+
+/* ── Menu row — opens a detail screen ── */
+function MethodRow({
+  icon,
+  title,
+  description,
+  accent,
+  onClick,
+}: {
+  icon: ReactNode;
+  title: string;
+  description: string;
+  accent: string;
+  onClick: () => void;
+}) {
+  const theme = useTheme();
+  const isDark = theme.palette.mode === "dark";
+  return (
+    <ButtonBase
+      onClick={onClick}
+      sx={{
+        width: "100%",
+        display: "flex",
+        alignItems: "center",
+        gap: 1.75,
+        px: 1.5,
+        py: 1.5,
+        textAlign: "left",
+        borderRadius: 2,
+        transition: "background 0.15s",
+        "&:hover": { bgcolor: "action.hover" },
+      }}
+    >
+      <Box
+        sx={{
+          width: 42,
+          height: 42,
+          borderRadius: 2,
           flexShrink: 0,
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          bgcolor: alpha(accent, isDark ? 0.18 : 0.14),
+          color: accent,
         }}
       >
         {icon}
       </Box>
-
-      {/* Text */}
       <Box flex={1} minWidth={0}>
         <Typography variant="body1" fontWeight={600} lineHeight={1.3}>
           {title}
@@ -661,16 +844,8 @@ function OptionButton({
           {description}
         </Typography>
       </Box>
-
-      {/* Chevron */}
       <ChevronRightIcon
-        sx={{
-          color: "text.secondary",
-          opacity: 0.5,
-          flexShrink: 0,
-          transition: "transform 0.2s",
-          transform: chevronRotated ? "rotate(90deg)" : "none",
-        }}
+        sx={{ color: "text.secondary", opacity: 0.5, flexShrink: 0 }}
       />
     </ButtonBase>
   );
