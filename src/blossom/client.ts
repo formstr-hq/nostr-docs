@@ -21,14 +21,11 @@ async function buildAuthHeader(sha256: string, action: "upload" | "delete" = "up
   return `Nostr ${btoa(JSON.stringify(signed))}`;
 }
 
-/**
- * Upload an encrypted blob to one or more blossom servers (BUD-02).
- * Tries all servers in parallel, returns the URL from the first success.
- */
-export async function uploadToBlossom(
+export async function uploadBinaryToBlossom(
   servers: string[],
-  encryptedData: Uint8Array,
+  data: Uint8Array,
   sha256: string,
+  mimeType = "application/octet-stream",
 ): Promise<string> {
   if (servers.length === 0) throw new Error("No blossom servers configured");
 
@@ -40,16 +37,15 @@ export async function uploadToBlossom(
       const res = await fetch(`${base}/upload`, {
         method: "PUT",
         headers: {
-          "Content-Type": "application/octet-stream",
+          "Content-Type": mimeType,
           Authorization: authorization,
         },
-        body: new Blob([encryptedData.buffer as ArrayBuffer]),
+        body: new Blob([data]),
       });
       if (!res.ok) {
         const text = await res.text().catch(() => res.statusText);
         throw new Error(`${server}: HTTP ${res.status} — ${text}`);
       }
-      // BUD-01 response: { url, sha256, size, ... }
       const json = await res.json().catch(() => ({}));
       return (json.url as string) || `${base}/${sha256}`;
     }),
@@ -63,6 +59,18 @@ export async function uploadToBlossom(
     .filter((r): r is PromiseRejectedResult => r.status === "rejected")
     .map((r) => String(r.reason));
   throw new Error(`All blossom uploads failed:\n${errors.join("\n")}`);
+}
+
+/**
+ * Upload an encrypted blob to one or more blossom servers (BUD-02).
+ * Tries all servers in parallel, returns the URL from the first success.
+ */
+export async function uploadToBlossom(
+  servers: string[],
+  encryptedData: Uint8Array,
+  sha256: string,
+): Promise<string> {
+  return uploadBinaryToBlossom(servers, encryptedData, sha256, "application/octet-stream");
 }
 
 /**

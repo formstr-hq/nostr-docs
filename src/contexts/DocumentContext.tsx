@@ -1,10 +1,13 @@
 import { getPublicKey, nip44, type Event } from "nostr-tools";
 import React, { createContext, useContext, useMemo, useState } from "react";
 import { signerManager } from "../signer";
+import { saveFontResource } from "../lib/fontStore";
+import { registerFontFaceFromBlob } from "../lib/fontRegister";
 import { getConversationKey } from "nostr-tools/nip44";
 import { hexToBytes } from "nostr-tools/utils";
 import { useUser, type UserProfile } from "./UserContext";
 import { getEventAddress } from "../utils/helpers";
+import { sha256Hex } from "../utils/fileEncryption";
 
 type DocumentVersion = {
   event: Event;
@@ -230,6 +233,82 @@ export const DocumentProvider: React.FC<{ children: React.ReactNode }> = ({
       next.set(address, history);
       return next;
     });
+
+    // If the event contains font tags (added when sharing), try to fetch
+    // and persist those fonts locally so the editor can register them.
+    (async () => {
+      try {
+        const fontTags = document.tags.filter((t) => t[0] === "font");
+        for (const tag of fontTags) {
+          // tag format: ["font", family, url, format]
+          const family = tag[1];
+          const url = tag[2];
+          const format = (tag[3] as any) || "woff2";
+          if (!url || !family) continue;
+          try {
+            // 1. Validate URL scheme
+            let parsedUrl: URL;
+            try {
+              parsedUrl = new URL(url);
+            } catch (err) {
+              throw new Error("Invalid URL format");
+            }
+            if (parsedUrl.protocol !== "https:") {
+              throw new Error("Only HTTPS urls are allowed for fonts");
+            }
+
+            // 2. Extract expected hash from Blossom URL
+            const expectedHash = parsedUrl.pathname.split("/").pop() || "";
+            if (!/^[0-9a-f]{64}$/i.test(expectedHash)) {
+              throw new Error("URL does not appear to be a valid Blossom URL (missing sha256 hash)");
+            }
+
+            const res = await fetch(url);
+            if (!res.ok) throw new Error(`Failed to fetch font: ${res.status}`);
+
+            // 3. Enforce file size limit (5MB)
+            const contentLength = res.headers.get("content-length");
+            if (contentLength && Number(contentLength) > 5 * 1024 * 1024) {
+              throw new Error("Font file exceeds 5MB limit");
+            }
+
+            const blob = await res.blob();
+            if (blob.size > 5 * 1024 * 1024) {
+              throw new Error("Downloaded font file exceeds 5MB limit");
+            }
+
+            // 4. Verify cryptographic hash
+            const buf = await blob.arrayBuffer();
+            const actualHash = await sha256Hex(buf);
+            if (actualHash !== expectedHash.toLowerCase()) {
+              throw new Error(`Font hash verification failed (expected ${expectedHash}, got ${actualHash})`);
+            }
+
+            // We must re-create the blob because arrayBuffer() might drain it depending on browser, or we just use the buffer.
+            // Actually `blob.arrayBuffer()` doesn't consume the blob, so it's safe to reuse it.
+            const mimeType = res.headers.get("content-type") || "font/woff2";
+            await saveFontResource({
+              family,
+              blob,
+              format: format as any,
+              mimeType,
+              addedAt: Date.now(),
+              blossomUrl: url,
+            });
+              // register immediately so the UI shows the font without reload
+              try {
+                registerFontFaceFromBlob(family, blob, format as any);
+              } catch (err) {
+                console.warn("Failed to register shared font immediately:", err);
+              }
+          } catch (err) {
+            console.warn("Could not persist shared font:", family, url, err);
+          }
+        }
+      } catch (err) {
+        /* ignore */
+      }
+    })();
   };
 
   return (

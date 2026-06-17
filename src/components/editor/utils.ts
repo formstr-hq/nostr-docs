@@ -13,6 +13,9 @@ import { publishEvent } from "../../nostr/publish";
 import { encodeNKeys } from "../../utils/nkeys";
 import { KIND_FILE } from "../../nostr/kinds";
 import { isNativePlatform } from "../../signer/secureStorage";
+import { loadFontResources, saveFontResource } from "../../lib/fontStore";
+import { sha256Hex } from "../../utils/fileEncryption";
+import { uploadBinaryToBlossom } from "../../blossom/client";
 
 export const handleSharePublic = () => {
   console.log("TODO: Share publicly");
@@ -93,6 +96,7 @@ export async function handleGeneratePrivateLink(
   relays: string[],
   viewKey?: string,
   editKey?: string,
+  blossomServers: string[] = [],
 ): Promise<ShareResult> {
   if (!selectedDocumentId) {
     throw new Error("No document selected");
@@ -124,10 +128,39 @@ export async function handleGeneratePrivateLink(
   );
   const encryptedContent = nip44.encrypt(docContent, conversationKey);
 
-  // 2️⃣ Create shared event with the same d-tag
+  // Gather font metadata from local store and ensure blossom URLs exist
+  const fontTags: string[][] = [];
+  try {
+    const fonts = await loadFontResources();
+    for (const f of fonts) {
+      try {
+        if (!f.blossomUrl && blossomServers && blossomServers.length > 0) {
+          const buf = await f.blob.arrayBuffer();
+          const sha = await sha256Hex(buf);
+          try {
+            const url = await uploadBinaryToBlossom(blossomServers, new Uint8Array(buf), sha, f.mimeType);
+            f.blossomUrl = url;
+            await saveFontResource(f);
+          } catch (err) {
+            console.warn("Failed to upload font to Blossom:", f.family, err);
+          }
+        }
+
+        if (f.blossomUrl) {
+          // tag format: ["font", family, url, format]
+          fontTags.push(["font", f.family, f.blossomUrl, f.format]);
+        }
+      } catch (err) {
+        console.warn("Skipping font metadata due to error", err);
+      }
+    }
+  } catch (err) {
+    console.warn("Could not read stored fonts:", err);
+  }
+
   const sharedEvent = {
     kind: KIND_FILE,
-    tags: [["d", dTag]],
+    tags: [["d", dTag], ...fontTags],
     content: encryptedContent,
     created_at: Math.floor(Date.now() / 1000),
   };
