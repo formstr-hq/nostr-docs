@@ -20,6 +20,7 @@ export type UserProfile = {
   pubkey?: string;
   name?: string;
   avatar?: string; // url
+  picture?: string; // nostr kind-0 metadata field; normalized into `avatar`
   about?: string;
 };
 
@@ -99,6 +100,10 @@ export const UserProvider: React.FC<{ children: React.ReactNode }> = ({
       // fetchProfile resolves null. Keep the pubkey-only entry and let a later
       // sync pick up the profile once the user publishes one.
       if (!profile) return;
+      // Nostr kind-0 metadata stores the avatar URL under `picture`; normalize
+      // it to `avatar` so every consumer (cache, accounts, user, localStorage)
+      // sees it (preserves the "fix avatar (#47)" behavior from main).
+      profile.avatar = profile.picture || profile.avatar;
       profileCache.current.set(pubkey, profile);
       setAccounts((prev) =>
         prev.map((a) =>
