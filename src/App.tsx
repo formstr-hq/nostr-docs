@@ -124,6 +124,24 @@ function AppLayout() {
       <GlobalStyles styles={(t) => ({
         "*": { "--comment-highlight-color": alpha(t.palette.secondary.main, 0.4) },
         ".tiptap a": { color: t.palette.secondary.main },
+        // One-shot pulse used when a sidebar comment is clicked, to draw the
+        // eye to its highlighted span after scrolling. Theme-token driven so it
+        // reads correctly across every theme. Starts as a stronger tint + ring
+        // and settles back to the resting highlight colour.
+        "@keyframes commentHighlightPulse": {
+          "0%": {
+            backgroundColor: alpha(t.palette.secondary.main, 0.85),
+            boxShadow: `0 0 0 3px ${alpha(t.palette.secondary.main, 0.85)}`,
+          },
+          "100%": {
+            backgroundColor: alpha(t.palette.secondary.main, 0.4),
+            boxShadow: `0 0 0 0 ${alpha(t.palette.secondary.main, 0)}`,
+          },
+        },
+        ".comment-highlight-pulse": {
+          animation: "commentHighlightPulse 1.4s ease-out",
+          borderRadius: "2px",
+        },
       })} />
 
       {/* ===== TOP BAR ===== */}

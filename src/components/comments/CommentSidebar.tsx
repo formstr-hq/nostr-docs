@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { Box, Button, Typography, Divider, IconButton, Tooltip, Snackbar, Alert } from "@mui/material";
 import CloseIcon from "@mui/icons-material/Close";
 import { useComments } from "../../contexts/CommentContext";
+import { scrollToComment } from "../../utils/scrollToComment";
 import { CommentCard } from "./CommentCard";
 
 type Props = {
@@ -11,7 +12,7 @@ type Props = {
 };
 
 export function CommentSidebar({ onClose, activeCommentId, isMobile }: Props) {
-  const { comments, resolvedIds, resolveComment, unresolveComment, isOutdated } = useComments();
+  const { comments, resolvedIds, resolveComment, unresolveComment, isOutdated, canResolve } = useComments();
   const [showResolved, setShowResolved] = useState(false);
   const [showOutdated, setShowOutdated] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -149,11 +150,8 @@ export function CommentSidebar({ onClose, activeCommentId, isMobile }: Props) {
                   comment={comment}
                   isResolved={false}
                   isOutdated={false}
-                  onResolve={() => handleResolve(comment.id)}
-                  onCardClick={comment.quote ? () => {
-                    document.querySelector(`[data-comment-id="${comment.id}"]`)
-                      ?.scrollIntoView({ behavior: "smooth", block: "center" });
-                  } : undefined}
+                  onResolve={canResolve(comment) ? () => handleResolve(comment.id) : undefined}
+                  onCardClick={comment.quote ? () => scrollToComment(comment.id) : undefined}
                 />
               </Box>
             ))}
@@ -173,7 +171,7 @@ export function CommentSidebar({ onClose, activeCommentId, isMobile }: Props) {
                       comment={comment}
                       isResolved={false}
                       isOutdated={true}
-                      onResolve={() => handleResolve(comment.id)}
+                      onResolve={canResolve(comment) ? () => handleResolve(comment.id) : undefined}
                     />
                   </Box>
                 ))}
@@ -195,11 +193,8 @@ export function CommentSidebar({ onClose, activeCommentId, isMobile }: Props) {
                       comment={comment}
                       isResolved={true}
                       isOutdated={isOutdated(comment)}
-                      onUnresolve={() => handleUnresolve(comment.id)}
-                      onCardClick={comment.quote ? () => {
-                        document.querySelector(`[data-comment-id="${comment.id}"]`)
-                          ?.scrollIntoView({ behavior: "smooth", block: "center" });
-                      } : undefined}
+                      onUnresolve={canResolve(comment) ? () => handleUnresolve(comment.id) : undefined}
+                      onCardClick={comment.quote ? () => scrollToComment(comment.id) : undefined}
                     />
                   </Box>
                 ))}

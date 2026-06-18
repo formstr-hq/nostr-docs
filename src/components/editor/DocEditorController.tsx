@@ -1393,7 +1393,7 @@ export function DocumentEditorController({
 
   if (commentsEnabled) {
     return (
-      <CommentProvider viewKey={viewKey!} docAddress={selectedDocumentId!} currentDocText={docPlainText}>
+      <CommentProvider viewKey={viewKey!} docAddress={selectedDocumentId!} currentDocText={docPlainText} editKey={editKey} myPubkey={user?.pubkey}>
         <CommentHighlightEffect editor={editor} mode={mode} />
         {editorJsx}
       </CommentProvider>
