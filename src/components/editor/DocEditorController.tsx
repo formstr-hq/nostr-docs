@@ -1385,6 +1385,31 @@ export function DocumentEditorController({
             await setDocSharedAs(selectedDocumentId, result.address);
           }
 
+          // View-only share keeps the same doc address but re-encrypts the doc
+          // under a freshly-generated viewKey. The edit-share path hands the
+          // owner off to the keyed "live version" URL, but view-only sharing
+          // had no equivalent — so the editing session never adopted the
+          // viewKey. Two bugs followed: the comments button stayed hidden
+          // (commentsEnabled = !!viewKey) and subsequent saves self-encrypted
+          // (encryptContent(content, undefined)), breaking the view link.
+          // Refresh the URL with the viewKey so the session picks it up.
+          if (
+            !result.editKey &&
+            isOwner &&
+            !viewKey &&
+            selectedDocumentId === result.address
+          ) {
+            const [kind, pubkey, identifier] = result.address.split(":");
+            const naddr = nip19.naddrEncode({
+              kind: Number(kind),
+              pubkey,
+              identifier,
+            });
+            navigate(`/doc/${naddr}#${encodeNKeys({ viewKey: result.viewKey })}`, {
+              replace: true,
+            });
+          }
+
           return result.url;
         }}
       />
