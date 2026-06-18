@@ -21,7 +21,7 @@ import {
 import DocumentList from "./components/DocumentList";
 import UserMenu from "./components/UserMenu";
 import { DocumentProvider } from "./contexts/DocumentContext";
-import { UserProvider } from "./contexts/UserContext";
+import { UserProvider, useUser } from "./contexts/UserContext";
 import { ThemeModeProvider, useThemeMode } from "./contexts/ThemeModeContext";
 import FormstrLogo from "./assets/formstr-pages-logo.png";
 import DocPage from "./components/DocPage";
@@ -72,6 +72,28 @@ const router = createRouter([
   },
 ]);
 
+/* ── Authed (per-account) subtree ───────────────────────── */
+// Keyed on the active account's pubkey, so switching accounts tears down and
+// rebuilds the entire doc/editor layer — DocumentContext, SharedDocs,
+// DocMetadata, the TipTap editor, all component state — from a clean slate.
+// That is what stops one account's in-memory notes/editor content from bleeding
+// into the next (the previous-account-data-after-switch bug). It sits below
+// User/Relay/Blossom/MyForms so the signer, relay pool, and forms list survive
+// the switch; only this subtree remounts. "anon" keeps a stable key while
+// logged out.
+function AuthedApp() {
+  const { activeAccount } = useUser();
+  return (
+    <DocumentProvider key={activeAccount?.pubkey ?? "anon"}>
+      <SharedPagesProvider>
+        <DocMetadataProvider>
+          <RouterProvider router={router} />
+        </DocMetadataProvider>
+      </SharedPagesProvider>
+    </DocumentProvider>
+  );
+}
+
 /* ── App root — providers only, no router JSX ───────────── */
 export default function App() {
   // ThemeModeProvider sits above everything (including UserProvider) so the
@@ -82,13 +104,7 @@ export default function App() {
         <RelayProvider>
           <BlossomProvider>
             <MyFormsProvider>
-              <DocumentProvider>
-                <SharedPagesProvider>
-                  <DocMetadataProvider>
-                    <RouterProvider router={router} />
-                  </DocMetadataProvider>
-                </SharedPagesProvider>
-              </DocumentProvider>
+              <AuthedApp />
             </MyFormsProvider>
           </BlossomProvider>
         </RelayProvider>
