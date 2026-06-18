@@ -45,6 +45,10 @@ interface CommentContextValue {
   unresolveComment: (commentId: string) => Promise<void>;
   applyHighlights: (editor: Editor) => void;
   isOutdated: (comment: DecryptedComment) => boolean;
+  /** Whether the current user is allowed to resolve/unresolve a given comment —
+   * true for the doc authority (owner / edit-access holder) or the comment's
+   * own author. UI gate that mirrors what publishResolution can sign for. */
+  canResolve: (comment: DecryptedComment) => boolean;
 }
 
 const CommentContext = createContext<CommentContextValue | undefined>(undefined);
@@ -174,11 +178,18 @@ export const CommentProvider: React.FC<{
   docAddress: string;
   /** Plain text of the document (not markdown) — used to detect outdated quotes. */
   currentDocText: string;
+  /** Edit key, present only when the user has edit access. When set, resolutions
+   * are signed with it so they carry the doc's authority. See publishResolution. */
+  editKey?: string;
+  /** Current user's pubkey — used to decide whether they can resolve a comment. */
+  myPubkey?: string;
 }> = ({
   children,
   viewKey,
   docAddress,
   currentDocText,
+  editKey,
+  myPubkey,
 }) => {
   const { relays } = useRelays();
   const [comments, setComments] = useState<DecryptedComment[]>([]);
@@ -215,13 +226,28 @@ export const CommentProvider: React.FC<{
     };
   }, [viewKey, docAddress, relays]);
 
+  // The doc address is `<kind>:<pubkey>:<dTag>`; that pubkey is the owner's key
+  // for a solo doc, or the shared editKey for an edit-shared doc — i.e. the
+  // resolution authority. See publishResolution in nostr/comments.ts.
+  const authorityPubkey = useMemo(() => docAddress.split(":")[1] ?? "", [docAddress]);
+
   const resolvedIds = useMemo(() => {
+    const commentAuthor = new Map(comments.map((c) => [c.id, c.pubkey]));
     const ids = new Set<string>();
     for (const [commentId, byPubkey] of resolverMap) {
-      if (isResolvedByLatest(byPubkey)) ids.add(commentId);
+      const authorPubkey = commentAuthor.get(commentId);
+      // Count only resolutions from an authorized signer: the doc authority
+      // (owner key / editKey) or that comment's own author. Last-writer-wins
+      // across these lanes, so an author can reopen an editor-resolved thread.
+      const authorized = new Map(
+        [...byPubkey].filter(
+          ([pubkey]) => pubkey === authorityPubkey || pubkey === authorPubkey,
+        ),
+      );
+      if (isResolvedByLatest(authorized)) ids.add(commentId);
     }
     return ids;
-  }, [resolverMap]);
+  }, [resolverMap, comments, authorityPubkey]);
 
   const addComment = async (
     payload: CommentPayload,
@@ -250,13 +276,23 @@ export const CommentProvider: React.FC<{
   };
 
   const setCommentResolution = async (commentId: string, resolved: boolean): Promise<void> => {
-    const event = await publishResolution(commentId, viewKey, docAddress, relays, resolved);
+    const event = await publishResolution(commentId, viewKey, docAddress, relays, resolved, editKey);
     setResolverMap((m) => setResolution(m, commentId, event.pubkey, resolved, event.created_at));
   };
 
   const resolveComment = (commentId: string) => setCommentResolution(commentId, true);
 
   const unresolveComment = (commentId: string) => setCommentResolution(commentId, false);
+
+  // Mirror of the authority model enforced in publishResolution: the user may
+  // resolve if they hold the editKey, or their own key is the doc authority
+  // (solo-doc owner), or they authored the comment (own thread).
+  const canResolve = useCallback(
+    (comment: DecryptedComment) =>
+      !!editKey ||
+      (!!myPubkey && (myPubkey === authorityPubkey || myPubkey === comment.pubkey)),
+    [editKey, myPubkey, authorityPubkey],
+  );
 
   const isOutdated = useCallback(
     (comment: DecryptedComment) => {
@@ -284,7 +320,7 @@ export const CommentProvider: React.FC<{
 
   return (
     <CommentContext.Provider
-      value={{ comments, addComment, resolvedIds, resolveComment, unresolveComment, applyHighlights, isOutdated }}
+      value={{ comments, addComment, resolvedIds, resolveComment, unresolveComment, applyHighlights, isOutdated, canResolve }}
     >
       {children}
     </CommentContext.Provider>
