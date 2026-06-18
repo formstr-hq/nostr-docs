@@ -12,7 +12,7 @@ import {
   useMediaQuery,
 } from "@mui/material";
 import MenuIcon from "@mui/icons-material/Menu";
-import { ThemeProvider } from "@mui/material/styles";
+import { ThemeProvider, alpha } from "@mui/material/styles";
 import {
   createBrowserRouter,
   createHashRouter,
@@ -105,7 +105,7 @@ function AppLayout() {
   const [mobileOpen, setMobileOpen] = React.useState(false);
   const [themeId, setThemeId] = React.useState<ThemeId>(() => {
     const stored = localStorage.getItem("formstr:theme") as ThemeId | null;
-    if (stored) return stored;
+    if (stored && stored in themes) return stored;
     const ids = Object.keys(themes) as ThemeId[];
     return ids[Math.floor(Math.random() * ids.length)];
   });
@@ -122,7 +122,26 @@ function AppLayout() {
     <ThemeProvider theme={theme}>
       <CssBaseline />
       <GlobalStyles styles={(t) => ({
+        "*": { "--comment-highlight-color": alpha(t.palette.secondary.main, 0.4) },
         ".tiptap a": { color: t.palette.secondary.main },
+        // One-shot pulse used when a sidebar comment is clicked, to draw the
+        // eye to its highlighted span after scrolling. Theme-token driven so it
+        // reads correctly across every theme. Starts as a stronger tint + ring
+        // and settles back to the resting highlight colour.
+        "@keyframes commentHighlightPulse": {
+          "0%": {
+            backgroundColor: alpha(t.palette.secondary.main, 0.85),
+            boxShadow: `0 0 0 3px ${alpha(t.palette.secondary.main, 0.85)}`,
+          },
+          "100%": {
+            backgroundColor: alpha(t.palette.secondary.main, 0.4),
+            boxShadow: `0 0 0 0 ${alpha(t.palette.secondary.main, 0)}`,
+          },
+        },
+        ".comment-highlight-pulse": {
+          animation: "commentHighlightPulse 1.4s ease-out",
+          borderRadius: "2px",
+        },
       })} />
 
       {/* ===== TOP BAR ===== */}
