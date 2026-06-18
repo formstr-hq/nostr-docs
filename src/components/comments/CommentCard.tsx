@@ -65,7 +65,9 @@ export function CommentCard({ comment, isResolved, isOutdated, onResolve, onUnre
         )}
       </Box>
       {isOutdated && (
-        <Chip label="Outdated" size="small" variant="outlined" color="warning" sx={{ height: 18, fontSize: "0.65rem", alignSelf: "flex-end" }} />
+        <Tooltip title="The text this comment refers to no longer exists in the document, so it can't be located.">
+          <Chip label="Outdated" size="small" variant="outlined" color="warning" sx={{ height: 18, fontSize: "0.65rem", alignSelf: "flex-end" }} />
+        </Tooltip>
       )}
 
       {comment.quote && (
