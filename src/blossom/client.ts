@@ -43,7 +43,7 @@ export async function uploadToBlossom(
           "Content-Type": "application/octet-stream",
           Authorization: authorization,
         },
-        body: new Blob([encryptedData.buffer as ArrayBuffer]),
+        body: new Blob([encryptedData]),
       });
       if (!res.ok) {
         const text = await res.text().catch(() => res.statusText);

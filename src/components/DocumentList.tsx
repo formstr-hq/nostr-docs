@@ -121,8 +121,9 @@ export default function DocumentList({
     selectedDocumentId,
     localOnlyAddresses,
     markLocalOnly,
+    docRelays,
+    setDocRelays,
   } = useDocumentContext();
-  const [docRelays, setDocRelays] = useState<Map<string, string[]>>(new Map());
 
   const { sharedDocuments, getKeys } = useSharedPages();
   const { docTags, docTitles, setDocTitle, docSharedAs, allTags, selectedTag, setSelectedTag } = useDocMetadata();
