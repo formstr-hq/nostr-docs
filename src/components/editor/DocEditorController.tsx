@@ -931,6 +931,13 @@ export function DocumentEditorController({
     }
     : null;
 
+  /* Build existing share links to pass to ShareModal */
+  const viewKeys = selectedDocumentId ? getKeys(selectedDocumentId) : [];
+  const existingViewLink = viewKeys[0] ? buildShareUrl(selectedDocumentId!, viewKeys[0]) : "";
+
+  const editKeys = sharedAsAddress ? getKeys(sharedAsAddress) : [];
+  const existingEditLink = editKeys[0] && editKeys[1] ? buildShareUrl(sharedAsAddress!, editKeys[0], editKeys[1]) : "";
+
   /* ── Render ────────────────────────────────────────────── */
 
   const editorJsx = (
@@ -1317,8 +1324,9 @@ export function DocumentEditorController({
         open={shareOpen}
         onClose={() => setShareOpen(false)}
         onPublicPost={() => handleSharePublic()}
-        hasEditShare={!!sharedAsAddress}
-        onPrivateLink={async (canEdit) => {
+        existingViewLink={existingViewLink}
+        existingEditLink={existingEditLink}
+        onPrivateLink={async (canEdit, rotate) => {
           // Edit-access re-share: reuse the existing keys and skip publishing.
           // Republishing would push our stale local copy over any edits the
           // collaborator has made through the live shared link.
@@ -1326,6 +1334,13 @@ export function DocumentEditorController({
             const existing = getKeys(sharedAsAddress);
             if (existing[0] && existing[1]) {
               return buildShareUrl(sharedAsAddress, existing[0], existing[1]);
+            }
+          }
+
+          if (!canEdit && selectedDocumentId && !rotate) {
+            const existing = getKeys(selectedDocumentId);
+            if (existing[0]) {
+              return buildShareUrl(selectedDocumentId, existing[0]);
             }
           }
 
