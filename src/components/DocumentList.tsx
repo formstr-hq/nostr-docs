@@ -54,6 +54,7 @@ import { useDocMetadata } from "../contexts/DocMetadataContext.tsx";
 import RenameDialog from "./RenameDialog.tsx";
 import EditOutlinedIcon from "@mui/icons-material/EditOutlined";
 import { IconButton } from "@mui/material";
+import DictationButton from "./dictation/DictationButton";
 
 /** Deterministic hue (0–359) from a tag string. */
 function tagHue(tag: string): number {
@@ -366,17 +367,24 @@ export default function DocumentList({
                 <SearchIcon sx={{ fontSize: 18, opacity: 0.6 }} />
               </InputAdornment>
             ),
-            endAdornment: query ? (
+            endAdornment: (
               <InputAdornment position="end">
-                <IconButton
+                {query && (
+                  <IconButton
+                    size="small"
+                    onClick={() => setQuery("")}
+                    sx={{ p: 0.25 }}
+                  >
+                    <CloseIcon sx={{ fontSize: 16 }} />
+                  </IconButton>
+                )}
+                <DictationButton
                   size="small"
-                  onClick={() => setQuery("")}
-                  sx={{ p: 0.25 }}
-                >
-                  <CloseIcon sx={{ fontSize: 16 }} />
-                </IconButton>
+                  tooltip="Dictate search"
+                  onTranscript={(text) => setQuery(text)}
+                />
               </InputAdornment>
-            ) : null,
+            ),
             sx: { fontSize: "0.85rem", borderRadius: 2 },
           }}
         />
