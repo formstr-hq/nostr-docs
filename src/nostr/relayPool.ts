@@ -7,10 +7,20 @@ import { SimplePool } from "nostr-tools";
  * Allows us to swap transport (e.g., Blossom later) without rewriting components.
  */
 
-export const DEFAULT_RELAYS = [
-  "wss://relay.damus.io",
-  "wss://relay.primal.net",
-  "wss://nos.lol",
-];
+/**
+ * Relays the app reads/writes by default. In production this is the hardcoded
+ * list below. For e2e tests we point the whole app at a local in-memory relay
+ * by setting VITE_DEFAULT_RELAYS (comma-separated) — it is unset in production,
+ * so this has no effect on real builds.
+ */
+const relayOverride = import.meta.env.VITE_DEFAULT_RELAYS as string | undefined;
+
+export const DEFAULT_RELAYS = relayOverride
+  ? relayOverride.split(",").map((r) => r.trim()).filter(Boolean)
+  : [
+      "wss://relay.damus.io",
+      "wss://relay.primal.net",
+      "wss://nos.lol",
+    ];
 
 export const pool = new SimplePool();
