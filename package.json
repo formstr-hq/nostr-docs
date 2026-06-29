@@ -7,6 +7,8 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "lint": "eslint .",
+    "test:e2e": "playwright test",
+    "test:e2e:ui": "playwright test --ui",
     "preview": "vite preview --base /",
     "tauri:dev": "tauri dev",
     "tauri:build": "tauri build",
@@ -54,10 +56,12 @@
   "devDependencies": {
     "@capacitor/cli": "^7.6.1",
     "@eslint/js": "^9.39.1",
+    "@playwright/test": "^1.61.1",
     "@tauri-apps/cli": "^2.10.1",
     "@types/node": "^24.10.1",
     "@types/react": "^19.2.5",
     "@types/react-dom": "^19.2.3",
+    "@types/ws": "^8.18.1",
     "@vitejs/plugin-react": "^5.1.1",
     "eslint": "^9.39.1",
     "eslint-plugin-react-hooks": "^7.0.1",
@@ -65,6 +69,7 @@
     "globals": "^16.5.0",
     "typescript": "~5.9.3",
     "typescript-eslint": "^8.46.4",
-    "vite": "^7.2.4"
+    "vite": "^7.2.4",
+    "ws": "^8.21.0"
   }
 }
