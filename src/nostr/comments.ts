@@ -2,7 +2,7 @@ import { finalizeEvent, getPublicKey, nip44, type Event, type EventTemplate } fr
 import { hexToBytes } from "nostr-tools/utils";
 import type { SubCloser } from "nostr-tools/abstract-pool";
 import { pool } from "./relayPool";
-import { publishEvent } from "./publish";
+import { publishEventStrict } from "./publish";
 import { signerManager } from "../signer";
 import { KIND_COMMENT, KIND_COMMENT_RESOLUTION } from "./kinds";
 
@@ -62,7 +62,7 @@ export async function publishComment(
   };
 
   const signed = await signer.signEvent(event);
-  await publishEvent(signed, relays);
+  await publishEventStrict(signed, relays);
   return signed;
 }
 
@@ -130,7 +130,7 @@ export async function publishResolution(
     signed = await signer.signEvent(template);
   }
 
-  await publishEvent(signed, relays);
+  await publishEventStrict(signed, relays);
   return signed;
 }
 
