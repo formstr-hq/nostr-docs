@@ -122,7 +122,7 @@ function AppLayout() {
     <ThemeProvider theme={theme}>
       <CssBaseline />
       <GlobalStyles styles={(t) => ({
-        "*": { "--comment-highlight-color": alpha(t.palette.secondary.main, 0.4) },
+        ":root": { "--comment-highlight-color": alpha(t.palette.secondary.main, 0.4) },
         ".tiptap a": { color: t.palette.secondary.main },
         // One-shot pulse used when a sidebar comment is clicked, to draw the
         // eye to its highlighted span after scrolling. Theme-token driven so it
