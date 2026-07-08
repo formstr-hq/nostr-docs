@@ -115,16 +115,22 @@ class Signer {
 
   private async _restoreFromStorage() {
     try {
-      // A pre-package guest/nsec key takes priority: surface the migration
-      // prompt instead of silently signing the user out.
-      const legacy = await detectLegacyKey();
-      if (legacy) {
-        this.pendingMigration = legacy;
-        this.notify();
-        return;
+      const pkg = await getPkg();
+
+      // A pre-package guest/nsec key surfaces the migration prompt — but only
+      // when there's no package account to restore. Otherwise a leftover legacy
+      // key (e.g. after the user dismissed migration and logged in another way)
+      // would shadow a real account on every startup. When an account exists we
+      // restore it and leave the legacy key for a future logged-out session.
+      if (!pkg.getActiveAccount()) {
+        const legacy = await detectLegacyKey();
+        if (legacy) {
+          this.pendingMigration = legacy;
+          this.notify();
+          return;
+        }
       }
 
-      const pkg = await getPkg();
       const active = await pkg.unlock({ pool });
       const account = pkg.getActiveAccount();
       if (active && account) {
