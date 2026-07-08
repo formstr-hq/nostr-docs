@@ -276,7 +276,17 @@ export const CommentProvider: React.FC<{
   };
 
   const setCommentResolution = async (commentId: string, resolved: boolean): Promise<void> => {
-    const event = await publishResolution(commentId, viewKey, docAddress, relays, resolved, editKey);
+    // Replaceable events with equal created_at are tie-broken by lowest id,
+    // so a resolve→unresolve flip within the same second would be ignored
+    // locally (setResolution keeps the existing entry on ties) and land
+    // nondeterministically on relays. Timestamp strictly after the latest
+    // known resolution for this comment so the newest action always wins.
+    let latest = 0;
+    for (const entry of resolverMap.get(commentId)?.values() ?? []) {
+      if (entry.createdAt > latest) latest = entry.createdAt;
+    }
+    const createdAt = Math.max(Math.floor(Date.now() / 1000), latest + 1);
+    const event = await publishResolution(commentId, viewKey, docAddress, relays, resolved, editKey, createdAt);
     setResolverMap((m) => setResolution(m, commentId, event.pubkey, resolved, event.created_at));
   };
 

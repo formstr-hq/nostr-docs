@@ -102,6 +102,7 @@ export async function publishResolution(
   relays: string[],
   resolved = true,
   editKey?: string,
+  createdAt = Math.floor(Date.now() / 1000),
 ): Promise<Event> {
   const encryptedContent = encryptTags(
     [["resolved", String(resolved)]],
@@ -110,7 +111,7 @@ export async function publishResolution(
 
   const template: EventTemplate = {
     kind: KIND_COMMENT_RESOLUTION,
-    created_at: Math.floor(Date.now() / 1000),
+    created_at: createdAt,
     content: encryptedContent,
     tags: [
       ["d", commentEventId],
