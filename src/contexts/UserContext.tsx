@@ -276,7 +276,12 @@ export const UserProvider: React.FC<{ children: React.ReactNode }> = ({
       <LoginModal
         open={showLoginModal}
         onClose={() => {
-          cancelHandlerRef.current?.();
+          // A successful login also closes the modal (handleClose → onClose),
+          // and syncFromSigner resolves the getSigner() promise via
+          // loginHandlerRef. Only reject as a cancellation when no signer
+          // became active — otherwise the action that opened the modal would
+          // fail with "Login cancelled by user" despite the login succeeding.
+          if (!signerManager.hasSigner()) cancelHandlerRef.current?.();
           cancelHandlerRef.current = null;
           setShowLoginModal(false);
         }}
