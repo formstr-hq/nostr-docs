@@ -36,13 +36,10 @@ export function CommentSidebar({ onClose, activeCommentId, isMobile }: Props) {
   const outdated = comments.filter((c) => !resolvedIds.has(c.id) && isOutdated(c));
   const resolved = comments.filter((c) => resolvedIds.has(c.id));
 
-  useEffect(() => {
-    if (resolved.length === 0) setShowResolved(false);
-  }, [resolved.length]);
-
-  useEffect(() => {
-    if (outdated.length === 0) setShowOutdated(false);
-  }, [outdated.length]);
+  // A section is only open while it has content, so an emptied section
+  // collapses on its own — no state syncing needed.
+  const outdatedOpen = showOutdated && outdated.length > 0;
+  const resolvedOpen = showResolved && resolved.length > 0;
 
   return (
     <Box
@@ -85,11 +82,11 @@ export function CommentSidebar({ onClose, activeCommentId, isMobile }: Props) {
         <Box sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
           <Button
             size="small"
-            disabled={!showOutdated && outdated.length === 0}
-            onClick={() => setShowOutdated((v) => !v)}
+            disabled={outdated.length === 0}
+            onClick={() => setShowOutdated(!outdatedOpen)}
             sx={{ textTransform: "none", minWidth: 0, px: 0.5, fontSize: "0.75rem" }}
           >
-            {showOutdated
+            {outdatedOpen
               ? "Hide outdated"
               : outdated.length > 0
                 ? `Show outdated (${outdated.length})`
@@ -97,11 +94,11 @@ export function CommentSidebar({ onClose, activeCommentId, isMobile }: Props) {
           </Button>
           <Button
             size="small"
-            disabled={!showResolved && resolved.length === 0}
-            onClick={() => setShowResolved((v) => !v)}
+            disabled={resolved.length === 0}
+            onClick={() => setShowResolved(!resolvedOpen)}
             sx={{ textTransform: "none", minWidth: 0, px: 0.5, fontSize: "0.75rem" }}
           >
-            {showResolved
+            {resolvedOpen
               ? "Hide resolved"
               : resolved.length > 0
                 ? `Show resolved (${resolved.length})`
@@ -127,7 +124,7 @@ export function CommentSidebar({ onClose, activeCommentId, isMobile }: Props) {
           p: 1.5,
         }}
       >
-        {active.length === 0 && !showOutdated && !showResolved ? (
+        {active.length === 0 && !outdatedOpen && !resolvedOpen ? (
           <Typography
             variant="body2"
             color="text.secondary"
@@ -155,7 +152,7 @@ export function CommentSidebar({ onClose, activeCommentId, isMobile }: Props) {
                 />
               </Box>
             ))}
-            {showOutdated && outdated.length > 0 && (
+            {outdatedOpen && (
               <>
                 <Divider />
                 {outdated.map((comment) => (
@@ -177,7 +174,7 @@ export function CommentSidebar({ onClose, activeCommentId, isMobile }: Props) {
                 ))}
               </>
             )}
-            {showResolved && resolved.length > 0 && (
+            {resolvedOpen && (
               <>
                 <Divider />
                 {resolved.map((comment) => (
