@@ -21,9 +21,11 @@ import LogoutIcon from "@mui/icons-material/Logout";
 import LockOpenOutlinedIcon from "@mui/icons-material/LockOpenOutlined";
 import PersonAddAltOutlinedIcon from "@mui/icons-material/PersonAddAltOutlined";
 import CloudUploadIcon from "@mui/icons-material/CloudUpload";
+import MicIcon from "@mui/icons-material/Mic";
 import { useUser } from "../contexts/UserContext";
 import type { AuthMethod } from "../signer";
 import BlossomServersModal from "./BlossomServersModal";
+import DictationSettingsDialog from "./dictation/DictationSettingsDialog";
 import { themes } from "../theme";
 import type { ThemeId, ThemeDefinition } from "../theme";
 
@@ -53,6 +55,7 @@ export default function UserMenu({ themeId, onSelectTheme }: Props) {
   const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
   const [themeOpen, setThemeOpen] = useState(false);
   const [blossomOpen, setBlossomOpen] = useState(false);
+  const [dictationOpen, setDictationOpen] = useState(false);
 
   const handleOpen = (e: React.MouseEvent<HTMLElement>) =>
     setAnchorEl(e.currentTarget);
@@ -248,11 +251,32 @@ export default function UserMenu({ themeId, onSelectTheme }: Props) {
             secondaryTypographyProps={{ variant: "caption" }}
           />
         </MenuItem>
+
+        {/* Dictation */}
+        <MenuItem
+          onClick={() => {
+            setDictationOpen(true);
+            handleClose();
+          }}
+        >
+          <ListItemIcon>
+            <MicIcon fontSize="small" />
+          </ListItemIcon>
+          <ListItemText
+            primary="Dictation"
+            secondary="On-device voice typing"
+            secondaryTypographyProps={{ variant: "caption" }}
+          />
+        </MenuItem>
       </Menu>
 
       <BlossomServersModal
         open={blossomOpen}
         onClose={() => setBlossomOpen(false)}
+      />
+      <DictationSettingsDialog
+        open={dictationOpen}
+        onClose={() => setDictationOpen(false)}
       />
     </>
   );
