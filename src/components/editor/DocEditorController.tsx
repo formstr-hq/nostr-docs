@@ -581,7 +581,11 @@ export function DocumentEditorController({
   // button, navigate() calls) before they happen. When blocked we show a
   // confirmation modal; the user can then call blocker.proceed() to allow
   // the navigation or blocker.reset() to stay on the page.
-  const blocker = useBlocker(hasUnsavedChanges);
+  // Evaluated from refs at navigation time so a handler that just persisted
+  // the content can mark it saved and navigate in the same tick (see the
+  // view-only share path) — a plain boolean would be stale from the previous
+  // render and still block.
+  const blocker = useBlocker(() => mdRef.current !== lastSavedMdRef.current);
 
   /* ── Auto-save: debounced 30s after last content change ── */
   // Only fires for existing (non-draft) documents that the user can edit.
@@ -1414,6 +1418,13 @@ export function DocumentEditorController({
             !viewKey &&
             selectedDocumentId === result.address
           ) {
+            // The snapshot just published *is* the current content, so mark
+            // it saved — otherwise the unsaved-changes blocker intercepts
+            // this navigation, and if the user picks "stay" the session
+            // never adopts the viewKey and the next save silently breaks the
+            // link that was just handed out.
+            lastSavedMdRef.current = md;
+            setLastSavedAt(new Date());
             const [kind, pubkey, identifier] = result.address.split(":");
             const naddr = nip19.naddrEncode({
               kind: Number(kind),
