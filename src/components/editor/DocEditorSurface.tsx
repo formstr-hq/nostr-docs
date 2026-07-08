@@ -196,7 +196,15 @@ export function DocEditorSurface({
           )}
 
           {value.trim() ? (
-            <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeRaw]} components={markdownComponents}>{value}</ReactMarkdown>
+            // Keyed by content: applyDomHighlights mutates this rendered DOM
+            // (splitting text nodes and wrapping them in highlight spans), so
+            // React must never diff into the subtree after the content
+            // changes — it would call removeChild/insertBefore against nodes
+            // whose parents changed and crash. The key swap makes React drop
+            // the old subtree wholesale and mount fresh nodes instead.
+            <div key={value}>
+              <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeRaw]} components={markdownComponents}>{value}</ReactMarkdown>
+            </div>
           ) : (
             <Typography color="text.secondary">
               Nothing to preview yet —{" "}
