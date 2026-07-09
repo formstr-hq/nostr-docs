@@ -16,29 +16,41 @@ import {
   IconButton,
 } from "@mui/material";
 import ContentCopyIcon from "@mui/icons-material/ContentCopy";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 
 type Props = {
   open: boolean;
   onClose: () => void;
   onPublicPost?: () => void;
-  onPrivateLink?: (canEdit: boolean) => Promise<string | void>;
-  hasEditShare?: boolean;
+  onPrivateLink?: (canEdit: boolean, rotate?: boolean) => Promise<string | void>;
+  existingViewLink?: string;
+  existingEditLink?: string;
 };
 
-export default function ShareModal({ open, onClose, onPrivateLink, hasEditShare = false }: Props) {
+export default function ShareModal({ open, onClose, onPrivateLink, existingViewLink = "", existingEditLink = "" }: Props) {
   const [canEdit, setCanEdit] = useState(false);
   const [privateLink, setPrivateLink] = useState<string>("");
   const [loading, setLoading] = useState(false);
   const [toastOpen, setToastOpen] = useState(false);
   const [error, setError] = useState<string>("");
 
+  const currentExistingLink = canEdit ? existingEditLink : existingViewLink;
+
+  useEffect(() => {
+    if (open) {
+      setPrivateLink(currentExistingLink || "");
+    } else {
+      setPrivateLink("");
+    }
+  }, [open, canEdit, currentExistingLink]);
+
   const handlePrivateLink = async () => {
     if (!onPrivateLink) return;
     setLoading(true);
     setError("");
     try {
-      const url = await onPrivateLink(canEdit);
+      const isRotate = !canEdit && !!existingViewLink;
+      const url = await onPrivateLink(canEdit, isRotate);
       if (typeof url === "string") {
         setPrivateLink(url);
       } else {
@@ -94,29 +106,29 @@ export default function ShareModal({ open, onClose, onPrivateLink, hasEditShare 
             </Box>
             <Typography variant="caption" color="text.secondary" sx={{ mt: 0.5, display: "block" }}>
               {canEdit
-                ? hasEditShare
-                  ? "This page already has a shared editable copy — you'll get the existing link back. Any edits collaborators have made are preserved."
+                ? existingEditLink
+                  ? "This page already has a shared editable copy — any edits collaborators have made are preserved."
                   : "Creates a separate shared copy. Anyone with the link can edit it — your original document is unaffected."
                 : "Anyone with the link can read this page. Generating again rotates access — previously shared view links stop working."}
             </Typography>
 
-            <Button
-              variant="contained"
-              color="secondary"
-              sx={{ mt: 2, fontWeight: 700, position: "relative" }}
-              onClick={handlePrivateLink}
-              disabled={loading}
-            >
-              {loading ? (
-                <CircularProgress size={24} color="inherit" />
-              ) : canEdit && hasEditShare ? (
-                "Get Existing Link"
-              ) : !canEdit && privateLink ? (
-                "Rotate View Access"
-              ) : (
-                "Generate Link"
-              )}
-            </Button>
+            {!(canEdit && !!existingEditLink) && (
+              <Button
+                variant="contained"
+                color="secondary"
+                sx={{ mt: 2, fontWeight: 700, position: "relative" }}
+                onClick={handlePrivateLink}
+                disabled={loading}
+              >
+                {loading ? (
+                  <CircularProgress size={24} color="inherit" />
+                ) : !canEdit && existingViewLink ? (
+                  "Rotate View Access"
+                ) : (
+                  "Generate Link"
+                )}
+              </Button>
+            )}
 
             {error && (
               <Typography color="error" sx={{ mt: 2 }}>
