@@ -21,7 +21,9 @@ export default defineConfig({
   forbidOnly: !!process.env.CI,
   timeout: 90_000,
   expect: { timeout: 15_000 },
-  reporter: [["list"]],
+  reporter: process.env.CI
+    ? [["list"], ["html", { open: "never" }]]
+    : [["list"]],
   use: {
     baseURL: `http://localhost:${APP_PORT}`,
     trace: "retain-on-failure",
