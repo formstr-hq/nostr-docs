@@ -3,11 +3,17 @@ name: E2E Tests
 on:
   pull_request:
     branches: [main]
+    types: [labeled, synchronize, opened, reopened]
   push:
     branches: [main]
 
+concurrency:
+  group: e2e-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   e2e:
+    if: github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'ready-for-testing')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
