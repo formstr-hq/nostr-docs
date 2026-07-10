@@ -40,6 +40,11 @@ const NIP46_DEFAULT_RELAYS =
 // (unreachable, timed out, or the relay refused the REQ).
 const NC_SUB_CLOSED = "subscription closed before connection was established";
 
+// How long the bunker (NIP-46 URI) connect may take before we give up: the
+// underlying request has no timeout of its own, so an offline bunker would
+// otherwise leave the modal waiting forever.
+const BUNKER_CONNECT_TIMEOUT_MS = 60_000;
+
 // Which detail screen the two-step chooser is showing. `null` == the menu.
 // NIP-07 / NIP-55 are one-tap actions fired straight from the menu, so they
 // have no detail screen.
@@ -69,6 +74,7 @@ export default function LoginModal({
   const [renderedDetail, setRenderedDetail] = useState<DetailKey>("create");
 
   const [uri, setUri] = useState("");
+  const [bunkerPending, setBunkerPending] = useState(false);
   const [ncRelays, setNcRelays] = useState(NIP46_DEFAULT_RELAYS);
   const [ncDataUrl, setNcDataUrl] = useState("");
   const [ncPending, setNcPending] = useState(false);
@@ -167,13 +173,31 @@ export default function LoginModal({
   };
 
   const handleNip46 = async () => {
-    if (!uri) return;
+    if (!uri || bunkerPending) return;
     setError("");
+    setBunkerPending(true);
     try {
-      await signerManager.loginWithNip46(uri);
+      // The connect request never times out on its own — an offline bunker or
+      // an unanswered approval prompt would hang here indefinitely.
+      await Promise.race([
+        signerManager.loginWithNip46(uri),
+        new Promise<never>((_, reject) =>
+          setTimeout(
+            () =>
+              reject(
+                new Error(
+                  "The bunker didn't respond. Check the URI and that your signer app is online, then try again."
+                )
+              ),
+            BUNKER_CONNECT_TIMEOUT_MS
+          )
+        ),
+      ]);
       handleClose();
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "Bunker login failed");
+    } finally {
+      setBunkerPending(false);
     }
   };
 
@@ -348,15 +372,19 @@ export default function LoginModal({
               value={uri}
               onChange={(e) => setUri(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && handleNip46()}
+              disabled={bunkerPending}
               sx={{ mb: 1.5 }}
             />
             <Button
               fullWidth
               variant="contained"
               onClick={handleNip46}
-              disabled={!uri}
+              disabled={!uri || bunkerPending}
+              startIcon={
+                bunkerPending ? <CircularProgress size={16} /> : undefined
+              }
             >
-              Connect
+              {bunkerPending ? "Waiting for approval…" : "Connect"}
             </Button>
           </>
         );
