@@ -16,7 +16,7 @@ import {
   IconButton,
 } from "@mui/material";
 import ContentCopyIcon from "@mui/icons-material/ContentCopy";
-import { useState, useEffect } from "react";
+import { useState } from "react";
 
 type Props = {
   open: boolean;
@@ -29,20 +29,16 @@ type Props = {
 
 export default function ShareModal({ open, onClose, onPrivateLink, existingViewLink = "", existingEditLink = "" }: Props) {
   const [canEdit, setCanEdit] = useState(false);
-  const [privateLink, setPrivateLink] = useState<string>("");
+  const [generatedLink, setGeneratedLink] = useState<string>("");
   const [loading, setLoading] = useState(false);
   const [toastOpen, setToastOpen] = useState(false);
   const [error, setError] = useState<string>("");
 
   const currentExistingLink = canEdit ? existingEditLink : existingViewLink;
-
-  useEffect(() => {
-    if (open) {
-      setPrivateLink(currentExistingLink || "");
-    } else {
-      setPrivateLink("");
-    }
-  }, [open, canEdit, currentExistingLink]);
+  // Show a freshly generated link if we have one, otherwise fall back to any
+  // existing link for the current mode. Derived during render (no effect) so
+  // toggling the switch or reopening the dialog stays in sync automatically.
+  const privateLink = open ? generatedLink || currentExistingLink || "" : "";
 
   const handlePrivateLink = async () => {
     if (!onPrivateLink) return;
@@ -52,7 +48,7 @@ export default function ShareModal({ open, onClose, onPrivateLink, existingViewL
       const isRotate = !canEdit && !!existingViewLink;
       const url = await onPrivateLink(canEdit, isRotate);
       if (typeof url === "string") {
-        setPrivateLink(url);
+        setGeneratedLink(url);
       } else {
         setError("Failed to generate link. Please try again.");
       }
@@ -71,7 +67,7 @@ export default function ShareModal({ open, onClose, onPrivateLink, existingViewL
   };
 
   const handleClose = () => {
-    setPrivateLink("");
+    setGeneratedLink("");
     setCanEdit(false);
     setLoading(false);
     setError("");
@@ -99,7 +95,11 @@ export default function ShareModal({ open, onClose, onPrivateLink, existingViewL
               <Typography color="text.secondary">Can view</Typography>
               <Switch
                 checked={canEdit}
-                onChange={() => setCanEdit((v) => !v)}
+                onChange={() => {
+                  setCanEdit((v) => !v);
+                  setGeneratedLink("");
+                  setError("");
+                }}
                 color="secondary"
               />
               <Typography color="text.secondary">Can edit</Typography>
