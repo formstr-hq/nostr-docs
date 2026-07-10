@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Box,
   Button,
@@ -24,7 +24,7 @@ import { useDocMetadata } from "../../contexts/DocMetadataContext";
 import { useNavigate, useBlocker } from "react-router-dom";
 import { finalizeEvent, getPublicKey, getEventHash, nip19, type Event } from "nostr-tools";
 import { hexToBytes } from "nostr-tools/utils";
-import { useEditor } from "@tiptap/react";
+import { useEditor, type Editor } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
 import { Markdown } from "tiptap-markdown";
 import Link from "@tiptap/extension-link";
@@ -35,6 +35,7 @@ import { TableRow } from "@tiptap/extension-table-row";
 import { TableHeader } from "@tiptap/extension-table-header";
 import { TableCell } from "@tiptap/extension-table-cell";
 import { EncryptedFileNode } from "./extensions/EncryptedFileNode";
+import { CommentHighlight } from "./extensions/CommentHighlight";
 import { FormNode } from "./extensions/FormNode";
 import { SlashCommand } from "./extensions/SlashCommand";
 import { Indent } from "./extensions/Indent";
@@ -50,7 +51,7 @@ import { createPortal } from "react-dom";
 import { useDocumentContext } from "../../contexts/DocumentContext";
 import { useUser } from "../../contexts/UserContext";
 import { useSharedPages } from "../../contexts/SharedDocsContext";
-import { CommentProvider } from "../../contexts/CommentContext";
+import { CommentProvider, useComments } from "../../contexts/CommentContext";
 import { signerManager } from "../../signer";
 import { useRelays } from "../../contexts/RelayContext";
 import { publishEvent } from "../../nostr/publish";
@@ -154,6 +155,22 @@ function TagRow({ address }: { address: string }) {
   );
 }
 
+function CommentHighlightEffect({ editor, mode }: { editor: Editor | null; mode: EditorMode }) {
+  const { comments, resolvedIds, applyHighlights } = useComments();
+
+  useEffect(() => {
+    if (!editor || mode !== "edit") return;
+
+    const raf = requestAnimationFrame(() => {
+      applyHighlights(editor);
+    });
+
+    return () => cancelAnimationFrame(raf);
+  }, [comments, resolvedIds, editor, mode, applyHighlights]);
+
+  return null;
+}
+
 export function DocumentEditorController({
   viewKey,
   editKey,
@@ -244,6 +261,7 @@ export function DocumentEditorController({
   // Capture isLocalOnly at delete-click time so the modal always uses the right value
   const pendingDeleteLocalOnlyRef = useRef<boolean>(false);
   const [showComments, setShowComments] = useState(false);
+  const [activeCommentId, setActiveCommentId] = useState<string | null>(null);
   const [formDialogOpen, setFormDialogOpen] = useState(false);
   const [formsPickerOpen, setFormsPickerOpen] = useState(false);
 
@@ -299,6 +317,7 @@ export function DocumentEditorController({
       Indent,
       TableHandles,
       EncryptedFileNode,
+      CommentHighlight,
       FormNode,
       SlashCommand.configure({
         suggestion: {
@@ -514,6 +533,19 @@ export function DocumentEditorController({
     }
   }, [mode, editor]);
 
+  /* ── Plain-text view of the doc for the comment layer ──── */
+  // Comments anchor to plain rendered text, but `md` is the markdown source
+  // (with `**`/`_`/`[](…)` markers and `\n\n` block breaks). Matching a
+  // plain-text quote against markdown wrongly flags comments on bold/italic/
+  // link/multi-paragraph text as outdated and hides their highlight. Use the
+  // editor's plain text instead. Recomputed whenever `md` changes so it stays
+  // current in edit and preview.
+  const docPlainText = useMemo(
+    () => editor?.getText() ?? "",
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [editor, md],
+  );
+
   /* ── Keyboard shortcuts ─────────────────────────────────── */
   // Use a ref so the keydown listener always calls the latest handleSave
   // without needing to re-register on every render.
@@ -549,7 +581,11 @@ export function DocumentEditorController({
   // button, navigate() calls) before they happen. When blocked we show a
   // confirmation modal; the user can then call blocker.proceed() to allow
   // the navigation or blocker.reset() to stay on the page.
-  const blocker = useBlocker(hasUnsavedChanges);
+  // Evaluated from refs at navigation time so a handler that just persisted
+  // the content can mark it saved and navigate in the same tick (see the
+  // view-only share path) — a plain boolean would be stale from the previous
+  // render and still block.
+  const blocker = useBlocker(() => mdRef.current !== lastSavedMdRef.current);
 
   /* ── Auto-save: debounced 30s after last content change ── */
   // Only fires for existing (non-draft) documents that the user can edit.
@@ -1070,6 +1106,8 @@ export function DocumentEditorController({
           showComments={commentsEnabled && showComments}
           onCloseComments={() => setShowComments(false)}
           docEventId={activeVersion?.event.id ?? ""}
+          onCommentClick={(id) => { setActiveCommentId(id); setShowComments(true); }}
+          activeCommentId={activeCommentId}
         />
       </Paper>
 
@@ -1366,6 +1404,38 @@ export function DocumentEditorController({
             await setDocSharedAs(selectedDocumentId, result.address);
           }
 
+          // View-only share keeps the same doc address but re-encrypts the doc
+          // under a freshly-generated viewKey. The edit-share path hands the
+          // owner off to the keyed "live version" URL, but view-only sharing
+          // had no equivalent — so the editing session never adopted the
+          // viewKey. Two bugs followed: the comments button stayed hidden
+          // (commentsEnabled = !!viewKey) and subsequent saves self-encrypted
+          // (encryptContent(content, undefined)), breaking the view link.
+          // Refresh the URL with the viewKey so the session picks it up.
+          if (
+            !result.editKey &&
+            isOwner &&
+            !viewKey &&
+            selectedDocumentId === result.address
+          ) {
+            // The snapshot just published *is* the current content, so mark
+            // it saved — otherwise the unsaved-changes blocker intercepts
+            // this navigation, and if the user picks "stay" the session
+            // never adopts the viewKey and the next save silently breaks the
+            // link that was just handed out.
+            lastSavedMdRef.current = md;
+            setLastSavedAt(new Date());
+            const [kind, pubkey, identifier] = result.address.split(":");
+            const naddr = nip19.naddrEncode({
+              kind: Number(kind),
+              pubkey,
+              identifier,
+            });
+            navigate(`/doc/${naddr}#${encodeNKeys({ viewKey: result.viewKey })}`, {
+              replace: true,
+            });
+          }
+
           return result.url;
         }}
       />
@@ -1374,7 +1444,8 @@ export function DocumentEditorController({
 
   if (commentsEnabled) {
     return (
-      <CommentProvider viewKey={viewKey!} docAddress={selectedDocumentId!}>
+      <CommentProvider viewKey={viewKey!} docAddress={selectedDocumentId!} currentDocText={docPlainText} editKey={editKey} myPubkey={user?.pubkey}>
+        <CommentHighlightEffect editor={editor} mode={mode} />
         {editorJsx}
       </CommentProvider>
     );
