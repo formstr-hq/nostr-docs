@@ -5,6 +5,7 @@ import {
   typeIntoEditor,
   save,
   queryLocalRelay,
+  unlockAfterReload,
 } from "./helpers";
 
 /**
@@ -58,6 +59,9 @@ test("create a document, save it, and read it back from the relay", async ({
   //    full round-trip: it is fetched back from the relay and decrypted for
   //    display in the rendered preview.
   await page.reload();
+  // The restored session is locked (the key is stored NIP-49 encrypted), so
+  // answer the passphrase prompt before content can be decrypted for display.
+  await unlockAfterReload(page);
   // The content was saved as a markdown "# <unique>" heading; assert it renders
   // back in the document preview (the sidebar also shows it as a title, so scope
   // to the heading to keep the match unambiguous).

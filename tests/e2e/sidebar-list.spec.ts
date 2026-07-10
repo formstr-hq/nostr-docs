@@ -1,5 +1,10 @@
 import { test, expect } from "@playwright/test";
-import { loginAsGuest, typeIntoEditor, save } from "./helpers";
+import {
+  loginAsGuest,
+  typeIntoEditor,
+  save,
+  unlockAfterReload,
+} from "./helpers";
 
 /**
  * Health check for the document-list path: a saved document is synced back from
@@ -22,6 +27,9 @@ test("a saved document appears in the sidebar and reopens from it", async ({
 
   // Reload: the sidebar repopulates by querying the relay for our documents.
   await page.reload();
+  // The restored session is locked (the key is stored NIP-49 encrypted), so
+  // answer the passphrase prompt before titles/bodies can be decrypted.
+  await unlockAfterReload(page);
 
   // The new document shows up in the list (its title is the heuristic first line).
   const listItem = page.getByRole("button", { name: new RegExp(unique) });
