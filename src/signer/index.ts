@@ -10,6 +10,7 @@ import type { NostrSigner, AccountSummary, AuthMethod } from "./types";
 import { isCapacitor } from "./secureStorage";
 import { detectLegacyKey, wipeLegacy, type LegacySource } from "./legacy";
 import { pool } from "../nostr/relayPool";
+import { SimplePool } from "nostr-tools";
 
 // Identifies this app to remote signers in the nostrconnect (NIP-46 QR) flow.
 // `appName` is required by the package for that flow — it throws without one.
@@ -205,14 +206,34 @@ class Signer {
     signal?: AbortSignal;
   }) {
     const pkg = await getPkg();
-    const account = await pkg.loginWithNostrConnect({
-      relays: options.relays,
-      onUri: options.onUri,
-      signal: options.signal,
-      pool,
-      perms: NIP46_PERMS,
-    });
-    this.setFromPackage(pkg, account);
+
+    // Pairing gets its own pool. nostr-tools attaches the abort signal with
+    // `signal.onabort = ...` per relay subscription, so with several relays an
+    // abort only closes the *last* one — the rest keep listening and the
+    // pairing promise never settles. Closing the dedicated pool's relays on
+    // abort closes every subscription (settling the promise) without touching
+    // the app-wide pool, whose relays carry unrelated live subscriptions.
+    const pairingPool = new SimplePool();
+    const closePairingPool = () => pairingPool.close(options.relays);
+    options.signal?.addEventListener("abort", closePairingPool);
+    try {
+      const account = await pkg.loginWithNostrConnect({
+        relays: options.relays,
+        onUri: options.onUri,
+        signal: options.signal,
+        pool: pairingPool,
+        perms: NIP46_PERMS,
+      });
+      this.setFromPackage(pkg, account);
+    } catch (e) {
+      closePairingPool(); // idempotent if the abort handler already ran
+      throw e;
+    } finally {
+      // On success the signer keeps using pairingPool for its NIP-46 traffic,
+      // and the modal aborts the (now stale) signal on close — detach first so
+      // that abort can't sever the freshly paired signer.
+      options.signal?.removeEventListener("abort", closePairingPool);
+    }
   }
 
   async loginWithNip55(packageName: string) {

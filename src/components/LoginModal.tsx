@@ -30,8 +30,15 @@ import type { AndroidSignerAppInfo } from "@formstr/signer";
 import { isNativePlatform, isCapacitor } from "../signer/secureStorage";
 import FormstrLogo from "../assets/formstr-pages-logo.png";
 
-// Default relay for NIP-46 nostrconnect (QR) pairing.
-const NIP46_DEFAULT_RELAY = "wss://relay.nsec.app";
+// Default relays for NIP-46 nostrconnect (QR) pairing. Several, because the
+// pairing fails outright if *every* listed relay is unreachable — and
+// relay.nsec.app alone is blocked/flaky on some networks.
+const NIP46_DEFAULT_RELAYS =
+  "wss://relay.nsec.app, wss://nos.lol, wss://relay.damus.io";
+
+// nostr-tools rejects with this when no pairing relay could be subscribed
+// (unreachable, timed out, or the relay refused the REQ).
+const NC_SUB_CLOSED = "subscription closed before connection was established";
 
 // Which detail screen the two-step chooser is showing. `null` == the menu.
 // NIP-07 / NIP-55 are one-tap actions fired straight from the menu, so they
@@ -62,7 +69,7 @@ export default function LoginModal({
   const [renderedDetail, setRenderedDetail] = useState<DetailKey>("create");
 
   const [uri, setUri] = useState("");
-  const [ncRelays, setNcRelays] = useState(NIP46_DEFAULT_RELAY);
+  const [ncRelays, setNcRelays] = useState(NIP46_DEFAULT_RELAYS);
   const [ncDataUrl, setNcDataUrl] = useState("");
   const [ncPending, setNcPending] = useState(false);
   const [ncError, setNcError] = useState("");
@@ -238,7 +245,13 @@ export default function LoginModal({
       handleClose();
     } catch (e: unknown) {
       if (!controller.signal.aborted) {
-        setNcError(e instanceof Error ? e.message : "QR pairing failed");
+        const msg = e instanceof Error ? e.message : "QR pairing failed";
+        setNcError(
+          msg.includes(NC_SUB_CLOSED)
+            ? "Couldn't reach any pairing relay. Check the relay list and your network, then try again."
+            : msg
+        );
+        setNcDataUrl("");
       }
     } finally {
       setNcPending(false);
