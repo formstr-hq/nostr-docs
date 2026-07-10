@@ -1,8 +1,6 @@
 import React from "react";
 import "./App.css";
 import {
-  CssBaseline,
-  GlobalStyles,
   Box,
   Drawer,
   IconButton,
@@ -12,7 +10,6 @@ import {
   useMediaQuery,
 } from "@mui/material";
 import MenuIcon from "@mui/icons-material/Menu";
-import { ThemeProvider, alpha } from "@mui/material/styles";
 import {
   createBrowserRouter,
   createHashRouter,
@@ -24,9 +21,8 @@ import {
 import DocumentList from "./components/DocumentList";
 import UserMenu from "./components/UserMenu";
 import { DocumentProvider } from "./contexts/DocumentContext";
-import { UserProvider } from "./contexts/UserContext";
-import { themes } from "./theme";
-import type { ThemeId } from "./theme";
+import { UserProvider, useUser } from "./contexts/UserContext";
+import { ThemeModeProvider, useThemeMode } from "./contexts/ThemeModeContext";
 import FormstrLogo from "./assets/formstr-pages-logo.png";
 import DocPage from "./components/DocPage";
 import { SharedPagesProvider } from "./contexts/SharedDocsContext";
@@ -76,74 +72,58 @@ const router = createRouter([
   },
 ]);
 
+/* ── Authed (per-account) subtree ───────────────────────── */
+// Keyed on the active account's pubkey, so switching accounts tears down and
+// rebuilds the entire doc/editor layer — DocumentContext, SharedDocs,
+// DocMetadata, the TipTap editor, all component state — from a clean slate.
+// That is what stops one account's in-memory notes/editor content from bleeding
+// into the next (the previous-account-data-after-switch bug). It sits below
+// User/Relay/Blossom/MyForms so the signer, relay pool, and forms list survive
+// the switch; only this subtree remounts. "anon" keeps a stable key while
+// logged out.
+function AuthedApp() {
+  const { activeAccount } = useUser();
+  return (
+    <DocumentProvider key={activeAccount?.pubkey ?? "anon"}>
+      <SharedPagesProvider>
+        <DocMetadataProvider>
+          <RouterProvider router={router} />
+        </DocMetadataProvider>
+      </SharedPagesProvider>
+    </DocumentProvider>
+  );
+}
+
 /* ── App root — providers only, no router JSX ───────────── */
 export default function App() {
+  // ThemeModeProvider sits above everything (including UserProvider) so the
+  // auth modals rendered by UserProvider inherit the app theme too.
   return (
-    <UserProvider>
-      <RelayProvider>
-        <BlossomProvider>
-          <MyFormsProvider>
-          <DocumentProvider>
-            <SharedPagesProvider>
-              <DocMetadataProvider>
-                <RouterProvider router={router} />
-              </DocMetadataProvider>
-            </SharedPagesProvider>
-          </DocumentProvider>
-          </MyFormsProvider>
-        </BlossomProvider>
-      </RelayProvider>
-    </UserProvider>
+    <ThemeModeProvider>
+      <UserProvider>
+        <RelayProvider>
+          <BlossomProvider>
+            <MyFormsProvider>
+              <AuthedApp />
+            </MyFormsProvider>
+          </BlossomProvider>
+        </RelayProvider>
+      </UserProvider>
+    </ThemeModeProvider>
   );
 }
 
 /* ── Layout shell ───────────────────────────────────────── */
 // Lives inside the router so hooks like useLocation / useBlocker work here
-// and in any descendant. ThemeProvider + CssBaseline also live here because
-// darkMode state needs to be co-located with the toggle handler.
+// and in any descendant. The theme itself is provided by ThemeModeProvider at
+// the app root; here we just read/set the active theme id for the switcher.
 function AppLayout() {
   const [mobileOpen, setMobileOpen] = React.useState(false);
-  const [themeId, setThemeId] = React.useState<ThemeId>(() => {
-    const stored = localStorage.getItem("formstr:theme") as ThemeId | null;
-    if (stored && stored in themes) return stored;
-    const ids = Object.keys(themes) as ThemeId[];
-    return ids[Math.floor(Math.random() * ids.length)];
-  });
+  const { themeId, setThemeId } = useThemeMode();
   const isDesktop = useMediaQuery("(min-width:900px)");
 
-  const theme = themes[themeId].theme;
-
-  const handleSelectTheme = (id: ThemeId) => {
-    setThemeId(id);
-    localStorage.setItem("formstr:theme", id);
-  };
-
   return (
-    <ThemeProvider theme={theme}>
-      <CssBaseline />
-      <GlobalStyles styles={(t) => ({
-        ":root": { "--comment-highlight-color": alpha(t.palette.secondary.main, 0.4) },
-        ".tiptap a": { color: t.palette.secondary.main },
-        // One-shot pulse used when a sidebar comment is clicked, to draw the
-        // eye to its highlighted span after scrolling. Theme-token driven so it
-        // reads correctly across every theme. Starts as a stronger tint + ring
-        // and settles back to the resting highlight colour.
-        "@keyframes commentHighlightPulse": {
-          "0%": {
-            backgroundColor: alpha(t.palette.secondary.main, 0.85),
-            boxShadow: `0 0 0 3px ${alpha(t.palette.secondary.main, 0.85)}`,
-          },
-          "100%": {
-            backgroundColor: alpha(t.palette.secondary.main, 0.4),
-            boxShadow: `0 0 0 0 ${alpha(t.palette.secondary.main, 0)}`,
-          },
-        },
-        ".comment-highlight-pulse": {
-          animation: "commentHighlightPulse 1.4s ease-out",
-          borderRadius: "2px",
-        },
-      })} />
-
+    <>
       {/* ===== TOP BAR ===== */}
       <AppBar
         position="fixed"
@@ -175,10 +155,7 @@ function AppLayout() {
           </Box>
 
           <Box sx={{ display: "flex", alignItems: "center", gap: 2 }}>
-            <UserMenu
-              themeId={themeId}
-              onSelectTheme={handleSelectTheme}
-            />
+            <UserMenu themeId={themeId} onSelectTheme={setThemeId} />
           </Box>
         </Toolbar>
       </AppBar>
@@ -260,6 +237,6 @@ function AppLayout() {
           <Outlet />
         </Box>
       </Box>
-    </ThemeProvider>
+    </>
   );
 }

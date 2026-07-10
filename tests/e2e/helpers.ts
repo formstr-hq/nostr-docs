@@ -46,22 +46,62 @@ export function queryLocalRelay(filter: Filter): Promise<Event[]> {
   });
 }
 
+/** Passphrase used for the account the tests create (and to unlock it later). */
+export const TEST_PASSPHRASE = "e2e-test-passphrase";
+
 /**
- * Log in as a fresh anonymous ("Temporary Account") user through the real login
- * modal. The home page's draft editor shows a "Login to Save" button when no one
- * is signed in; clicking it opens the modal. Uses no signer internals or storage
- * seeding, so it stays valid as the signer layer changes.
+ * Log in as a fresh user through the real login modal. The home page's draft
+ * editor shows a "Login to Save" button when no one is signed in; clicking it
+ * opens the modal. The signer flow creates a passphrase-protected account
+ * ("Create a new account", NIP-49) and then surfaces the recovery key in a
+ * separate dialog that must be acknowledged before the app is usable. Uses no
+ * signer internals or storage seeding, so it stays valid as the signer layer
+ * changes.
  */
 export async function loginAsGuest(page: Page) {
   await page.goto("/");
   await page.getByRole("button", { name: "Login to Save" }).click();
-  const dialog = page.getByRole("dialog");
-  await dialog.getByRole("button", { name: /Temporary Account/ }).click();
-  await expect(dialog).toBeHidden({ timeout: 10_000 });
+  // The login modal and the recovery-key dialog can overlap in the DOM while
+  // the former is fading out, so scope each by its own text.
+  const loginDialog = page
+    .getByRole("dialog")
+    .filter({ hasText: "Choose how you'd like to access your documents" });
+  await loginDialog
+    .getByRole("button", { name: /Create a new account/ })
+    .click();
+  await loginDialog
+    .getByLabel("Passphrase", { exact: true })
+    .fill(TEST_PASSPHRASE);
+  await loginDialog.getByLabel("Confirm passphrase").fill(TEST_PASSPHRASE);
+  await loginDialog.getByRole("button", { name: "Create account" }).click();
+  // Key derivation (NIP-49) can take a moment before the recovery-key dialog
+  // appears in place of the login modal.
+  const backupDialog = page
+    .getByRole("dialog")
+    .filter({ hasText: "Save your recovery key" });
+  await backupDialog
+    .getByRole("button", { name: /I've saved it/ })
+    .click({ timeout: 15_000 });
+  await expect(backupDialog).toBeHidden({ timeout: 10_000 });
   // Once signed in, the draft editor's primary action becomes "Save".
   await expect(page.getByRole("button", { name: "Save", exact: true })).toBeVisible({
     timeout: 15_000,
   });
+}
+
+/**
+ * Unlock the account after a reload. The key is persisted NIP-49 encrypted, so
+ * a restored session comes back locked and the app prompts for the passphrase;
+ * decryption-dependent UI (document titles, bodies) can't render until it's
+ * entered. No-op assumption: the prompt opens on its own shortly after load.
+ */
+export async function unlockAfterReload(page: Page) {
+  const dialog = page
+    .getByRole("dialog")
+    .filter({ hasText: "Unlock account" });
+  await dialog.getByLabel("Passphrase").fill(TEST_PASSPHRASE);
+  await dialog.getByRole("button", { name: "Unlock" }).click();
+  await expect(dialog).toBeHidden({ timeout: 15_000 });
 }
 
 /** The WYSIWYG editor surface (TipTap renders a contenteditable with class "tiptap"). */
