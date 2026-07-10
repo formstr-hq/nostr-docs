@@ -191,11 +191,15 @@ class Signer {
     this.setFromPackage(pkg, account);
   }
 
-  async loginWithNip46(bunkerUri: string) {
+  async loginWithNip46(
+    bunkerUri: string,
+    options?: { onAuth?: (url: string) => void }
+  ) {
     const pkg = await getPkg();
     const account = await pkg.loginWithBunkerUri(bunkerUri, {
       pool,
       perms: NIP46_PERMS,
+      onAuth: options?.onAuth,
     });
     this.setFromPackage(pkg, account);
   }
@@ -204,6 +208,7 @@ class Signer {
     relays: string[];
     onUri: (uri: string) => void;
     signal?: AbortSignal;
+    onAuth?: (url: string) => void;
   }) {
     const pkg = await getPkg();
 
@@ -221,6 +226,7 @@ class Signer {
         relays: options.relays,
         onUri: options.onUri,
         signal: options.signal,
+        onAuth: options.onAuth,
         pool: pairingPool,
         perms: NIP46_PERMS,
       });

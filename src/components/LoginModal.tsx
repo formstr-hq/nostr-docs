@@ -45,6 +45,11 @@ const NC_SUB_CLOSED = "subscription closed before connection was established";
 // otherwise leave the modal waiting forever.
 const BUNKER_CONNECT_TIMEOUT_MS = 60_000;
 
+// A remote signer may answer with an `auth_url` challenge that the user must
+// complete in a browser; without opening it the pairing stalls silently.
+const openAuthUrl = (url: string) =>
+  window.open(url, "_blank", "noopener,noreferrer");
+
 // Which detail screen the two-step chooser is showing. `null` == the menu.
 // NIP-07 / NIP-55 are one-tap actions fired straight from the menu, so they
 // have no detail screen.
@@ -180,7 +185,7 @@ export default function LoginModal({
       // The connect request never times out on its own — an offline bunker or
       // an unanswered approval prompt would hang here indefinitely.
       await Promise.race([
-        signerManager.loginWithNip46(uri),
+        signerManager.loginWithNip46(uri, { onAuth: openAuthUrl }),
         new Promise<never>((_, reject) =>
           setTimeout(
             () =>
@@ -256,6 +261,7 @@ export default function LoginModal({
       await signerManager.loginWithNostrConnect({
         relays: relayList,
         signal: controller.signal,
+        onAuth: openAuthUrl,
         onUri: async (ncUri) => {
           try {
             setNcDataUrl(
