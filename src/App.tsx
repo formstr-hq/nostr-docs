@@ -9,6 +9,7 @@ import {
   Typography,
   useMediaQuery,
 } from "@mui/material";
+import { alpha } from "@mui/material/styles";
 import MenuIcon from "@mui/icons-material/Menu";
 import {
   createBrowserRouter,
@@ -139,7 +140,8 @@ function AppLayout() {
           zIndex: (theme) => theme.zIndex.drawer + 1,
           bgcolor: "background.paper",
           color: "text.primary",
-          borderBottom: "1px solid rgba(0,0,0,0.08)",
+          borderBottom: "1px solid",
+          borderColor: (t) => alpha(t.palette.text.primary, 0.12),
         }}
       >
         <Toolbar sx={{ display: "flex", justifyContent: "space-between" }}>

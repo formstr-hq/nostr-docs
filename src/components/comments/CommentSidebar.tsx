@@ -1,9 +1,60 @@
 import { useEffect, useRef, useState } from "react";
-import { Box, Button, Typography, Divider, IconButton, Tooltip, Snackbar, Alert } from "@mui/material";
+import { Box, Typography, Divider, IconButton, Tooltip, Snackbar, Alert } from "@mui/material";
 import CloseIcon from "@mui/icons-material/Close";
+import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
 import { useComments } from "../../contexts/CommentContext";
 import { scrollToComment } from "../../utils/scrollToComment";
 import { CommentCard } from "./CommentCard";
+
+function SectionLabel({
+  label,
+  count,
+  open,
+  onToggle,
+}: {
+  label: string;
+  count: number;
+  open?: boolean;
+  onToggle?: () => void;
+}) {
+  const clickable = !!onToggle;
+  return (
+    <Box
+      onClick={onToggle}
+      sx={{
+        display: "flex",
+        alignItems: "center",
+        gap: 0.5,
+        pt: 1.25,
+        pb: 0.5,
+        ...(clickable && { cursor: "pointer" }),
+      }}
+    >
+      <Typography
+        variant="caption"
+        sx={{
+          fontWeight: 600,
+          letterSpacing: "0.08em",
+          textTransform: "uppercase",
+          color: "text.secondary",
+          fontSize: "0.68rem",
+        }}
+      >
+        {label} · {count}
+      </Typography>
+      {clickable && (
+        <ExpandMoreIcon
+          sx={{
+            fontSize: 16,
+            color: "text.secondary",
+            transform: open ? "rotate(180deg)" : "none",
+            transition: "transform 0.15s",
+          }}
+        />
+      )}
+    </Box>
+  );
+}
 
 type Props = {
   onClose: () => void;
@@ -77,39 +128,13 @@ export function CommentSidebar({ onClose, activeCommentId, isMobile }: Props) {
         }}
       >
         <Typography variant="subtitle2" sx={{ fontWeight: 700 }}>
-          Comments {active.length > 0 && `(${active.length})`}
+          Comments
         </Typography>
-        <Box sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
-          <Button
-            size="small"
-            disabled={outdated.length === 0}
-            onClick={() => setShowOutdated(!outdatedOpen)}
-            sx={{ textTransform: "none", minWidth: 0, px: 0.5, fontSize: "0.75rem" }}
-          >
-            {outdatedOpen
-              ? "Hide outdated"
-              : outdated.length > 0
-                ? `Show outdated (${outdated.length})`
-                : "Show outdated"}
-          </Button>
-          <Button
-            size="small"
-            disabled={resolved.length === 0}
-            onClick={() => setShowResolved(!resolvedOpen)}
-            sx={{ textTransform: "none", minWidth: 0, px: 0.5, fontSize: "0.75rem" }}
-          >
-            {resolvedOpen
-              ? "Hide resolved"
-              : resolved.length > 0
-                ? `Show resolved (${resolved.length})`
-                : "Show resolved"}
-          </Button>
-          <Tooltip title="Close comments">
-            <IconButton size="small" onClick={onClose}>
-              <CloseIcon fontSize="small" />
-            </IconButton>
-          </Tooltip>
-        </Box>
+        <Tooltip title="Close comments">
+          <IconButton size="small" onClick={onClose}>
+            <CloseIcon fontSize="small" />
+          </IconButton>
+        </Tooltip>
       </Box>
 
       <Divider />
@@ -120,8 +145,8 @@ export function CommentSidebar({ onClose, activeCommentId, isMobile }: Props) {
           overflowY: "auto",
           display: "flex",
           flexDirection: "column",
-          gap: 1,
-          p: 1.5,
+          px: 1.5,
+          pb: 1.5,
         }}
       >
         {active.length === 0 && !outdatedOpen && !resolvedOpen ? (
@@ -134,6 +159,7 @@ export function CommentSidebar({ onClose, activeCommentId, isMobile }: Props) {
           </Typography>
         ) : (
           <>
+            {active.length > 0 && <SectionLabel label="Active" count={active.length} />}
             {active.map((comment) => (
               <Box
                 key={comment.id}
@@ -141,7 +167,6 @@ export function CommentSidebar({ onClose, activeCommentId, isMobile }: Props) {
                   if (el) cardRefs.current.set(comment.id, el);
                   else cardRefs.current.delete(comment.id);
                 }}
-                sx={{ borderRadius: 2 }}
               >
                 <CommentCard
                   comment={comment}
@@ -152,51 +177,57 @@ export function CommentSidebar({ onClose, activeCommentId, isMobile }: Props) {
                 />
               </Box>
             ))}
-            {outdatedOpen && (
-              <>
-                <Divider />
-                {outdated.map((comment) => (
-                  <Box
-                    key={comment.id}
-                    ref={(el: HTMLDivElement | null) => {
-                      if (el) cardRefs.current.set(comment.id, el);
-                      else cardRefs.current.delete(comment.id);
-                    }}
-                    sx={{ borderRadius: 2 }}
-                  >
-                    <CommentCard
-                      comment={comment}
-                      isResolved={false}
-                      isOutdated={true}
-                      onResolve={canResolve(comment) ? () => handleResolve(comment.id) : undefined}
-                    />
-                  </Box>
-                ))}
-              </>
+            {outdated.length > 0 && (
+              <SectionLabel
+                label="Outdated"
+                count={outdated.length}
+                open={outdatedOpen}
+                onToggle={() => setShowOutdated(!outdatedOpen)}
+              />
             )}
-            {resolvedOpen && (
-              <>
-                <Divider />
-                {resolved.map((comment) => (
-                  <Box
-                    key={comment.id}
-                    ref={(el: HTMLDivElement | null) => {
-                      if (el) cardRefs.current.set(comment.id, el);
-                      else cardRefs.current.delete(comment.id);
-                    }}
-                    sx={{ borderRadius: 2 }}
-                  >
-                    <CommentCard
-                      comment={comment}
-                      isResolved={true}
-                      isOutdated={isOutdated(comment)}
-                      onUnresolve={canResolve(comment) ? () => handleUnresolve(comment.id) : undefined}
-                      onCardClick={comment.quote ? () => scrollToComment(comment.id) : undefined}
-                    />
-                  </Box>
-                ))}
-              </>
+            {outdatedOpen &&
+              outdated.map((comment) => (
+                <Box
+                  key={comment.id}
+                  ref={(el: HTMLDivElement | null) => {
+                    if (el) cardRefs.current.set(comment.id, el);
+                    else cardRefs.current.delete(comment.id);
+                  }}
+                >
+                  <CommentCard
+                    comment={comment}
+                    isResolved={false}
+                    isOutdated={true}
+                    onResolve={canResolve(comment) ? () => handleResolve(comment.id) : undefined}
+                  />
+                </Box>
+              ))}
+            {resolved.length > 0 && (
+              <SectionLabel
+                label="Resolved"
+                count={resolved.length}
+                open={resolvedOpen}
+                onToggle={() => setShowResolved(!resolvedOpen)}
+              />
             )}
+            {resolvedOpen &&
+              resolved.map((comment) => (
+                <Box
+                  key={comment.id}
+                  ref={(el: HTMLDivElement | null) => {
+                    if (el) cardRefs.current.set(comment.id, el);
+                    else cardRefs.current.delete(comment.id);
+                  }}
+                >
+                  <CommentCard
+                    comment={comment}
+                    isResolved={true}
+                    isOutdated={isOutdated(comment)}
+                    onUnresolve={canResolve(comment) ? () => handleUnresolve(comment.id) : undefined}
+                    onCardClick={comment.quote ? () => scrollToComment(comment.id) : undefined}
+                  />
+                </Box>
+              ))}
           </>
         )}
       </Box>

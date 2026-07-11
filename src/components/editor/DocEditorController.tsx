@@ -14,6 +14,7 @@ import {
   Tooltip,
   useTheme,
 } from "@mui/material";
+import { alpha } from "@mui/material/styles";
 import InsertDriveFileIcon from "@mui/icons-material/InsertDriveFile";
 import LabelOutlinedIcon from "@mui/icons-material/LabelOutlined";
 import VisibilityOutlinedIcon from "@mui/icons-material/VisibilityOutlined";
@@ -48,6 +49,7 @@ import MyFormsPickerDialog from "../MyFormsPickerDialog";
 import type { FormsSigner } from "@formstr/sdk";
 import { createPortal } from "react-dom";
 
+import { canvasTokens } from "../../theme";
 import { useDocumentContext } from "../../contexts/DocumentContext";
 import { useUser } from "../../contexts/UserContext";
 import { useSharedPages } from "../../contexts/SharedDocsContext";
@@ -214,6 +216,13 @@ export function DocumentEditorController({
     root.style.setProperty("--tbl-menu-border", theme.palette.divider);
     root.style.setProperty("--tbl-menu-hover", theme.palette.action.hover);
     root.style.setProperty("--tbl-menu-danger", theme.palette.error.main);
+    // Table selection/resize/anchor chrome lives inside the neutral editor
+    // canvas, so it borrows the theme's accent instead of a hardcoded blue —
+    // same convention as the comment highlight color.
+    root.style.setProperty("--tbl-select-color", alpha(theme.palette.secondary.main, 0.16));
+    root.style.setProperty("--tbl-resize-color", theme.palette.secondary.main);
+    root.style.setProperty("--tbl-anchor-color", alpha(theme.palette.secondary.main, 0.5));
+    root.style.setProperty("--tbl-anchor-hover", theme.palette.secondary.main);
   }, [theme]);
 
   // A document with an editKey has collaborators by construction (it's a
@@ -1186,7 +1195,13 @@ export function DocumentEditorController({
           flex: 1,
           borderRadius: 3,
           overflow: "hidden",
-          bgcolor: "background.paper",
+          bgcolor: canvasTokens[theme.palette.mode].bg,
+          color: canvasTokens[theme.palette.mode].ink,
+          border: "1px solid",
+          borderColor: canvasTokens[theme.palette.mode].border,
+          boxShadow: theme.palette.mode === "dark"
+            ? "0 8px 28px -12px rgba(0,0,0,0.55)"
+            : "0 8px 28px -14px rgba(0,0,0,0.14)",
           display: "flex",
           flexDirection: "column",
         }}

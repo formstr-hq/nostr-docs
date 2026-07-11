@@ -55,19 +55,11 @@ import RenameDialog from "./RenameDialog.tsx";
 import EditOutlinedIcon from "@mui/icons-material/EditOutlined";
 import { IconButton } from "@mui/material";
 import DictationButton from "./dictation/DictationButton";
-
-/** Deterministic hue (0–359) from a tag string. */
-function tagHue(tag: string): number {
-  let hash = 0;
-  for (let i = 0; i < tag.length; i++) {
-    hash = tag.charCodeAt(i) + ((hash << 5) - hash);
-  }
-  return Math.abs(hash) % 360;
-}
+import { hashHue } from "../lib/hashHue";
 
 function useTagColor(tag: string) {
   const theme = useTheme();
-  const hue = tagHue(tag);
+  const hue = hashHue(tag);
   const dark = theme.palette.mode === "dark";
   return {
     bg: `hsla(${hue}, 60%, ${dark ? 55 : 45}%, 0.18)`,
@@ -557,7 +549,7 @@ export default function DocumentList({
                 >
                   {idx > 0 && (
                     <Divider
-                      sx={{ my: 0.25, borderColor: "rgba(255,255,255,0.05)" }}
+                      sx={{ my: 0.25, borderColor: (t) => alpha(t.palette.text.primary, 0.06) }}
                     />
                   )}
                   <ListItemButton
