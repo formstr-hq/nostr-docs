@@ -31,6 +31,7 @@ export function createCollaborationCaretRenderers(
     const trusted = lookup(user);
     const color = trusted?.color ?? FALLBACK_COLOR;
     const name = trusted?.name ?? FALLBACK_NAME;
+    const picture = trusted?.picture;
 
     const caret = document.createElement("span");
     caret.classList.add("collaboration-caret");
@@ -39,8 +40,28 @@ export function createCollaborationCaretRenderers(
     const label = document.createElement("div");
     label.classList.add("collaboration-caret__label");
     label.setAttribute("style", `background-color: ${color}`);
-    label.textContent = name;
 
+    const avatarWrap = document.createElement("span");
+    avatarWrap.classList.add("collaboration-caret__avatar");
+    avatarWrap.textContent = name.slice(0, 1).toUpperCase();
+
+    if (picture) {
+      const img = document.createElement("img");
+      img.src = picture;
+      img.alt = "";
+      img.referrerPolicy = "no-referrer";
+      // On load/decode failure, fall back to the initials already sitting
+      // behind the image (avatarWrap's textContent) by just removing it.
+      img.onerror = () => img.remove();
+      avatarWrap.appendChild(img);
+    }
+
+    const nameSpan = document.createElement("span");
+    nameSpan.classList.add("collaboration-caret__name");
+    nameSpan.textContent = name;
+
+    label.appendChild(avatarWrap);
+    label.appendChild(nameSpan);
     caret.appendChild(label);
     return caret;
   };
