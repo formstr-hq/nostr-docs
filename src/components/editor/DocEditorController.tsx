@@ -54,7 +54,8 @@ import { useSharedPages } from "../../contexts/SharedDocsContext";
 import { CommentProvider, useComments } from "../../contexts/CommentContext";
 import { signerManager } from "../../signer";
 import { useRelays } from "../../contexts/RelayContext";
-import { publishEvent } from "../../nostr/publish";
+import { publishEventStrict } from "../../nostr/publish";
+import { hasLiveRelayConnectivity } from "../../nostr/relayPool";
 import { makeTag } from "../../utils/makeTag";
 import {
   storeLocalEvent,
@@ -66,6 +67,10 @@ import {
 
 import { EditorToolbar } from "./EditorToolbar";
 import { DocEditorSurface } from "./DocEditorSurface";
+import { PresenceAvatars } from "./PresenceAvatars";
+import { createCollaborationCaretRenderers } from "./extensions/collaborationCaret";
+import { useCollabSession } from "../../collab/useCollabSession";
+import { useTrustedCollaborators } from "../../collab/useTrustedCollaborators";
 import { deleteEvent } from "../../nostr/deleteRequest";
 import ConfirmModal from "../common/ConfirmModal";
 import ShareModal from "../ShareModal";
@@ -87,6 +92,10 @@ import {
 
 // Delay after the last edit before auto-save fires (ms)
 const AUTO_SAVE_DELAY_MS = 30_000;
+// How long a collab session's last sync-step round-trip is trusted as
+// "still connected" for the autosave-checkpoint gate below. Kept fresh by
+// NostrYjsProvider's own periodic (60s) re-broadcast during a live session.
+const RESYNC_FRESHNESS_MS = 2 * 60_000;
 
 type EditorMode = "edit" | "preview" | "split";
 
@@ -207,6 +216,25 @@ export function DocumentEditorController({
     root.style.setProperty("--tbl-menu-danger", theme.palette.error.main);
   }, [theme]);
 
+  // A document with an editKey has collaborators by construction (it's a
+  // shared edit-link doc), so this is the same signal already used for the
+  // "Shared page · edit access" status chip below. Solo/private docs (no
+  // editKey) never touch any of the collab machinery — useCollabSession
+  // returns null immediately for them.
+  const isCollabDoc = !!editKey;
+  const collab = useCollabSession(
+    isCollabDoc ? selectedDocumentId : null,
+    editKey,
+    relays,
+  );
+  const isCollabReady = isCollabDoc && !!collab?.ready;
+  const { collaborators, collaboratorsRef } = useTrustedCollaborators(
+    collab?.awareness,
+    selectedDocumentId,
+    editKey,
+    relays,
+  );
+
   // viewKey present but no editKey = shared read-only link
   const { user } = useUser();
   const history = selectedDocumentId ? documents.get(selectedDocumentId) : null;
@@ -290,11 +318,15 @@ export function DocumentEditorController({
   // Always-current flags read by the auto-save timer at fire time
   const isDraftRef = useRef(isDraft);
   const isViewOnlyRef = useRef(isViewOnly);
+  const isCollabDocRef = useRef(isCollabDoc);
+  const collabRef = useRef(collab);
 
   // Keep all synchronous refs current on every render
   modeRef.current = mode;
   isDraftRef.current = isDraft;
   isViewOnlyRef.current = isViewOnly;
+  isCollabDocRef.current = isCollabDoc;
+  collabRef.current = collab;
 
   // Always-current upload function — avoids stale closures in editorProps handlers
   const uploadFileRef = useRef<(file: File) => Promise<void>>(async () => { });
@@ -302,7 +334,23 @@ export function DocumentEditorController({
   /* ── TipTap editor instance ────────────────────────────── */
   const editor = useEditor({
     extensions: [
-      StarterKit,
+      // Collaboration's plugin construction throws on a null/undefined
+      // document, so for solo docs (and collab docs still connecting) it —
+      // and CollaborationCaret — must be entirely absent, not configured
+      // with an empty document. StarterKit's built-in undo/redo is likewise
+      // incompatible with Collaboration (TipTap warns on this), so only the
+      // collab path disables it via `undoRedo: false`.
+      isCollabReady ? StarterKit.configure({ undoRedo: false }) : StarterKit,
+      ...(isCollabReady && collab
+        ? [
+            collab.CollaborationExt.configure({ document: collab.ydoc }),
+            collab.CollaborationCaretExt.configure({
+              provider: collab.provider,
+              user: { sessionPubkey: collab.provider.sessionPubkey },
+              ...createCollaborationCaretRenderers(collaboratorsRef),
+            }),
+          ]
+        : []),
       // html: true so <encrypted-file> tags round-trip through markdown storage
       Markdown.configure({ html: true, tightLists: true }),
       Link.configure({ openOnClick: false }),
@@ -494,8 +542,13 @@ export function DocumentEditorController({
         return true;
       },
     },
-    content: initialContent,
-    editable: mode !== "preview",
+    // Collab docs get their content from the Yjs doc (via the Collaboration
+    // extension) instead of this markdown snapshot.
+    content: isCollabReady ? undefined : initialContent,
+    // Block editing while a collab session is still connecting so nothing
+    // typed into this (pre-collaboration) editor instance is discarded when
+    // it's recreated once the session becomes ready.
+    editable: mode !== "preview" && !(isCollabDoc && !isCollabReady),
     onUpdate: ({ editor }) => {
       // Only trust TipTap as the source of truth in WYSIWYG mode. Spurious
       // onUpdate calls fire during mode transitions (EditorContent remount,
@@ -509,7 +562,10 @@ export function DocumentEditorController({
       setWordCount(editor.storage.characterCount.words());
       setCharCount(editor.storage.characterCount.characters());
     },
-  });
+    // Solo docs never change this dep, so they behave exactly as before
+    // (editor created once). Collab docs recreate the editor exactly once,
+    // when the session flips from connecting to ready.
+  }, [isCollabReady]);
 
   /* ── Sync word/char count on editor ready ──────────────── */
   useEffect(() => {
@@ -518,6 +574,27 @@ export function DocumentEditorController({
       setCharCount(editor.storage.characterCount.characters());
     }
   }, [editor]);
+
+  /* ── Seed a fresh Yjs doc from the existing checkpoint content ──── */
+  // A brand-new collab session's Y.Doc starts empty — the Collaboration
+  // extension has no way to know about the plain-markdown KIND_FILE content
+  // that existed before anyone ever collaborated on this doc. Give the
+  // initial sync-step round-trip a chance to pull in a peer's existing
+  // Yjs history first (covered by isCollabReady's own grace period); only if
+  // the doc is *still* empty once ready do we seed it from the last known
+  // checkpoint. Runs at most once per editor instance (ref-guarded), so it
+  // never re-clobbers content collaborators have since typed.
+  const seededCollabDocRef = useRef(false);
+  useEffect(() => {
+    seededCollabDocRef.current = false;
+  }, [editor]);
+  useEffect(() => {
+    if (!isCollabReady || !editor || seededCollabDocRef.current) return;
+    seededCollabDocRef.current = true;
+    if (!editor.getText().trim() && initialContent.trim()) {
+      editor.commands.setContent(initialContent);
+    }
+  }, [isCollabReady, editor, initialContent]);
 
   /* ── Update editor editable state when mode changes ───── */
   useEffect(() => {
@@ -600,6 +677,17 @@ export function DocumentEditorController({
       if (isDraftRef.current) return;      // never auto-create new documents
       if (isViewOnlyRef.current) return;   // never save read-only views
       if (!mdRef.current.trim()) return;   // don't save blank content
+      if (isCollabDocRef.current) {
+        // A partitioned/stale collab client shouldn't overwrite the shared
+        // checkpoint with a regressed snapshot: only checkpoint when
+        // actually connected and recently sync-stepped (kept fresh by
+        // NostrYjsProvider's periodic re-broadcast).
+        const provider = collabRef.current?.provider;
+        const synced =
+          !!provider?.lastSyncRequestAt &&
+          Date.now() - provider.lastSyncRequestAt <= RESYNC_FRESHNESS_MS;
+        if (!hasLiveRelayConnectivity(relays) || !synced) return;
+      }
       handleSaveRef.current(true);         // silent = true (no toast)
     }, AUTO_SAVE_DELAY_MS);
 
@@ -612,6 +700,10 @@ export function DocumentEditorController({
       isFirstMount.current = false;
       return;
     }
+    // Collab docs get remote content via live Yjs merge, not via
+    // activeVersion changes — letting this effect run would periodically
+    // clobber live-merged content with a lagging checkpoint snapshot.
+    if (isCollabDocRef.current) return;
     if (!activeVersion) return;
     // Never clobber unsaved changes the user is currently editing
     if (mdRef.current !== lastSavedMdRef.current) return;
@@ -774,13 +866,14 @@ export function DocumentEditorController({
     });
 
     // 3. Broadcast to relays — skipped entirely for device-only documents.
+    // Uses the strict variant so a total relay failure surfaces as a thrown
+    // error (caught by handleSave's existing catch block) instead of being
+    // silently swallowed while the UI still claims "Saved". storeLocalEvent
+    // above already ran unconditionally, so the event stays durably local
+    // (pendingBroadcast: true) for the retry sweep to pick up regardless.
     if (!localOnly) {
-      try {
-        await publishEvent(stored, relays);
-        await markBroadcast(address);
-      } catch (err) {
-        console.warn("Relay broadcast failed (saved locally):", err);
-      }
+      await publishEventStrict(stored, relays);
+      await markBroadcast(address);
     }
   };
 
@@ -1022,6 +1115,17 @@ export function DocumentEditorController({
           >
             Go to live version
           </Button>
+        </Box>
+      )}
+
+      {!isViewOnly && isCollabDoc && (
+        <Box sx={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 1, px: 1 }}>
+          {!isCollabReady && (
+            <Typography variant="caption" color="text.secondary">
+              Connecting to collaborators…
+            </Typography>
+          )}
+          <PresenceAvatars collaborators={collaborators} />
         </Box>
       )}
 

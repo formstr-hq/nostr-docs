@@ -26,10 +26,11 @@ import { ThemeModeProvider, useThemeMode } from "./contexts/ThemeModeContext";
 import FormstrLogo from "./assets/formstr-pages-logo.png";
 import DocPage from "./components/DocPage";
 import { SharedPagesProvider } from "./contexts/SharedDocsContext";
-import { RelayProvider } from "./contexts/RelayContext";
+import { RelayProvider, useRelays } from "./contexts/RelayContext";
 import { DocMetadataProvider } from "./contexts/DocMetadataContext";
 import { BlossomProvider } from "./contexts/BlossomContext";
 import { MyFormsProvider } from "./contexts/MyFormsContext";
+import { useSyncRetrySweep } from "./hooks/useSyncRetrySweep";
 
 const drawerWidth = 320;
 
@@ -83,6 +84,12 @@ const router = createRouter([
 // logged out.
 function AuthedApp() {
   const { activeAccount } = useUser();
+  const { relays } = useRelays();
+  // Retries locally-stored events that were never confirmed as broadcast
+  // (e.g. a save made while offline). Mounted once here rather than inside
+  // the editor since pending entries can belong to documents that aren't
+  // currently open.
+  useSyncRetrySweep(relays);
   return (
     <DocumentProvider key={activeAccount?.pubkey ?? "anon"}>
       <SharedPagesProvider>
