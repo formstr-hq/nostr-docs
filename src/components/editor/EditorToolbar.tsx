@@ -45,6 +45,7 @@ import HtmlIcon from "@mui/icons-material/Html";
 import TextSnippetIcon from "@mui/icons-material/TextSnippet";
 import PictureAsPdfIcon from "@mui/icons-material/PictureAsPdf";
 import ArticleOutlinedIcon from "@mui/icons-material/ArticleOutlined";
+import CloudUploadIcon from "@mui/icons-material/CloudUpload";
 import { useState, useRef, useEffect } from "react";
 import { InputBase } from "@mui/material";
 import { useUser } from "../../contexts/UserContext";
@@ -88,6 +89,8 @@ type Props = {
   documentAddress?: string;
   heuristicTitle?: string;
   hasEditKey?: boolean;
+  hasPublishResults?: boolean;
+  onViewPublishResults?: () => void;
 };
 
 export function EditorToolbar({
@@ -118,6 +121,8 @@ export function EditorToolbar({
   documentAddress,
   heuristicTitle,
   hasEditKey = false,
+  hasPublishResults = false,
+  onViewPublishResults,
 }: Props) {
   const { user, loginModal } = useUser();
   const [menuAnchor, setMenuAnchor] = useState<null | HTMLElement>(null);
@@ -126,19 +131,7 @@ export function EditorToolbar({
   const tableMenuOpen = Boolean(tableMenuAnchor);
 
   const exportButtonRef = useRef<HTMLLIElement>(null);
-  const hideExportTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const [exportOpen, setExportOpen] = useState(false);
-
-  const handleExportEnter = () => {
-    clearTimeout(hideExportTimer.current);
-    setExportOpen(true);
-  };
-
-  const handleExportLeave = () => {
-    hideExportTimer.current = setTimeout(() => {
-      setExportOpen(false);
-    }, 200);
-  };
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -294,10 +287,23 @@ export function EditorToolbar({
               <ListItemText primary="History" />
             </MenuItem>
 
+            {onViewPublishResults && (
+              <MenuItem
+                onClick={() => {
+                  onViewPublishResults();
+                  setMenuAnchor(null);
+                }}
+              >
+                <ListItemIcon>
+                  <CloudUploadIcon fontSize="small" />
+                </ListItemIcon>
+                <ListItemText primary="Relay Uploads" />
+              </MenuItem>
+            )}
+
             <MenuItem
               ref={exportButtonRef}
-              onMouseEnter={handleExportEnter}
-              onMouseLeave={handleExportLeave}
+
               onClick={(e) => {
                 e.stopPropagation();
                 // For mobile, a click can toggle it too if hover isn't available
@@ -357,8 +363,7 @@ export function EditorToolbar({
             anchorOrigin={{ vertical: "top", horizontal: "right" }}
             transformOrigin={{ vertical: "top", horizontal: "left" }}
             MenuListProps={{
-              onMouseEnter: handleExportEnter,
-              onMouseLeave: handleExportLeave,
+
             }}
             slotProps={{
               paper: {

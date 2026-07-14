@@ -21,7 +21,7 @@ import EditOutlinedIcon from "@mui/icons-material/EditOutlined";
 import SmartphoneIcon from "@mui/icons-material/Smartphone";
 import ChatBubbleOutlineIcon from "@mui/icons-material/ChatBubbleOutline";
 import { useDocMetadata } from "../../contexts/DocMetadataContext";
-import { useNavigate, useBlocker } from "react-router-dom";
+import { useNavigate, useBlocker, useLocation } from "react-router-dom";
 import { finalizeEvent, getPublicKey, getEventHash, nip19, type Event } from "nostr-tools";
 import { hexToBytes } from "nostr-tools/utils";
 import { useEditor, type Editor } from "@tiptap/react";
@@ -54,7 +54,8 @@ import { useSharedPages } from "../../contexts/SharedDocsContext";
 import { CommentProvider, useComments } from "../../contexts/CommentContext";
 import { signerManager } from "../../signer";
 import { useRelays } from "../../contexts/RelayContext";
-import { publishEvent } from "../../nostr/publish";
+import { publishEvent, type PublishResult } from "../../nostr/publish";
+import PublishResultsModal from "../PublishResultsModal";
 import { makeTag } from "../../utils/makeTag";
 import {
   storeLocalEvent,
@@ -186,11 +187,13 @@ export function DocumentEditorController({
     addDocument,
     localOnlyAddresses,
     markLocalOnly,
+    addDocumentRelays,
   } = useDocumentContext();
   const { addSharedDoc, getKeys } = useSharedPages();
   const { setDocSharedAs, docSharedAs } = useDocMetadata();
 
   const navigate = useNavigate();
+  const location = useLocation();
   const { relays } = useRelays();
 
   const isDraft = selectedDocumentId === null;
@@ -237,6 +240,17 @@ export function DocumentEditorController({
   // Whether the last save was an auto-save (vs a manual save)
   const [wasAutoSaved, setWasAutoSaved] = useState(false);
   const [focusMode, setFocusMode] = useState(false);
+  const [publishResults, setPublishResults] = useState<PublishResult[]>([]);
+  const [resultsModalOpen, setResultsModalOpen] = useState(false);
+  const [lastPublishedEvent, setLastPublishedEvent] = useState<Event | null>(null);
+
+  useEffect(() => {
+    if (location.state?.publishResults) {
+      setPublishResults(location.state.publishResults);
+      // Clear location.state so it doesn't reopen on subsequent refreshes
+      window.history.replaceState({}, document.title);
+    }
+  }, [location.state]);
   const [wordCount, setWordCount] = useState(0);
   const [charCount, setCharCount] = useState(0);
   const [confirmOpen, setConfirmOpen] = useState(false);
@@ -714,7 +728,7 @@ export function DocumentEditorController({
     address: string,
     content: string,
     localOnly = false,
-  ) => {
+  ): Promise<PublishResult[] | undefined> => {
     const dTag = address.split(":")?.[2];
     const encryptedContent = await encryptContent(content, viewKey);
     if (!encryptedContent) throw new Error("Encryption failed");
@@ -775,16 +789,19 @@ export function DocumentEditorController({
 
     // 3. Broadcast to relays — skipped entirely for device-only documents.
     if (!localOnly) {
+      setLastPublishedEvent(stored);
       try {
-        await publishEvent(stored, relays);
+        const results = await publishEvent(stored, relays);
         await markBroadcast(address);
+        return results;
       } catch (err) {
         console.warn("Relay broadcast failed (saved locally):", err);
       }
     }
+    return undefined;
   };
 
-  const saveNewDocument = async (content: string): Promise<string> => {
+  const saveNewDocument = async (content: string): Promise<{ address: string; dTag: string; results?: PublishResult[] }> => {
     const dTag = makeTag(6);
     let pubkey: string;
     if (editKey) pubkey = getPublicKey(hexToBytes(editKey));
@@ -793,7 +810,7 @@ export function DocumentEditorController({
       pubkey = await signer.getPublicKey();
     }
     const address = `${KIND_FILE}:${pubkey}:${dTag}`;
-    await saveSnapshotWithAddress(address, content, draftLocalOnly);
+    const results = await saveSnapshotWithAddress(address, content, draftLocalOnly);
     if (draftLocalOnly) markLocalOnly(address, true);
     setSelectedDocumentId(address);
     const naddr = nip19.naddrEncode({
@@ -810,12 +827,12 @@ export function DocumentEditorController({
       });
       url += `#${nkeysStr}`;
     }
-    navigate(url, { replace: true });
-    return dTag;
+    navigate(url, { replace: true, state: { publishResults: results } });
+    return { address, dTag, results };
   };
 
-  const saveExistingDocument = async (address: string, content: string) => {
-    await saveSnapshotWithAddress(address, content, isLocalOnly);
+  const saveExistingDocument = async (address: string, content: string): Promise<PublishResult[] | undefined> => {
+    return saveSnapshotWithAddress(address, content, isLocalOnly);
   };
 
   const handleToggleLocalOnly = async () => {
@@ -855,15 +872,26 @@ export function DocumentEditorController({
     const prevSavedMd = lastSavedMdRef.current;
     lastSavedMdRef.current = mdToSave; // update before navigate() fires in saveNewDocument
     try {
+      let results: PublishResult[] | undefined;
+      let targetAddress = selectedDocumentId;
       if (isDraft) {
-        await saveNewDocument(mdToSave);
+        const res = await saveNewDocument(mdToSave);
+        results = res.results;
+        targetAddress = res.address;
       } else {
-        await saveExistingDocument(selectedDocumentId!, mdToSave);
+        results = await saveExistingDocument(targetAddress!, mdToSave);
+      }
+      if (results && targetAddress) {
+        const acceptedRelays = results.filter(r => r.status === "accepted").map(r => r.relay);
+        if (acceptedRelays.length > 0) addDocumentRelays(targetAddress, acceptedRelays);
       }
       setLastSavedAt(new Date());
       setWasAutoSaved(silent);
       if (!silent) {
         setToast({ open: true, message: "Saved", severity: "success" });
+        if (results && results.length > 0) {
+          setPublishResults(results);
+        }
       }
     } catch (err) {
       lastSavedMdRef.current = prevSavedMd; // restore so unsaved indicator reappears
@@ -1051,6 +1079,8 @@ export function DocumentEditorController({
           isLocalOnly={isLocalOnly}
           onToggleLocalOnly={handleToggleLocalOnly}
           showLocalOnlyToggle={!viewKey && !editKey}
+          hasPublishResults={publishResults.length > 0}
+          onViewPublishResults={() => setResultsModalOpen(true)}
           onExportMarkdown={handleExportMarkdown}
           onExportHtml={handleExportHtml}
           onExportPlainText={handleExportPlainText}
@@ -1437,6 +1467,21 @@ export function DocumentEditorController({
           }
 
           return result.url;
+        }}
+      />
+
+      <PublishResultsModal
+        open={resultsModalOpen}
+        onClose={() => setResultsModalOpen(false)}
+        results={publishResults}
+        onRetry={async (relay) => {
+          const eventToPublish = lastPublishedEvent || activeVersion?.event;
+          if (!eventToPublish) throw new Error("No event to retry");
+          const res = await publishEvent(eventToPublish, [relay]);
+          if (res[0].status === "accepted" && selectedDocumentId) {
+            addDocumentRelays(selectedDocumentId, [res[0].relay]);
+          }
+          return res[0];
         }}
       />
     </Box>

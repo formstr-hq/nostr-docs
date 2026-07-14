@@ -42,6 +42,10 @@ interface DocumentContextValue {
   localOnlyAddresses: Set<string>;
   /** Update the in-memory device-only flag for a document address. */
   markLocalOnly: (address: string, localOnly: boolean) => void;
+
+  docRelays: Map<string, string[]>;
+  setDocRelays: React.Dispatch<React.SetStateAction<Map<string, string[]>>>;
+  addDocumentRelays: (address: string, relays: string[]) => void;
 }
 
 const DocumentContext = createContext<DocumentContextValue | undefined>(
@@ -97,6 +101,17 @@ export const DocumentProvider: React.FC<{ children: React.ReactNode }> = ({
   const [localOnlyAddresses, setLocalOnlyAddresses] = useState<Set<string>>(
     new Set(),
   );
+  const [docRelays, setDocRelays] = useState<Map<string, string[]>>(new Map());
+
+  const addDocumentRelays = (address: string, relays: string[]) => {
+    setDocRelays((prev) => {
+      const next = new Map(prev);
+      const existing = next.get(address) ?? [];
+      const combined = Array.from(new Set([...existing, ...relays]));
+      next.set(address, combined);
+      return next;
+    });
+  };
 
   const selectedDocumentId = _selectedDocumentId;
   const setSelectedDocumentId = (id: string | null) => {
@@ -248,6 +263,9 @@ export const DocumentProvider: React.FC<{ children: React.ReactNode }> = ({
         visitedDocuments,
         localOnlyAddresses,
         markLocalOnly,
+        docRelays,
+        setDocRelays,
+        addDocumentRelays,
       }}
     >
       {children}
