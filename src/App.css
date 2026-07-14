@@ -103,7 +103,7 @@
 }
 
 .tiptap .selectedCell::after {
-  background: rgba(100, 100, 200, 0.12);
+  background: var(--tbl-select-color, rgba(100, 100, 200, 0.12));
   content: "";
   inset: 0;
   pointer-events: none;
@@ -112,7 +112,7 @@
 }
 
 .tiptap .column-resize-handle {
-  background-color: rgba(100, 100, 200, 0.5);
+  background-color: var(--tbl-resize-color, rgba(100, 100, 200, 0.5));
   bottom: -2px;
   pointer-events: none;
   position: absolute;
@@ -143,7 +143,7 @@
   width: 8px;
   height: 8px;
   border-radius: 50%;
-  background: rgba(120, 120, 200, 0.45);
+  background: var(--tbl-anchor-color, rgba(120, 120, 200, 0.45));
   border: none;
   cursor: pointer;
   padding: 0;
@@ -159,7 +159,7 @@
 }
 
 .tbl-anchor-dot:hover {
-  background: #1565c0;
+  background: var(--tbl-anchor-hover, #1565c0);
   transform: scale(1.35);
 }
 
@@ -197,3 +197,66 @@
 .ProseMirror,
 .ProseMirror:focus,
 .ProseMirror-focused { outline: none !important; border: none !important; box-shadow: none !important; }
+
+/* ── Collaboration carets (remote cursors) ────────────────── */
+.collaboration-caret {
+  position: relative;
+  margin-left: -1px;
+  margin-right: -1px;
+  border-left: 1px solid;
+  border-right: none;
+  word-break: normal;
+  pointer-events: none;
+}
+
+.collaboration-caret__label {
+  position: absolute;
+  top: -1.5em;
+  left: -1px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  width: max-content;
+  max-width: 160px;
+  line-height: 1.4;
+  padding: 1px 6px 1px 1px;
+  border-radius: 9px 9px 9px 0;
+  color: #fff;
+  user-select: none;
+  pointer-events: none;
+}
+
+.collaboration-caret__avatar {
+  position: relative;
+  flex: none;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px;
+  font-weight: 700;
+  background: rgba(255, 255, 255, 0.25);
+}
+
+.collaboration-caret__avatar img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.collaboration-caret__name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.collaboration-caret__selection {
+  border-radius: 2px;
+}

@@ -24,3 +24,9 @@ export const DEFAULT_RELAYS = relayOverride
     ];
 
 export const pool = new SimplePool();
+
+/** True if at least one of the given relays currently has an open connection. */
+export function hasLiveRelayConnectivity(relays: string[]): boolean {
+  const status = pool.listConnectionStatus();
+  return relays.some((url) => status.get(url));
+}

@@ -13,6 +13,7 @@ import { CommentComposer } from "../comments/CommentComposer";
 import { CommentSidebar } from "../comments/CommentSidebar";
 import { useComments } from "../../contexts/CommentContext";
 import { applyDomHighlights } from "../../utils/domHighlighting";
+import { canvasTokens } from "../../theme";
 
 type Props = {
   value: string;
@@ -146,6 +147,7 @@ export function DocEditorSurface({
 }: Props) {
   const theme = useTheme();
   const previewRef = useRef<HTMLElement>(null);
+  const canvas = canvasTokens[theme.palette.mode];
 
   const linkSx = {
     "& a": {
@@ -179,7 +181,7 @@ export function DocEditorSurface({
             p: 3,
             ...markdownSxBase,
             ...linkSx,
-            color: theme.palette.text.primary,
+            color: canvas.ink,
           }}
         >
           {/* Sticky edit button — hidden for view-only shared links */}
@@ -206,7 +208,7 @@ export function DocEditorSurface({
               <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeRaw]} components={markdownComponents}>{value}</ReactMarkdown>
             </div>
           ) : (
-            <Typography color="text.secondary">
+            <Typography sx={{ color: canvas.ink, opacity: 0.6 }}>
               Nothing to preview yet —{" "}
               {isMobile ? "tap the edit button" : "click the edit button"} to
               start writing.
@@ -240,17 +242,17 @@ export function DocEditorSurface({
           resize: "none",
           border: "none",
           borderRight: isMobile ? "none" : "1px solid",
-          borderColor: "divider",
+          borderColor: canvas.border,
           outline: "none",
           background: "transparent",
-          color: "text.primary",
+          color: canvas.ink,
           fontSize: "14px",
           lineHeight: 1.7,
           fontFamily:
             '"Fira Code", "Cascadia Code", ui-monospace, "Menlo", monospace',
           p: 3,
           boxSizing: "border-box",
-          "&::placeholder": { color: "text.secondary", opacity: 0.5 },
+          "&::placeholder": { color: canvas.ink, opacity: 0.45 },
         }}
       />
     );
@@ -267,13 +269,13 @@ export function DocEditorSurface({
             p: 3,
             ...markdownSxBase,
             ...linkSx,
-            color: theme.palette.text.primary,
+            color: canvas.ink,
           }}
         >
           {value.trim() ? (
             <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeRaw]} components={markdownComponents}>{value}</ReactMarkdown>
           ) : (
-            <Typography color="text.secondary" fontStyle="italic">
+            <Typography sx={{ color: canvas.ink, opacity: 0.6 }} fontStyle="italic">
               Preview will appear here as you type…
             </Typography>
           )}

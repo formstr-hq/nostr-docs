@@ -1,5 +1,15 @@
 import { createTheme } from "@mui/material/styles";
 
+// The editor canvas is intentionally outside the theme system: every theme
+// tints its own chrome (sidebar, toolbar, accents), but the writing surface
+// itself is always plain white or near-black, picked by light/dark mode only.
+// This keeps the page you're actually writing on legible and consistent no
+// matter which of the themes below is active.
+export const canvasTokens = {
+  light: { bg: "#FFFFFF", ink: "#1C1917", border: "#E6E6E6" },
+  dark: { bg: "#0D0D0D", ink: "#EDEDED", border: "#2A2A2A" },
+} as const;
+
 const sharedComponents = {
   MuiButton: {
     styleOverrides: {
@@ -189,8 +199,8 @@ export const themes: Record<ThemeId, ThemeDefinition> = {
     theme: createTheme({
       palette: {
         mode: "light",
-        primary: { main: "#1A73E8" },
-        secondary: { main: "#1A73E8" },
+        primary: { main: "#1967D2" },
+        secondary: { main: "#12A594" },
         background: { default: "#F8F9FA", paper: "#FFFFFF" },
         text: { primary: "#202124", secondary: "#5F6368" },
         divider: "#E0E0E0",

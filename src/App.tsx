@@ -9,6 +9,7 @@ import {
   Typography,
   useMediaQuery,
 } from "@mui/material";
+import { alpha } from "@mui/material/styles";
 import MenuIcon from "@mui/icons-material/Menu";
 import {
   createBrowserRouter,
@@ -26,10 +27,11 @@ import { ThemeModeProvider, useThemeMode } from "./contexts/ThemeModeContext";
 import FormstrLogo from "./assets/formstr-pages-logo.png";
 import DocPage from "./components/DocPage";
 import { SharedPagesProvider } from "./contexts/SharedDocsContext";
-import { RelayProvider } from "./contexts/RelayContext";
+import { RelayProvider, useRelays } from "./contexts/RelayContext";
 import { DocMetadataProvider } from "./contexts/DocMetadataContext";
 import { BlossomProvider } from "./contexts/BlossomContext";
 import { MyFormsProvider } from "./contexts/MyFormsContext";
+import { useSyncRetrySweep } from "./hooks/useSyncRetrySweep";
 
 const drawerWidth = 320;
 
@@ -83,6 +85,12 @@ const router = createRouter([
 // logged out.
 function AuthedApp() {
   const { activeAccount } = useUser();
+  const { relays } = useRelays();
+  // Retries locally-stored events that were never confirmed as broadcast
+  // (e.g. a save made while offline). Mounted once here rather than inside
+  // the editor since pending entries can belong to documents that aren't
+  // currently open.
+  useSyncRetrySweep(relays);
   return (
     <DocumentProvider key={activeAccount?.pubkey ?? "anon"}>
       <SharedPagesProvider>
@@ -132,7 +140,8 @@ function AppLayout() {
           zIndex: (theme) => theme.zIndex.drawer + 1,
           bgcolor: "background.paper",
           color: "text.primary",
-          borderBottom: "1px solid rgba(0,0,0,0.08)",
+          borderBottom: "1px solid",
+          borderColor: (t) => alpha(t.palette.text.primary, 0.12),
         }}
       >
         <Toolbar sx={{ display: "flex", justifyContent: "space-between" }}>

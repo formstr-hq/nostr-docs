@@ -30,6 +30,8 @@
     "@tauri-apps/api": "^2.10.1",
     "@tauri-apps/plugin-store": "^2.4.2",
     "@tiptap/extension-character-count": "^3.20.1",
+    "@tiptap/extension-collaboration": "3.22.0",
+    "@tiptap/extension-collaboration-caret": "3.22.0",
     "@tiptap/extension-link": "^3.20.1",
     "@tiptap/extension-placeholder": "^3.20.1",
     "@tiptap/extension-table": "^3.22.5",
@@ -40,9 +42,11 @@
     "@tiptap/react": "^3.20.1",
     "@tiptap/starter-kit": "^3.20.1",
     "@tiptap/suggestion": "^3.22.5",
+    "@tiptap/y-tiptap": "^3.0.6",
     "bech32": "^2.0.0",
     "capacitor-secure-storage-plugin": "^0.13.0",
     "docx": "^9.6.1",
+    "lib0": "0.2.117",
     "minisearch": "7.2.0",
     "nostr-signer-capacitor-plugin": "^0.0.5",
     "nostr-tools": "^2.7.0",
@@ -53,7 +57,10 @@
     "react-router-dom": "^7.11.0",
     "rehype-raw": "^7.0.0",
     "remark-gfm": "^4.0.1",
-    "tiptap-markdown": "^0.9.0"
+    "tiptap-markdown": "^0.9.0",
+    "y-indexeddb": "^9.0.12",
+    "y-protocols": "^1.0.7",
+    "yjs": "^13.6.31"
   },
   "devDependencies": {
     "@capacitor/cli": "^7.6.1",
