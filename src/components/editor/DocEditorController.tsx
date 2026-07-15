@@ -95,13 +95,34 @@ function TagRow({ address }: { address: string }) {
   const tags = docTags.get(address) ?? [];
   const [input, setInput] = useState("");
   const [saving, setSaving] = useState(false);
+  const tagsRef = useRef(tags);
+  const inputRef = useRef<HTMLInputElement | null>(null);
+  useEffect(() => { tagsRef.current = tags; }, [tags]);
+
+  const commit = async (toAdd: string[]) => {
+    const clean = toAdd.map((t) => t.trim().toLowerCase()).filter(Boolean);
+    if (clean.length === 0) return;
+    const next = [...tagsRef.current];
+    const added: string[] = [];
+    for (const t of clean) {
+      if (!next.includes(t)) { next.push(t); added.push(t); }
+    }
+    if (added.length === 0) return;
+    tagsRef.current = next;
+    setSaving(true);
+    try {
+      await setDocTags(address, next);
+    } finally {
+      setSaving(false);
+    }
+  };
 
   const handleAdd = async () => {
-    const tag = input.trim().toLowerCase();
-    if (!tag || tags.includes(tag)) { setInput(""); return; }
-    setSaving(true);
-    try { await setDocTags(address, [...tags, tag]); }
-    finally { setSaving(false); setInput(""); }
+    const raw = input.trim().toLowerCase().replace(/[,\s]+$/, "");
+    if (!raw) { setInput(""); inputRef.current?.focus(); return; }
+    await commit([raw]);
+    setInput("");
+    inputRef.current?.focus();
   };
 
   const handleRemove = async (tag: string) => {
@@ -135,12 +156,27 @@ function TagRow({ address }: { address: string }) {
       ))}
       <InputBase
         value={input}
-        onChange={(e) => setInput(e.target.value)}
+        inputRef={inputRef}
+        onChange={(e) => {
+          const v = e.target.value;
+          if (/[,\s]/.test(v)) {
+            const parts = v.split(/[,\s]+/).map((s) => s.trim().toLowerCase()).filter(Boolean);
+            // If the value ends with a separator, every part is complete.
+            // Otherwise the last part is still being typed.
+            const endsWithSep = /[,\s]$/.test(v);
+            const toCommit = endsWithSep ? parts : parts.slice(0, -1);
+            const remainder = endsWithSep ? "" : (parts[parts.length - 1] ?? "");
+            if (toCommit.length) void commit(toCommit);
+            setInput(remainder);
+            inputRef.current?.focus();
+          } else {
+            setInput(v);
+          }
+        }}
         onKeyDown={(e) => {
-          if (e.key === "Enter") handleAdd();
+          if (e.key === "Enter") { e.preventDefault(); void handleAdd(); }
           if (e.key === "Escape") setInput("");
         }}
-        disabled={saving}
         placeholder="add tag…"
         sx={{
           fontSize: "0.72rem",
