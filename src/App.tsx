@@ -10,6 +10,9 @@ import {
   Toolbar,
   Typography,
   useMediaQuery,
+  Paper,
+  Stack,
+  Button,
 } from "@mui/material";
 import MenuIcon from "@mui/icons-material/Menu";
 import { ThemeProvider } from "@mui/material/styles";
@@ -19,6 +22,7 @@ import {
   RouterProvider,
   Outlet,
   useLocation,
+  useOutletContext,
 } from "react-router-dom";
 
 import DocumentList from "./components/DocumentList";
@@ -34,6 +38,8 @@ import { RelayProvider } from "./contexts/RelayContext";
 import { DocMetadataProvider } from "./contexts/DocMetadataContext";
 import { BlossomProvider } from "./contexts/BlossomContext";
 import { MyFormsProvider } from "./contexts/MyFormsContext";
+import { useTextSuggest } from "./hooks/useTextSuggest";
+import type { TextSuggestHook } from "./hooks/useTextSuggest";
 
 const drawerWidth = 320;
 
@@ -45,7 +51,8 @@ function DocPageWrapper() {
 }
 
 export function HomePage() {
-  return <DocPage />;
+  const textSuggest = useOutletContext<TextSuggestHook>();
+  return <DocPage textSuggest={textSuggest} />;
 }
 
 export function AboutPage() {
@@ -110,6 +117,7 @@ function AppLayout() {
     return ids[Math.floor(Math.random() * ids.length)];
   });
   const isDesktop = useMediaQuery("(min-width:900px)");
+  const textSuggest = useTextSuggest();
 
   const theme = themes[themeId].theme;
 
@@ -238,9 +246,10 @@ function AppLayout() {
             boxSizing: "border-box",
           }}
         >
-          <Outlet />
+          <Outlet context={textSuggest} />
         </Box>
       </Box>
+
     </ThemeProvider>
   );
 }

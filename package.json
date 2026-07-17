@@ -2,7 +2,7 @@
   "name": "Pages by Form*",
   "private": true,
   "version": "0.0.0",
-  "type": "module",
+  "type": "commonjs",
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
@@ -11,7 +11,8 @@
     "tauri:dev": "tauri dev",
     "tauri:build": "tauri build",
     "android:sync": "npm run build && npx cap sync android",
-    "android:open": "npx cap open android"
+    "android:open": "npx cap open android",
+    "postinstall": "node scripts/copy-wasm.js"
   },
   "dependencies": {
     "@capacitor/android": "^8.3.0",
@@ -49,7 +50,8 @@
     "react-router-dom": "^7.11.0",
     "rehype-raw": "^7.0.0",
     "remark-gfm": "^4.0.1",
-    "tiptap-markdown": "^0.9.0"
+    "tiptap-markdown": "^0.9.0",
+    "wllama-service": "^2.0.6"
   },
   "devDependencies": {
     "@capacitor/cli": "^7.6.1",
