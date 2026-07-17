@@ -1,10 +1,10 @@
-import { getPublicKey, nip44, type Event, type EventTemplate } from "nostr-tools";
+import { finalizeEvent, getPublicKey, nip44, type Event, type EventTemplate } from "nostr-tools";
 import { hexToBytes } from "nostr-tools/utils";
 import type { SubCloser } from "nostr-tools/abstract-pool";
 import { pool } from "./relayPool";
-import { publishEvent } from "./publish";
+import { publishEventStrict } from "./publish";
 import { signerManager } from "../signer";
-import { KIND_COMMENT } from "./kinds";
+import { KIND_COMMENT, KIND_COMMENT_RESOLUTION } from "./kinds";
 
 export type CommentType = "comment" | "suggestion";
 
@@ -62,7 +62,76 @@ export async function publishComment(
   };
 
   const signed = await signer.signEvent(event);
-  await publishEvent(signed, relays);
+  await publishEventStrict(signed, relays);
+  return signed;
+}
+
+/**
+ * Comment-resolution authorization model
+ * ──────────────────────────────────────
+ * Relays are dumb encrypted-blob stores, so we can't enforce "who may resolve"
+ * with a server-side ACL. Instead, authority is *proven by the signature* on the
+ * resolution event, reusing the keys the document already depends on:
+ *
+ *   • Solo document (no edit access shared) — the doc lives at an address owned
+ *     by the owner's key, so the owner's key is the authority. A viewer the doc
+ *     was shared with signs their own comments with their own key.
+ *   • Edit access shared — the doc is authored under the shared `editKey`, so the
+ *     editKey is the single signing identity for *everyone* with edit access, and
+ *     editKey-signed resolutions are authoritative.
+ *
+ * The authority pubkey is simply the pubkey embedded in the doc address
+ * (`<kind>:<pubkey>:<dTag>`), which is public — so even a view-only holder can
+ * verify an authority resolution without ever holding the editKey.
+ *
+ * A resolution is counted (see CommentContext `resolvedIds`) only if signed by:
+ *   1. the doc authority (owner key / editKey), or
+ *   2. the author of that specific comment — anyone may resolve *and reopen*
+ *      their own thread, last-writer-wins (so a comment author can reopen a
+ *      thread an editor resolved).
+ * Resolutions signed by anyone else are ignored.
+ *
+ * Accordingly we sign here with the shared editKey when the caller has edit
+ * access, otherwise with the user's own signer — which is the owner's key for a
+ * solo doc, or a viewer's own key when they resolve their own comment.
+ */
+export async function publishResolution(
+  commentEventId: string,
+  viewKey: string,
+  docAddress: string,
+  relays: string[],
+  resolved = true,
+  editKey?: string,
+  createdAt = Math.floor(Date.now() / 1000),
+): Promise<Event> {
+  const encryptedContent = encryptTags(
+    [["resolved", String(resolved)]],
+    viewKey,
+  );
+
+  const template: EventTemplate = {
+    kind: KIND_COMMENT_RESOLUTION,
+    created_at: createdAt,
+    content: encryptedContent,
+    tags: [
+      ["d", commentEventId],
+      ["a", docAddress],
+      ["e", commentEventId],
+      // Authority pubkey (owner key / editKey), also enabling a #p lookup.
+      ["p", docAddress.split(":")[1] ?? ""],
+    ],
+  };
+
+  let signed: Event;
+  if (editKey) {
+    signed = finalizeEvent(template, hexToBytes(editKey));
+  } else {
+    const signer = await signerManager.getSigner();
+    if (!signer) throw new Error("No signer available");
+    signed = await signer.signEvent(template);
+  }
+
+  await publishEventStrict(signed, relays);
   return signed;
 }
 
@@ -76,6 +145,27 @@ export function fetchComments(
   return pool.subscribeMany(
     relays,
     { kinds: [KIND_COMMENT], "#a": [docAddress] },
+    {
+      onevent(event: Event) {
+        if (!seenIds.has(event.id)) {
+          seenIds.add(event.id);
+          onEvent(event);
+        }
+      },
+    },
+  );
+}
+
+export function fetchResolutions(
+  docAddress: string,
+  relays: string[],
+  onEvent: (event: Event) => void,
+): SubCloser {
+  const seenIds = new Set<string>();
+
+  return pool.subscribeMany(
+    relays,
+    { kinds: [KIND_COMMENT_RESOLUTION], "#a": [docAddress] },
     {
       onevent(event: Event) {
         if (!seenIds.has(event.id)) {

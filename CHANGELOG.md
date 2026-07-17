@@ -1,3 +1,10 @@
+# 0.9.8
+- Add multi-account support with NIP-49 encrypted key login and QR sign-in
+- Add inline comments — comment on selected text, resolve threads, with highlight anchoring and outdated-comment detection
+- Add audio transcription (Whisper) for voice notes
+- Fix avatar display
+- Fix unnecessary share-link rotation — existing view links are now reused instead of being regenerated every time the share dialog opens
+
 # 0.9.6
 - Add tables
 - Add indents on regular text

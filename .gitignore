@@ -25,3 +25,8 @@ dist-ssr
 *.jks
 
 public/wllama/wllama.wasm
+# Playwright
+test-results
+playwright-report
+blob-report
+playwright/.cache

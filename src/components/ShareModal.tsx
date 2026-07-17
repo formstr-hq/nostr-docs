@@ -22,25 +22,33 @@ type Props = {
   open: boolean;
   onClose: () => void;
   onPublicPost?: () => void;
-  onPrivateLink?: (canEdit: boolean) => Promise<string | void>;
-  hasEditShare?: boolean;
+  onPrivateLink?: (canEdit: boolean, rotate?: boolean) => Promise<string | void>;
+  existingViewLink?: string;
+  existingEditLink?: string;
 };
 
-export default function ShareModal({ open, onClose, onPrivateLink, hasEditShare = false }: Props) {
+export default function ShareModal({ open, onClose, onPrivateLink, existingViewLink = "", existingEditLink = "" }: Props) {
   const [canEdit, setCanEdit] = useState(false);
-  const [privateLink, setPrivateLink] = useState<string>("");
+  const [generatedLink, setGeneratedLink] = useState<string>("");
   const [loading, setLoading] = useState(false);
   const [toastOpen, setToastOpen] = useState(false);
   const [error, setError] = useState<string>("");
+
+  const currentExistingLink = canEdit ? existingEditLink : existingViewLink;
+  // Show a freshly generated link if we have one, otherwise fall back to any
+  // existing link for the current mode. Derived during render (no effect) so
+  // toggling the switch or reopening the dialog stays in sync automatically.
+  const privateLink = open ? generatedLink || currentExistingLink || "" : "";
 
   const handlePrivateLink = async () => {
     if (!onPrivateLink) return;
     setLoading(true);
     setError("");
     try {
-      const url = await onPrivateLink(canEdit);
+      const isRotate = !canEdit && !!existingViewLink;
+      const url = await onPrivateLink(canEdit, isRotate);
       if (typeof url === "string") {
-        setPrivateLink(url);
+        setGeneratedLink(url);
       } else {
         setError("Failed to generate link. Please try again.");
       }
@@ -59,7 +67,7 @@ export default function ShareModal({ open, onClose, onPrivateLink, hasEditShare 
   };
 
   const handleClose = () => {
-    setPrivateLink("");
+    setGeneratedLink("");
     setCanEdit(false);
     setLoading(false);
     setError("");
@@ -87,36 +95,40 @@ export default function ShareModal({ open, onClose, onPrivateLink, hasEditShare 
               <Typography color="text.secondary">Can view</Typography>
               <Switch
                 checked={canEdit}
-                onChange={() => setCanEdit((v) => !v)}
+                onChange={() => {
+                  setCanEdit((v) => !v);
+                  setGeneratedLink("");
+                  setError("");
+                }}
                 color="secondary"
               />
               <Typography color="text.secondary">Can edit</Typography>
             </Box>
             <Typography variant="caption" color="text.secondary" sx={{ mt: 0.5, display: "block" }}>
               {canEdit
-                ? hasEditShare
-                  ? "This page already has a shared editable copy — you'll get the existing link back. Any edits collaborators have made are preserved."
+                ? existingEditLink
+                  ? "This page already has a shared editable copy — any edits collaborators have made are preserved."
                   : "Creates a separate shared copy. Anyone with the link can edit it — your original document is unaffected."
                 : "Anyone with the link can read this page. Generating again rotates access — previously shared view links stop working."}
             </Typography>
 
-            <Button
-              variant="contained"
-              color="secondary"
-              sx={{ mt: 2, fontWeight: 700, position: "relative" }}
-              onClick={handlePrivateLink}
-              disabled={loading}
-            >
-              {loading ? (
-                <CircularProgress size={24} color="inherit" />
-              ) : canEdit && hasEditShare ? (
-                "Get Existing Link"
-              ) : !canEdit && privateLink ? (
-                "Rotate View Access"
-              ) : (
-                "Generate Link"
-              )}
-            </Button>
+            {!(canEdit && !!existingEditLink) && (
+              <Button
+                variant="contained"
+                color="secondary"
+                sx={{ mt: 2, fontWeight: 700, position: "relative" }}
+                onClick={handlePrivateLink}
+                disabled={loading}
+              >
+                {loading ? (
+                  <CircularProgress size={24} color="inherit" />
+                ) : !canEdit && existingViewLink ? (
+                  "Rotate View Access"
+                ) : (
+                  "Generate Link"
+                )}
+              </Button>
+            )}
 
             {error && (
               <Typography color="error" sx={{ mt: 2 }}>
