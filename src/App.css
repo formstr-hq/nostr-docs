@@ -30,6 +30,16 @@
   height: 0;
 }
 
+/* ── Local-AI ghost-text suggestion (src/components/editor/extensions/GhostTextSuggestion.ts) ── */
+.ai-ghost-suggestion {
+  color: rgba(150, 150, 150, 0.65);
+  cursor: pointer;
+  pointer-events: auto;
+  user-select: none;
+  -webkit-user-select: none;
+  white-space: pre-wrap;
+}
+
 .tiptap h1 { font-size: 2em;   font-weight: 800; margin: 0.5em 0; }
 .tiptap h2 { font-size: 1.5em; font-weight: 700; margin: 0.5em 0; }
 .tiptap h3 { font-size: 1.17em;font-weight: 600; margin: 0.5em 0; }

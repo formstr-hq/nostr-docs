@@ -24,6 +24,7 @@ dist-ssr
 *.sw?
 *.jks
 
+public/wllama/wllama.wasm
 # Playwright
 test-results
 playwright-report

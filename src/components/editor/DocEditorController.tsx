@@ -40,6 +40,13 @@ import { FormNode } from "./extensions/FormNode";
 import { SlashCommand } from "./extensions/SlashCommand";
 import { Indent } from "./extensions/Indent";
 import { TableHandles } from "./extensions/TableHandles";
+import {
+  GhostTextSuggestion,
+  setGhostSuggestion,
+  clearGhostSuggestion,
+  ghostSuggestionPluginKey,
+} from "./extensions/GhostTextSuggestion";
+import type { TextSuggestHook } from "../../hooks/useTextSuggest";
 import { SlashCommandMenu } from "./SlashCommandMenu";
 import type { SlashCommandItem } from "./extensions/SlashCommand";
 import type { SlashCommandMenuHandle } from "./SlashCommandMenu";
@@ -174,9 +181,11 @@ function CommentHighlightEffect({ editor, mode }: { editor: Editor | null; mode:
 export function DocumentEditorController({
   viewKey,
   editKey,
+  textSuggest,
 }: {
   viewKey?: string;
   editKey?: string;
+  textSuggest: TextSuggestHook;
 }) {
   const {
     documents,
@@ -299,6 +308,29 @@ export function DocumentEditorController({
   // Always-current upload function — avoids stale closures in editorProps handlers
   const uploadFileRef = useRef<(file: File) => Promise<void>>(async () => { });
 
+  /* ── Local-AI text suggestions (ghost text) ────────────── */
+  // Always-current — read inside the TipTap onUpdate handler below, which is
+  // captured once when useEditor first builds the editor instance. Synced
+  // via effect (not written during render) so re-renders never observe a
+  // half-updated ref.
+  const requestSuggestionRef = useRef(textSuggest.requestSuggestion);
+  const clearSuggestionRef = useRef(textSuggest.clearSuggestion);
+  const notifyCursorPosRef = useRef(textSuggest.notifyCursorPos);
+  // Mirrors prefs.enabled for the onUpdate handler (the hook's state value
+  // can lag a render behind a just-toggled setting).
+  const textSuggestEnabledRef = useRef(false);
+  useEffect(() => {
+    requestSuggestionRef.current = textSuggest.requestSuggestion;
+    clearSuggestionRef.current = textSuggest.clearSuggestion;
+    notifyCursorPosRef.current = textSuggest.notifyCursorPos;
+    textSuggestEnabledRef.current = textSuggest.prefs?.enabled ?? false;
+  }, [
+    textSuggest.requestSuggestion,
+    textSuggest.clearSuggestion,
+    textSuggest.notifyCursorPos,
+    textSuggest.prefs,
+  ]);
+
   /* ── TipTap editor instance ────────────────────────────── */
   const editor = useEditor({
     extensions: [
@@ -315,6 +347,7 @@ export function DocumentEditorController({
       TableHeader,
       TableCell,
       Indent,
+      GhostTextSuggestion,
       TableHandles,
       EncryptedFileNode,
       CommentHighlight,
@@ -508,6 +541,37 @@ export function DocumentEditorController({
       setMd(newMd);
       setWordCount(editor.storage.characterCount.words());
       setCharCount(editor.storage.characterCount.characters());
+
+      // ── Local-AI ghost-text suggestion trigger ──────────────────────
+      // Plain-text slices around the cursor (not markdown — re-serializing
+      // the whole doc on every keystroke just to get plain text would be
+      // wasteful, and the model only needs to read prose, not markdown
+      // syntax). Skipped entirely when the user hasn't turned this on.
+      if (!textSuggestEnabledRef.current) return;
+      const { selection } = editor.state;
+      if (!selection.empty) {
+        clearSuggestionRef.current();
+        return;
+      }
+      // Cap how much context we ship to the model per request — keeps
+      // prompt re-evaluation fast (especially with WebGPU serialization).
+      const CONTEXT_CHARS = 800;
+      const prefix = editor.state.doc.textBetween(
+        Math.max(0, selection.from - CONTEXT_CHARS),
+        selection.from,
+        "\n",
+      );
+      requestSuggestionRef.current(prefix, selection.from);
+    },
+    onSelectionUpdate: ({ editor }) => {
+      if (!textSuggestEnabledRef.current) return;
+      const { selection } = editor.state;
+      if (!selection.empty) {
+        clearSuggestionRef.current();
+        return;
+      }
+      // Cursor moved without typing — drop stale pending/shown suggestions.
+      notifyCursorPosRef.current(selection.from);
     },
   });
 
@@ -518,6 +582,47 @@ export function DocumentEditorController({
       setCharCount(editor.storage.characterCount.characters());
     }
   }, [editor]);
+
+  /* ── Push local-AI suggestions into the ghost-text decoration ──── */
+  // The useTextSuggest hook owns *when* to suggest (debounce, model
+  // loading, abort-on-keystroke); this effect just reflects its result
+  // into the editor view whenever it changes — and only if the caret is
+  // still at the position the suggestion was requested for.
+  useEffect(() => {
+    if (!editor) return;
+    if (textSuggest.suggestion) {
+      const { text, pos } = textSuggest.suggestion;
+      const { selection } = editor.state;
+      if (selection.empty && selection.from === pos) {
+        setGhostSuggestion(editor.view, text, pos);
+      } else {
+        // Cursor moved while the model was thinking — ignore.
+        textSuggest.clearSuggestion();
+      }
+    } else {
+      clearGhostSuggestion(editor.view);
+    }
+  }, [editor, textSuggest.suggestion]);
+
+  /* ── Accept/dismiss feedback for the ghost-text extension ───────── */
+  // Tab/Escape inside GhostTextSuggestion clear the ProseMirror decoration
+  // directly (so the UI reacts instantly without waiting on this hook's
+  // state). This effect mirrors that back into useTextSuggest's state so a
+  // stale `textSuggest.suggestion` doesn't get re-applied by the effect
+  // above on the next render.
+  useEffect(() => {
+    if (!editor) return;
+    const onTransaction = () => {
+      const ghost = ghostSuggestionPluginKey.getState(editor.state);
+      if (!ghost?.text && textSuggest.suggestion) {
+        textSuggest.clearSuggestion();
+      }
+    };
+    editor.on("transaction", onTransaction);
+    return () => {
+      editor.off("transaction", onTransaction);
+    };
+  }, [editor, textSuggest]);
 
   /* ── Update editor editable state when mode changes ───── */
   useEffect(() => {
@@ -1061,6 +1166,13 @@ export function DocumentEditorController({
           documentAddress={selectedDocumentId ?? undefined}
           heuristicTitle={getDocTitle()}
           hasEditKey={!!editKey}
+          textSuggestState={textSuggest.state}
+          textSuggestEnabled={textSuggest.prefs?.enabled ?? false}
+          onToggleTextSuggest={(next) => {
+            if (!textSuggest.prefs) return;
+            void textSuggest.updatePrefs({ ...textSuggest.prefs, enabled: next });
+          }}
+          onTextSuggestSettingsSaved={() => void textSuggest.reload()}
         />
       )}
       {isViewOnly && commentsEnabled && (

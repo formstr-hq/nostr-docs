@@ -52,6 +52,8 @@ import { useDocMetadata } from "../../contexts/DocMetadataContext";
 import { useEditorState } from "@tiptap/react";
 import type { Editor } from "@tiptap/react";
 import DictationButton from "../dictation/DictationButton";
+import TextSuggestButton from "../textSuggest/TextSuggestButton";
+import type { TextSuggestState } from "../../lib/textSuggest/types";
 
 type EditorMode = "edit" | "preview" | "split";
 
@@ -88,6 +90,10 @@ type Props = {
   documentAddress?: string;
   heuristicTitle?: string;
   hasEditKey?: boolean;
+  textSuggestState?: TextSuggestState;
+  textSuggestEnabled?: boolean;
+  onToggleTextSuggest?: (next: boolean) => void;
+  onTextSuggestSettingsSaved?: () => void;
 };
 
 export function EditorToolbar({
@@ -118,6 +124,10 @@ export function EditorToolbar({
   documentAddress,
   heuristicTitle,
   hasEditKey = false,
+  textSuggestState = { kind: "disabled" },
+  textSuggestEnabled = false,
+  onToggleTextSuggest,
+  onTextSuggestSettingsSaved,
 }: Props) {
   const { user, loginModal } = useUser();
   const [menuAnchor, setMenuAnchor] = useState<null | HTMLElement>(null);
@@ -802,6 +812,17 @@ export function EditorToolbar({
                 editor.chain().focus().insertContent(text + " ").run()
               }
             />
+
+            {/* AI text suggestions */}
+            {onToggleTextSuggest && (
+              <TextSuggestButton
+                size="small"
+                state={textSuggestState}
+                enabled={textSuggestEnabled}
+                onToggle={onToggleTextSuggest}
+                onSettingsSaved={onTextSuggestSettingsSaved ?? (() => {})}
+              />
+            )}
 
             {/* Attach file */}
             {onAttachFile && (
