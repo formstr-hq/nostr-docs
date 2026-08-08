@@ -191,7 +191,7 @@ export function DocumentEditorController({
     unmarkVisited,
   } = useDocumentContext();
   const { addSharedDoc, getKeys } = useSharedPages();
-  const { setDocSharedAs, docSharedAs } = useDocMetadata();
+  const { setDocSharedAs, docSharedAs, docTags } = useDocMetadata();
 
   const navigate = useNavigate();
   const { relays } = useRelays();
@@ -1115,7 +1115,6 @@ export function DocumentEditorController({
           onSave={() => handleSave(false)}
           handleDelete={handleDelete}
           onShare={() => setShareOpen(true)}
-          onPublishArticle={() => setPublishOpen(true)}
           versions={versions}
           onSelectVersion={handleSelectVersion}
           editor={editor}
@@ -1439,12 +1438,17 @@ export function DocumentEditorController({
         onClose={() => setPublishOpen(false)}
         markdown={md}
         initialTitle={getDocTitle()}
+        initialTags={selectedDocumentId ? (docTags.get(selectedDocumentId) ?? []) : []}
       />
 
       <ShareModal
         open={shareOpen}
         onClose={() => setShareOpen(false)}
         onPublicPost={() => handleSharePublic()}
+        onPublishArticle={() => {
+          setShareOpen(false);
+          setPublishOpen(true);
+        }}
         existingViewLink={existingViewLink}
         existingEditLink={existingEditLink}
         onPrivateLink={async (canEdit, rotate) => {

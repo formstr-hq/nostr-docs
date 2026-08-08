@@ -16,18 +16,20 @@ import {
   IconButton,
 } from "@mui/material";
 import ContentCopyIcon from "@mui/icons-material/ContentCopy";
+import PublicIcon from "@mui/icons-material/Public";
 import { useState } from "react";
 
 type Props = {
   open: boolean;
   onClose: () => void;
   onPublicPost?: () => void;
+  onPublishArticle?: () => void;
   onPrivateLink?: (canEdit: boolean, rotate?: boolean) => Promise<string | void>;
   existingViewLink?: string;
   existingEditLink?: string;
 };
 
-export default function ShareModal({ open, onClose, onPrivateLink, existingViewLink = "", existingEditLink = "" }: Props) {
+export default function ShareModal({ open, onClose, onPrivateLink, onPublishArticle, existingViewLink = "", existingEditLink = "" }: Props) {
   const [canEdit, setCanEdit] = useState(false);
   const [generatedLink, setGeneratedLink] = useState<string>("");
   const [loading, setLoading] = useState(false);
@@ -156,6 +158,28 @@ export default function ShareModal({ open, onClose, onPrivateLink, existingViewL
               />
             )}
           </Paper>
+
+          {/* PUBLISH PUBLICLY */}
+          {onPublishArticle && (
+            <Paper variant="outlined" sx={{ p: 2 }}>
+              <Typography variant="h6" fontWeight={800}>
+                Publish publicly
+              </Typography>
+              <Typography color="text.secondary" sx={{ mb: 1 }}>
+                Post this page to Nostr as a long-form article or a community NIP.
+                Anyone can read it — images become public.
+              </Typography>
+              <Button
+                variant="outlined"
+                color="secondary"
+                startIcon={<PublicIcon />}
+                sx={{ mt: 1, fontWeight: 700 }}
+                onClick={onPublishArticle}
+              >
+                Publish as article or NIP
+              </Button>
+            </Paper>
+          )}
         </DialogContent>
 
         <DialogActions>

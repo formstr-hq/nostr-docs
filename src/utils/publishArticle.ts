@@ -129,6 +129,8 @@ export interface PublishArticleOptions {
   title: string;
   summary?: string;
   content: string;
+  /** Hashtags/topics — published as `t` tags on both kinds. */
+  hashtags?: string[];
   /** `["k", kind, name]` entries — community-NIP only. */
   kTags?: [string, string][];
   relays: string[];
@@ -145,6 +147,7 @@ export async function publishArticleEvent({
   title,
   summary,
   content,
+  hashtags = [],
   kTags = [],
   relays,
 }: PublishArticleOptions): Promise<PublishedArticle> {
@@ -161,6 +164,15 @@ export async function publishArticleEvent({
     tags.push(["published_at", String(Math.floor(Date.now() / 1000))]);
   } else {
     for (const [k, name] of kTags) tags.push(["k", k, name]);
+  }
+  // Hashtags (deduped, normalized) as `t` tags — supported by both kinds.
+  const seenTopics = new Set<string>();
+  for (const raw of hashtags) {
+    const topic = raw.trim().replace(/^#/, "").toLowerCase();
+    if (topic && !seenTopics.has(topic)) {
+      seenTopics.add(topic);
+      tags.push(["t", topic]);
+    }
   }
 
   const template: EventTemplate = {

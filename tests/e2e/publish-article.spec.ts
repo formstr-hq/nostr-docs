@@ -30,11 +30,12 @@ test("publish a page as a NIP-23 long-form article", async ({ page }) => {
   const naddr = new URL(page.url()).pathname.split("/doc/")[1].split("/")[0];
   const { pubkey } = nip19.decode(naddr).data as nip19.AddressPointer;
 
-  // Open the overflow menu → "Publish as article".
+  // Open the overflow menu → Share, then launch publishing from the share modal.
   await page.getByRole("button", { name: "More actions" }).click();
-  await page.getByRole("menuitem", { name: "Publish as article" }).click();
+  await page.getByRole("menuitem", { name: "Share" }).click();
+  await page.getByRole("button", { name: "Publish as article or NIP" }).click();
 
-  const dialog = page.getByRole("dialog").filter({ hasText: "Publish as article" });
+  const dialog = page.getByRole("dialog").filter({ hasText: "Publish as article or NIP" });
   await expect(dialog).toBeVisible();
 
   // The draft preview shows the built (sanitized) markdown body.

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useTheme } from "@mui/material/styles";
 import { alpha } from "@mui/material/styles";
 import { fetchAllDocuments } from "../nostr/fetchFile.ts";
@@ -7,6 +7,7 @@ import {
   loadTrashedEvents,
   storeLocalEvent,
   markBroadcast,
+  removeLocalEvent,
 } from "../lib/localStore.ts";
 import { publishEvent } from "../nostr/publish.ts";
 import {
@@ -53,6 +54,7 @@ import { getEventAddress } from "../utils/helpers.ts";
 import { useDocMetadata } from "../contexts/DocMetadataContext.tsx";
 import RenameDialog from "./RenameDialog.tsx";
 import EditOutlinedIcon from "@mui/icons-material/EditOutlined";
+import DeleteOutlineIcon from "@mui/icons-material/DeleteOutline";
 import { IconButton } from "@mui/material";
 import DictationButton from "./dictation/DictationButton";
 
@@ -122,10 +124,29 @@ export default function DocumentList({
     selectedDocumentId,
     localOnlyAddresses,
     markLocalOnly,
+    unmarkVisited,
+    removeDocument,
   } = useDocumentContext();
+
+  // Remove a visited page from this device: drop it from the Visited tab and
+  // delete its local cache. It stays reachable via its original share link.
+  const handleRemoveVisited = async (address: string) => {
+    unmarkVisited(address);
+    removeDocument(address);
+    await removeLocalEvent(address).catch(() => {});
+  };
   const [docRelays, setDocRelays] = useState<Map<string, string[]>>(new Map());
 
   const { sharedDocuments, getKeys } = useSharedPages();
+
+  // A page that's already in the Shared list shouldn't also show under Visited —
+  // once saved to Shared it's no longer just a transient visit.
+  const visitedOnly = useMemo(() => {
+    if (sharedDocuments.size === 0) return visitedDocuments;
+    const next = new Map(visitedDocuments);
+    for (const addr of sharedDocuments.keys()) next.delete(addr);
+    return next;
+  }, [visitedDocuments, sharedDocuments]);
   const { docTags, docTitles, setDocTitle, docSharedAs, allTags, selectedTag, setSelectedTag } = useDocMetadata();
   const [loading, setLoading] = useState(true);
   const [tab, setTab] = useState<"personal" | "shared" | "visited">("personal");
@@ -142,7 +163,7 @@ export default function DocumentList({
   const searchHits = useDocSearch(
     visibleDocuments,
     sharedDocuments,
-    visitedDocuments,
+    visitedOnly,
     docTitles,
     docTags,
     query,
@@ -273,14 +294,14 @@ export default function DocumentList({
   const allDocs =
     tab === "personal" ? visibleDocuments
     : tab === "shared"  ? sharedDocuments
-    :                     visitedDocuments;
+    :                     visitedOnly;
 
   // Auto-switch to the tab that owns the currently selected doc
   useEffect(() => {
     if (!selectedDocumentId) return;
     if (visibleDocuments.has(selectedDocumentId)) setTab("personal");
     else if (sharedDocuments.has(selectedDocumentId)) setTab("shared");
-    else if (visitedDocuments.has(selectedDocumentId)) setTab("visited");
+    else if (visitedOnly.has(selectedDocumentId)) setTab("visited");
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedDocumentId]);
 
@@ -302,7 +323,7 @@ export default function DocumentList({
     if (personal) return { history: personal, origin: "personal" };
     const shared = sharedDocuments.get(address);
     if (shared) return { history: shared, origin: "shared" };
-    const visit = visitedDocuments.get(address);
+    const visit = visitedOnly.get(address);
     if (visit) return { history: visit, origin: "visited" };
     return null;
   };
@@ -327,7 +348,7 @@ export default function DocumentList({
 
   const personalCount = visibleDocuments.size;
   const sharedCount = sharedDocuments.size;
-  const visitedCount = visitedDocuments.size;
+  const visitedCount = visitedOnly.size;
 
   return (
     <Box
@@ -598,23 +619,44 @@ export default function DocumentList({
                           >
                             {displayTitle}
                           </Box>
-                          <IconButton
-                            className="rename-btn"
-                            size="small"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setRenamingAddress(address);
-                              setRenamingInitialTitle(displayTitle);
-                              setRenameOpen(true);
-                            }}
-                            sx={{
-                              opacity: isSelected ? 1 : 0,
-                              transition: "opacity 0.2s",
-                              p: 0.25,
-                            }}
-                          >
-                            <EditOutlinedIcon sx={{ fontSize: 16 }} />
-                          </IconButton>
+                          {origin === "visited" ? (
+                            <Tooltip title="Remove from visited">
+                              <IconButton
+                                className="rename-btn"
+                                size="small"
+                                aria-label="Remove from visited"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  void handleRemoveVisited(address);
+                                }}
+                                sx={{
+                                  opacity: isSelected ? 1 : 0,
+                                  transition: "opacity 0.2s",
+                                  p: 0.25,
+                                }}
+                              >
+                                <DeleteOutlineIcon sx={{ fontSize: 16 }} />
+                              </IconButton>
+                            </Tooltip>
+                          ) : (
+                            <IconButton
+                              className="rename-btn"
+                              size="small"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setRenamingAddress(address);
+                                setRenamingInitialTitle(displayTitle);
+                                setRenameOpen(true);
+                              }}
+                              sx={{
+                                opacity: isSelected ? 1 : 0,
+                                transition: "opacity 0.2s",
+                                p: 0.25,
+                              }}
+                            >
+                              <EditOutlinedIcon sx={{ fontSize: 16 }} />
+                            </IconButton>
+                          )}
                         </Box>
                       }
                       secondary={
