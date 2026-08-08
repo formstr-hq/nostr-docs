@@ -13,6 +13,7 @@ export interface LocalStoredEvent {
   savedAt: number; // Unix ms timestamp
   trashedAt?: number; // Unix ms — set when moved to trash, absent when active
   localOnly?: boolean; // true = encrypted locally only, never published to relays
+  visited?: boolean; // true = a page opened via a shared link (someone else's doc)
 }
 
 function openDB(): Promise<IDBDatabase> {
@@ -53,6 +54,7 @@ export async function storeLocalEvent(entry: LocalStoredEvent): Promise<void> {
         viewKey: entry.viewKey ?? existing?.viewKey,
         editKey: entry.editKey ?? existing?.editKey,
         localOnly: entry.localOnly ?? existing?.localOnly,
+        visited: entry.visited ?? existing?.visited,
       };
       const putReq = store.put(toStore);
       putReq.onsuccess = () => resolve();
@@ -72,6 +74,41 @@ export async function loadAllLocalEvents(): Promise<LocalStoredEvent[]> {
     req.onsuccess = () =>
       resolve((req.result as LocalStoredEvent[]).filter((e) => !e.trashedAt));
     req.onerror = () => reject(req.error);
+  });
+}
+
+/**
+ * Load all active visited pages (opened via a shared link). Used to repopulate
+ * the Visited tab on reload — these persist regardless of login state.
+ */
+export async function loadVisitedEvents(): Promise<LocalStoredEvent[]> {
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(STORE_NAME, "readonly");
+    const store = tx.objectStore(STORE_NAME);
+    const req = store.getAll();
+    req.onsuccess = () =>
+      resolve((req.result as LocalStoredEvent[]).filter((e) => e.visited && !e.trashedAt));
+    req.onerror = () => reject(req.error);
+  });
+}
+
+/** Clear the visited flag for an address — used when promoting it to Shared. */
+export async function clearVisitedFlag(address: string): Promise<void> {
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(STORE_NAME, "readwrite");
+    const store = tx.objectStore(STORE_NAME);
+    const getReq = store.get(address);
+    getReq.onsuccess = () => {
+      const entry = getReq.result as LocalStoredEvent | undefined;
+      if (!entry) { resolve(); return; }
+      entry.visited = undefined;
+      const putReq = store.put(entry);
+      putReq.onsuccess = () => resolve();
+      putReq.onerror = () => reject(putReq.error);
+    };
+    getReq.onerror = () => reject(getReq.error);
   });
 }
 

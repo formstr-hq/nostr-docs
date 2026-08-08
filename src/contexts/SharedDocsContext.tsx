@@ -196,8 +196,13 @@ export const SharedPagesProvider: React.FC<{ children: React.ReactNode }> = ({
 
     // Save as a metadata event only when a signer is available (logged-in users).
     // Non-logged-in users with an editKey have no key to encrypt metadata to.
+    // Skip the write (and its signer prompt) when this exact entry is already
+    // in our list — re-opening share on an already-shared doc shouldn't re-sign.
+    const existing = sharedDocs.find((t) => t[0] === address);
+    const alreadyStored =
+      existing && existing[1] === viewKey && (existing[2] ?? undefined) === (editKey ?? undefined);
     const signer = await signerManager.getSigner();
-    if (signer) {
+    if (signer && !alreadyStored) {
       await saveDocMetadata(
         address,
         { tags: [], viewKey, ...(editKey ? { editKey } : {}) },

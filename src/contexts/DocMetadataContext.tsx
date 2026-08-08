@@ -8,7 +8,7 @@ import React, {
 import { useUser } from "./UserContext";
 import { useRelays } from "./RelayContext";
 import { signerManager } from "../signer";
-import { fetchAllDocMetadata, saveDocMetadata, type DocMetadata } from "../nostr/docMetadata";
+import { fetchAllDocMetadata, saveDocMetadata, metadataEqual, type DocMetadata } from "../nostr/docMetadata";
 
 interface DocMetadataContextValue {
   docTags: Map<string, string[]>;
@@ -87,7 +87,8 @@ export const DocMetadataProvider: React.FC<{ children: React.ReactNode }> = ({
   const setDocTags = async (address: string, tags: string[]) => {
     const existing = metadataMap.get(address) ?? { tags: [] };
     const newMeta: DocMetadata = { ...existing, tags };
-    await saveDocMetadata(address, newMeta, relays);
+    // Skip the sign+publish (and its signer prompt) when nothing changed.
+    if (!metadataEqual(existing, newMeta)) await saveDocMetadata(address, newMeta, relays);
     setMetadataMap((prev) => {
       const next = new Map(prev);
       next.set(address, newMeta);
@@ -104,7 +105,7 @@ export const DocMetadataProvider: React.FC<{ children: React.ReactNode }> = ({
   const setDocTitle = async (address: string, title: string) => {
     const existing = metadataMap.get(address) ?? { tags: [] };
     const newMeta: DocMetadata = { ...existing, title: title || undefined };
-    await saveDocMetadata(address, newMeta, relays);
+    if (!metadataEqual(existing, newMeta)) await saveDocMetadata(address, newMeta, relays);
     setMetadataMap((prev) => {
       const next = new Map(prev);
       next.set(address, newMeta);
@@ -121,7 +122,7 @@ export const DocMetadataProvider: React.FC<{ children: React.ReactNode }> = ({
   const setDocSharedAs = async (address: string, sharedAs: string) => {
     const existing = metadataMap.get(address) ?? { tags: [] };
     const newMeta: DocMetadata = { ...existing, sharedAs };
-    await saveDocMetadata(address, newMeta, relays);
+    if (!metadataEqual(existing, newMeta)) await saveDocMetadata(address, newMeta, relays);
     setMetadataMap((prev) => {
       const next = new Map(prev);
       next.set(address, newMeta);

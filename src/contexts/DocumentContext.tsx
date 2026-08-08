@@ -1,10 +1,11 @@
 import { getPublicKey, nip44, type Event } from "nostr-tools";
-import React, { createContext, useContext, useMemo, useState } from "react";
+import React, { createContext, useContext, useEffect, useMemo, useState } from "react";
 import { signerManager } from "../signer";
 import { getConversationKey } from "nostr-tools/nip44";
 import { hexToBytes } from "nostr-tools/utils";
 import { useUser, type UserProfile } from "./UserContext";
 import { getEventAddress } from "../utils/helpers";
+import { loadVisitedEvents } from "../lib/localStore";
 
 type DocumentVersion = {
   event: Event;
@@ -22,6 +23,8 @@ interface DocumentContextValue {
   setSelectedDocumentId: (id: string | null) => void;
   /** Addresses navigated to in the current browser session. */
   sessionVisited: Set<string>;
+  /** Drop an address from the Visited tab (e.g. after promoting it to Shared). */
+  unmarkVisited: (address: string) => void;
   addDocument: (
     document: Event,
     keys?: { viewKey?: string; editKey?: string },
@@ -109,6 +112,15 @@ export const DocumentProvider: React.FC<{ children: React.ReactNode }> = ({
         return next;
       });
     }
+  };
+
+  const unmarkVisited = (address: string) => {
+    setSessionVisited((prev) => {
+      if (!prev.has(address)) return prev;
+      const next = new Set(prev);
+      next.delete(address);
+      return next;
+    });
   };
 
   const markLocalOnly = (address: string, localOnly: boolean) => {
@@ -232,6 +244,38 @@ export const DocumentProvider: React.FC<{ children: React.ReactNode }> = ({
     });
   };
 
+  // Hydrate visited pages from IndexedDB on mount so they survive a reload.
+  // Runs independently of login — visited docs decrypt with their stored
+  // viewKey, so no signer is required. Repopulates both the document cache and
+  // sessionVisited (which the Visited tab is derived from).
+  useEffect(() => {
+    (async () => {
+      try {
+        const entries = await loadVisitedEvents();
+        if (entries.length === 0) return;
+        const addresses: string[] = [];
+        for (const entry of entries) {
+          try {
+            const keys: Record<string, string> = {};
+            if (entry.viewKey) keys.viewKey = entry.viewKey;
+            if (entry.editKey) keys.editKey = entry.editKey;
+            await addDocument(entry.event, keys);
+            addresses.push(entry.address);
+          } catch {
+            // Skip entries that can't be decrypted with the stored key.
+          }
+        }
+        if (addresses.length > 0) {
+          setSessionVisited((prev) => new Set([...prev, ...addresses]));
+        }
+      } catch (err) {
+        console.warn("Failed to hydrate visited pages:", err);
+      }
+    })();
+    // Mount-only: addDocument is stable enough for a one-shot hydration.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   return (
     <DocumentContext.Provider
       value={{
@@ -239,6 +283,7 @@ export const DocumentProvider: React.FC<{ children: React.ReactNode }> = ({
         selectedDocumentId,
         setSelectedDocumentId,
         sessionVisited,
+        unmarkVisited,
         addDocument,
         removeDocument,
         deletedEventIds,

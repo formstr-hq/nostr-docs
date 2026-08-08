@@ -1,0 +1,27 @@
+repository: https://github.com/formstr-hq/nostr-docs
+name: Pages by Form*
+description: |
+  Your notes aren’t just text — they’re your thoughts at 2AM, your plans for the future, your half-formed ideas that might become something real. Why should anyone else have access to that?
+
+  Pages by Form* is a private, end-to-end encrypted note-taking app built on the Nostr protocol. Your documents live on decentralized relays — not on any company’s servers — and only you hold the keys. Write freely, knowing that no platform can read, sell, or lose your notes.
+
+  - End-to-end encrypted — only you (and anyone you explicitly share with) can read your documents
+  - Decentralized — stored on Nostr relays, not locked into any single service
+  - Offline-first — write anywhere, sync when you’re connected
+  - Shareable — selectively share documents with specific Nostr users
+  - No account required — log in with your Nostr key, or generate one on the spot
+summary: Private, encrypted notes and documents stored on the decentralized Nostr network — no servers, no surveillance, just your words.
+release_notes: ./CHANGELOG.md
+tags: Pages, Form*, decentralized, notes, documents, Nostr, protocol, write, encrypted, relays
+homepage: https://pages.formstr.app
+images:
+  - Screenshots/1.png
+  - Screenshots/2.png
+  - Screenshots/3.png
+license: MIT
+blossom_servers:
+  - https://cdn.zapstore.dev
+  - https://blossom.band
+release_source: ./android/app/build/outputs/apk/release/app-release.apk
+metadata_sources:
+  - github

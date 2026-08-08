@@ -21,6 +21,7 @@ import EditNoteIcon from "@mui/icons-material/EditNote";
 import MoreVertIcon from "@mui/icons-material/MoreVert";
 import DeleteIcon from "@mui/icons-material/Delete";
 import ShareIcon from "@mui/icons-material/Share";
+import PublicIcon from "@mui/icons-material/Public";
 import CloudOffIcon from "@mui/icons-material/CloudOff";
 import SmartphoneIcon from "@mui/icons-material/Smartphone";
 import ChatBubbleOutlineIcon from "@mui/icons-material/ChatBubbleOutline";
@@ -67,6 +68,7 @@ type Props = {
   onSave: () => void;
   handleDelete: () => void;
   onShare: () => void;
+  onPublishArticle?: () => void;
   versions: VersionEntry[];
   onSelectVersion: (eventId: string) => void;
   editor: Editor | null;
@@ -97,6 +99,7 @@ export function EditorToolbar({
   onSave,
   handleDelete,
   onShare,
+  onPublishArticle,
   versions,
   onSelectVersion,
   editor,
@@ -259,6 +262,7 @@ export function EditorToolbar({
 
           <IconButton
             size="small"
+            aria-label="More actions"
             onClick={(e) => setMenuAnchor(e.currentTarget)}
           >
             <MoreVertIcon fontSize="small" />
@@ -280,6 +284,20 @@ export function EditorToolbar({
               </ListItemIcon>
               <ListItemText primary="Share" />
             </MenuItem>
+
+            {onPublishArticle && (
+              <MenuItem
+                onClick={() => {
+                  onPublishArticle();
+                  setMenuAnchor(null);
+                }}
+              >
+                <ListItemIcon>
+                  <PublicIcon fontSize="small" />
+                </ListItemIcon>
+                <ListItemText primary="Publish as article" />
+              </MenuItem>
+            )}
 
             <MenuItem
               onClick={(e) => {

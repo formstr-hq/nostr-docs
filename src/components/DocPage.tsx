@@ -8,7 +8,6 @@ import { decodeNKeys } from "../utils/nkeys";
 import { DocumentEditorController } from "./editor/DocEditorController";
 import { storeLocalEvent } from "../lib/localStore";
 import { useUser } from "../contexts/UserContext";
-import { useSharedPages } from "../contexts/SharedDocsContext";
 
 export default function DocPage() {
   const { naddr } = useParams<{ naddr: string }>();
@@ -17,7 +16,6 @@ export default function DocPage() {
     useDocumentContext();
   const { relays } = useRelays();
   const { user } = useUser();
-  const { addSharedDoc } = useSharedPages();
 
   const [loading, setLoading] = useState(true);
   const [invalid, setInvalid] = useState(false);
@@ -94,24 +92,23 @@ export default function DocPage() {
         await addDocument(latestEvent, keys);
         if (cancelled) return;
 
-        // Cache in IndexedDB so this device has it available offline
-        // and so the two-device sync works in both directions.
+        // A page opened via someone else's shared link is a "visited" page.
+        const isVisited = !!keys.viewKey && latestEvent.pubkey !== user?.pubkey;
+
+        // Cache in IndexedDB so this device has it available offline, so the
+        // two-device sync works, and so visited pages survive a reload (they
+        // repopulate the Visited tab from here — no signer/metadata write, and
+        // therefore no prompt just for opening a link). Promotion to the Shared
+        // tab is an explicit "Save to Shared" action in the editor.
         storeLocalEvent({
           address: eventAddress,
           event: latestEvent,
           viewKey: keys.viewKey,
           editKey: keys.editKey,
+          visited: isVisited || undefined,
           pendingBroadcast: false,
           savedAt: Date.now(),
         }).catch(() => {});
-
-        // When a logged-in user opens a shared link, save a metadata event so
-        // the doc appears in their list via metadata queries.
-        if (keys.viewKey && user) {
-          const sharedTag = [eventAddress, keys.viewKey];
-          if (keys.editKey) sharedTag.push(keys.editKey);
-          addSharedDoc(sharedTag).catch(() => {});
-        }
 
         setSelectedDocumentId(eventAddress);
       } catch (err) {

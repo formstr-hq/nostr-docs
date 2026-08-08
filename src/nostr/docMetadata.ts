@@ -74,6 +74,23 @@ export async function fetchAllDocMetadata(
   });
 }
 
+/**
+ * Structural equality for two metadata records. Used to skip re-signing (and the
+ * signer prompt it triggers) when a save wouldn't change anything. `tags` is
+ * order-sensitive here — the app never reorders tags without an actual edit.
+ */
+export function metadataEqual(a: DocMetadata | undefined, b: DocMetadata | undefined): boolean {
+  if (!a || !b) return a === b;
+  if (a.title !== b.title) return false;
+  if (a.viewKey !== b.viewKey) return false;
+  if (a.editKey !== b.editKey) return false;
+  if (a.sharedAs !== b.sharedAs) return false;
+  const at = a.tags ?? [];
+  const bt = b.tags ?? [];
+  if (at.length !== bt.length) return false;
+  return at.every((t, i) => t === bt[i]);
+}
+
 export async function saveDocMetadata(
   address: string,
   metadata: DocMetadata,
