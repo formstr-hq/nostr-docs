@@ -42,6 +42,7 @@ type Props = {
   open: boolean;
   onClose: () => void;
   markdown: string;
+  target: PublishTarget;
   initialTitle?: string;
   initialTags?: string[];
 };
@@ -53,13 +54,14 @@ export default function PublishArticleDialog({
   open,
   onClose,
   markdown,
+  target,
   initialTitle = "",
   initialTags = [],
 }: Props) {
   const { relays } = useRelays();
   const { servers: blossomServers } = useBlossomServers();
 
-  const [target, setTarget] = useState<PublishTarget>("longform");
+  const isNip = target === "communityNip";
   const [title, setTitle] = useState(initialTitle);
   const [summary, setSummary] = useState("");
 
@@ -167,7 +169,7 @@ export default function PublishArticleDialog({
         summary: summary.trim() || undefined,
         content,
         hashtags,
-        kTags: target === "communityNip" ? kinds.map((k) => [k.kind, k.name]) : [],
+        kTags: isNip ? kinds.map((k) => [k.kind, k.name]) : [],
         relays,
       });
       setPublishedLink(`https://njump.me/${naddr}`);
@@ -188,7 +190,8 @@ export default function PublishArticleDialog({
     <>
       <Dialog open={open} onClose={handleClose} maxWidth="md" fullWidth>
         <DialogTitle sx={{ display: "flex", alignItems: "center", gap: 1 }}>
-          <PublicIcon fontSize="small" /> Publish as article or NIP
+          <PublicIcon fontSize="small" />
+          {isNip ? "Publish as community NIP" : "Publish as article"}
         </DialogTitle>
 
         <DialogContent sx={{ display: "flex", flexDirection: "column", gap: 2, pt: 2 }}>
@@ -221,16 +224,11 @@ export default function PublishArticleDialog({
             </Alert>
           ) : (
             <>
-              <ToggleButtonGroup
-                value={target}
-                exclusive
-                onChange={(_, v) => v && setTarget(v)}
-                size="small"
-                color="secondary"
-              >
-                <ToggleButton value="longform">Long-form article (NIP-23)</ToggleButton>
-                <ToggleButton value="communityNip">Community NIP (kind 30817)</ToggleButton>
-              </ToggleButtonGroup>
+              <Typography variant="body2" color="text.secondary">
+                {isNip
+                  ? "Publishes as a community NIP (kind 30817) — a markdown spec others can discover and reference."
+                  : "Publishes as a NIP-23 long-form article (kind 30023), rendered by clients like Habla and Highlighter."}
+              </Typography>
 
               <TextField
                 label="Title"
@@ -240,7 +238,7 @@ export default function PublishArticleDialog({
                 onChange={(e) => setTitle(e.target.value)}
               />
 
-              {target === "longform" && (
+              {!isNip && (
                 <TextField
                   label="Summary (optional)"
                   fullWidth
@@ -283,7 +281,7 @@ export default function PublishArticleDialog({
               </Box>
 
               {/* Kinds — community NIP only */}
-              {target === "communityNip" && (
+              {isNip && (
                 <Box>
                   <Typography variant="body2" color="text.secondary" gutterBottom>
                     Kinds this NIP defines (optional)

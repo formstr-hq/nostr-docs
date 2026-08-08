@@ -261,7 +261,7 @@ export function DocumentEditorController({
     severity: "success" | "error";
   }>({ open: false, message: "", severity: "success" });
   const [shareOpen, setShareOpen] = useState(false);
-  const [publishOpen, setPublishOpen] = useState(false);
+  const [publishTarget, setPublishTarget] = useState<"longform" | "communityNip" | null>(null);
   const [savingToShared, setSavingToShared] = useState(false);
   // Device-only state: for drafts tracked locally; for saved docs derived from context
   const [draftLocalOnly, setDraftLocalOnly] = useState(false);
@@ -1434,8 +1434,9 @@ export function DocumentEditorController({
       />
 
       <PublishArticleDialog
-        open={publishOpen}
-        onClose={() => setPublishOpen(false)}
+        open={publishTarget !== null}
+        target={publishTarget ?? "longform"}
+        onClose={() => setPublishTarget(null)}
         markdown={md}
         initialTitle={getDocTitle()}
         initialTags={selectedDocumentId ? (docTags.get(selectedDocumentId) ?? []) : []}
@@ -1445,9 +1446,9 @@ export function DocumentEditorController({
         open={shareOpen}
         onClose={() => setShareOpen(false)}
         onPublicPost={() => handleSharePublic()}
-        onPublishArticle={() => {
+        onPublish={(target) => {
           setShareOpen(false);
-          setPublishOpen(true);
+          setPublishTarget(target);
         }}
         existingViewLink={existingViewLink}
         existingEditLink={existingEditLink}
