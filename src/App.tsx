@@ -25,9 +25,11 @@ import { UserProvider, useUser } from "./contexts/UserContext";
 import { ThemeModeProvider, useThemeMode } from "./contexts/ThemeModeContext";
 import FormstrLogo from "./assets/formstr-pages-logo.png";
 import DocPage from "./components/DocPage";
+import ArticleView from "./components/ArticleView";
 import { SharedPagesProvider } from "./contexts/SharedDocsContext";
 import { RelayProvider } from "./contexts/RelayContext";
 import { DocMetadataProvider } from "./contexts/DocMetadataContext";
+import { PublishedProvider } from "./contexts/PublishedContext";
 import { BlossomProvider } from "./contexts/BlossomContext";
 import { MyFormsProvider } from "./contexts/MyFormsContext";
 
@@ -38,6 +40,11 @@ const drawerWidth = 320;
 function DocPageWrapper() {
   const location = useLocation();
   return <DocPage key={location.pathname + location.hash} />;
+}
+
+function ArticleViewWrapper() {
+  const location = useLocation();
+  return <ArticleView key={location.pathname} />;
 }
 
 export function HomePage() {
@@ -66,6 +73,7 @@ const router = createRouter([
     children: [
       { index: true, element: <HomePage /> },
       { path: "doc/:naddr", element: <DocPageWrapper /> },
+      { path: "article/:naddr", element: <ArticleViewWrapper /> },
       { path: "about", element: <AboutPage /> },
       { path: "*", element: <NotFoundPage /> },
     ],
@@ -87,7 +95,9 @@ function AuthedApp() {
     <DocumentProvider key={activeAccount?.pubkey ?? "anon"}>
       <SharedPagesProvider>
         <DocMetadataProvider>
-          <RouterProvider router={router} />
+          <PublishedProvider>
+            <RouterProvider router={router} />
+          </PublishedProvider>
         </DocMetadataProvider>
       </SharedPagesProvider>
     </DocumentProvider>

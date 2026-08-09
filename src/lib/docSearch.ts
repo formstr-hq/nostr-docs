@@ -11,7 +11,7 @@ export type DocumentHistory = {
   versions: DocumentVersion[];
 };
 
-export type DocOrigin = "personal" | "shared" | "visited";
+export type DocOrigin = "personal" | "shared" | "visited" | "published";
 
 export type DocSearchHit = {
   address: string;

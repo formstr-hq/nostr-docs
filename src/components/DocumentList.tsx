@@ -47,6 +47,8 @@ import { fetchDeleteRequests } from "../nostr/fetchDelete.ts";
 import { useUser } from "../contexts/UserContext.tsx";
 import { useNavigate } from "react-router-dom";
 import { useSharedPages } from "../contexts/SharedDocsContext.tsx";
+import { usePublished } from "../contexts/PublishedContext.tsx";
+import { KIND_LONGFORM, KIND_COMMUNITY_NIP } from "../utils/publishArticle.ts";
 import TrashDialog from "./TrashDialog.tsx";
 import { encodeNKeys } from "../utils/nkeys.ts";
 import { buildSharedDocPath } from "./editor/utils.ts";
@@ -138,6 +140,7 @@ export default function DocumentList({
   const [docRelays, setDocRelays] = useState<Map<string, string[]>>(new Map());
 
   const { sharedDocuments, getKeys } = useSharedPages();
+  const { publishedDocuments } = usePublished();
 
   // A page that's already in the Shared list shouldn't also show under Visited —
   // once saved to Shared it's no longer just a transient visit.
@@ -149,7 +152,7 @@ export default function DocumentList({
   }, [visitedDocuments, sharedDocuments]);
   const { docTags, docTitles, setDocTitle, docSharedAs, allTags, selectedTag, setSelectedTag } = useDocMetadata();
   const [loading, setLoading] = useState(true);
-  const [tab, setTab] = useState<"personal" | "shared" | "visited">("personal");
+  const [tab, setTab] = useState<"personal" | "shared" | "visited" | "published">("personal");
   const [trashOpen, setTrashOpen] = useState(false);
   const [renameOpen, setRenameOpen] = useState(false);
   const [renamingAddress, setRenamingAddress] = useState<string | null>(null);
@@ -184,6 +187,13 @@ export default function DocumentList({
       pubkey: doc.pubkey,
       kind: doc.kind,
     });
+
+    // Published articles/NIPs open in the in-app reader, not the doc editor.
+    if (doc.kind === KIND_LONGFORM || doc.kind === KIND_COMMUNITY_NIP) {
+      navigate(`/article/${naddr}`);
+      return;
+    }
+
     const keys = getKeys(`${doc.kind}:${doc.pubkey}:${dTag}`);
 
     let path = `/doc/${naddr}`;
@@ -292,9 +302,10 @@ export default function DocumentList({
   };
 
   const allDocs =
-    tab === "personal" ? visibleDocuments
-    : tab === "shared"  ? sharedDocuments
-    :                     visitedOnly;
+    tab === "personal"  ? visibleDocuments
+    : tab === "shared"    ? sharedDocuments
+    : tab === "published" ? publishedDocuments
+    :                       visitedOnly;
 
   // Auto-switch to the tab that owns the currently selected doc
   useEffect(() => {
@@ -302,6 +313,7 @@ export default function DocumentList({
     if (visibleDocuments.has(selectedDocumentId)) setTab("personal");
     else if (sharedDocuments.has(selectedDocumentId)) setTab("shared");
     else if (visitedOnly.has(selectedDocumentId)) setTab("visited");
+    else if (publishedDocuments.has(selectedDocumentId)) setTab("published");
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedDocumentId]);
 
@@ -349,6 +361,7 @@ export default function DocumentList({
   const personalCount = visibleDocuments.size;
   const sharedCount = sharedDocuments.size;
   const visitedCount = visitedOnly.size;
+  const publishedCount = publishedDocuments.size;
 
   return (
     <Box
@@ -470,6 +483,22 @@ export default function DocumentList({
             </Box>
           }
         />
+        <Tab
+          value="published"
+          label={
+            <Box sx={{ display: "flex", alignItems: "center", gap: 0.75 }}>
+              Published
+              {publishedCount > 0 && (
+                <Chip
+                  label={publishedCount}
+                  size="small"
+                  color="secondary"
+                  sx={{ height: 18, fontSize: "0.65rem" }}
+                />
+              )}
+            </Box>
+          }
+        />
       </Tabs>
 
       {/* Tag filter chips */}
@@ -536,6 +565,8 @@ export default function DocumentList({
                 ? "No documents yet.\nCreate your first page!"
                 : tab === "visited"
                 ? "No visited pages yet.\nOpen a shared link to see it here."
+                : tab === "published"
+                ? "Nothing published yet.\nUse Share → Publish to post an article or NIP."
                 : "No shared documents found."}
             </Typography>
             {!isSearching && tab === "personal" && (
@@ -563,8 +594,10 @@ export default function DocumentList({
               const relays = docRelays.get(address) ?? [];
 
               const customTitle = docTitles.get(address);
+              // Published articles/NIPs carry an authoritative `title` tag.
+              const titleTag = event.tags.find((t) => t[0] === "title")?.[1];
               const displayTitle =
-                customTitle || heuristicTitle(decryptedContent ?? "", 42) || "Untitled";
+                customTitle || titleTag || heuristicTitle(decryptedContent ?? "", 42) || "Untitled";
 
               const snippet =
                 isSearching && terms
@@ -638,7 +671,7 @@ export default function DocumentList({
                                 <DeleteOutlineIcon sx={{ fontSize: 16 }} />
                               </IconButton>
                             </Tooltip>
-                          ) : (
+                          ) : origin === "published" ? null : (
                             <IconButton
                               className="rename-btn"
                               size="small"
@@ -683,7 +716,7 @@ export default function DocumentList({
                                   lineHeight: 1.6,
                                 }}
                               >
-                                {origin === "personal" ? "Mine" : origin === "shared" ? "Shared" : "Visited"}
+                                {origin === "personal" ? "Mine" : origin === "shared" ? "Shared" : origin === "published" ? "Published" : "Visited"}
                               </Box>
                             )}
                           </Box>

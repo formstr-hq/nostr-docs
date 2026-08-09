@@ -25,15 +25,19 @@ import CheckCircleIcon from "@mui/icons-material/CheckCircle";
 import ErrorIcon from "@mui/icons-material/Error";
 import ContentCopyIcon from "@mui/icons-material/ContentCopy";
 import PublicIcon from "@mui/icons-material/Public";
+import OpenInNewIcon from "@mui/icons-material/OpenInNew";
 import AddIcon from "@mui/icons-material/Add";
+import ImageIcon from "@mui/icons-material/Image";
 import { useEffect, useRef, useState } from "react";
-import ReactMarkdown from "react-markdown";
-import remarkGfm from "remark-gfm";
+import ArticleRenderer from "./ArticleRenderer";
 import { useRelays } from "../contexts/RelayContext";
 import { useBlossomServers } from "../contexts/BlossomContext";
+import { isNativePlatform } from "../signer/secureStorage";
 import {
   buildArticleContent,
   publishArticleEvent,
+  firstImageUrl,
+  uploadPublicImage,
   type BuildStep,
   type PublishTarget,
 } from "../utils/publishArticle";
@@ -64,6 +68,8 @@ export default function PublishArticleDialog({
   const isNip = target === "communityNip";
   const [title, setTitle] = useState(initialTitle);
   const [summary, setSummary] = useState("");
+  const [bannerUrl, setBannerUrl] = useState("");
+  const [bannerUploading, setBannerUploading] = useState(false);
 
   // Hashtags (→ `t` tags), managed as chips.
   const [hashtags, setHashtags] = useState<string[]>([]);
@@ -112,6 +118,9 @@ export default function PublishArticleDialog({
       .then((res) => {
         setContent(res.content);
         setWarnings(res.warnings);
+        // Suggest the first (now-public) image as the banner; user can change it.
+        const suggested = firstImageUrl(res.content);
+        if (suggested) setBannerUrl((prev) => prev || suggested);
       })
       .catch((err) => setError(err instanceof Error ? err.message : String(err)))
       .finally(() => setBuilding(false));
@@ -126,6 +135,7 @@ export default function PublishArticleDialog({
     setPublishedLink("");
     setTitle(initialTitle);
     setSummary("");
+    setBannerUrl("");
     setHashtags([]);
     setHashtagInput("");
     setKinds([]);
@@ -155,6 +165,20 @@ export default function PublishArticleDialog({
     setKindName("");
   };
 
+  const handleBannerUpload = async (file: File | undefined) => {
+    if (!file) return;
+    setBannerUploading(true);
+    setError("");
+    try {
+      const url = await uploadPublicImage(file, blossomServers);
+      setBannerUrl(url);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Banner upload failed.");
+    } finally {
+      setBannerUploading(false);
+    }
+  };
+
   const handlePublish = async () => {
     if (!title.trim()) {
       setError("A title is required.");
@@ -167,12 +191,15 @@ export default function PublishArticleDialog({
         target,
         title: title.trim(),
         summary: summary.trim() || undefined,
+        image: !isNip && bannerUrl.trim() ? bannerUrl.trim() : undefined,
         content,
         hashtags,
         kTags: isNip ? kinds.map((k) => [k.kind, k.name]) : [],
         relays,
       });
-      setPublishedLink(`https://njump.me/${naddr}`);
+      // Link opens our own in-app reader so published pages render here.
+      const base = isNativePlatform ? "https://pages.formstr.app" : window.location.origin;
+      setPublishedLink(`${base}/article/${naddr}`);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to publish. Please try again.");
     } finally {
@@ -203,7 +230,7 @@ export default function PublishArticleDialog({
 
           {publishedLink ? (
             <Alert severity="success">
-              Published! Anyone can now read it.
+              Published! Anyone can now read your {isNip ? "NIP" : "article"}.
               <TextField
                 sx={{ mt: 1 }}
                 fullWidth
@@ -221,6 +248,18 @@ export default function PublishArticleDialog({
                 }}
                 onFocus={(e) => e.target.select()}
               />
+              <Button
+                variant="contained"
+                color="secondary"
+                size="small"
+                startIcon={<OpenInNewIcon />}
+                href={publishedLink}
+                target="_blank"
+                rel="noopener noreferrer"
+                sx={{ mt: 1.5, fontWeight: 700 }}
+              >
+                Open {isNip ? "NIP" : "article"}
+              </Button>
             </Alert>
           ) : (
             <>
@@ -241,12 +280,71 @@ export default function PublishArticleDialog({
               {!isNip && (
                 <TextField
                   label="Summary (optional)"
+                  helperText="Shown as the preview snippet in article clients."
                   fullWidth
                   multiline
                   minRows={2}
                   value={summary}
                   onChange={(e) => setSummary(e.target.value)}
                 />
+              )}
+
+              {/* Banner image — NIP-23 `image` tag (long-form only) */}
+              {!isNip && (
+                <Box>
+                  <Typography variant="body2" color="text.secondary" gutterBottom>
+                    Banner image (optional)
+                  </Typography>
+                  {bannerUrl && (
+                    <Box
+                      component="img"
+                      src={bannerUrl}
+                      alt="Banner preview"
+                      sx={{
+                        width: "100%",
+                        maxHeight: 160,
+                        objectFit: "cover",
+                        borderRadius: 1,
+                        mb: 1,
+                        border: "1px solid",
+                        borderColor: "divider",
+                      }}
+                    />
+                  )}
+                  <TextField
+                    fullWidth
+                    size="small"
+                    placeholder="https://…/banner.jpg"
+                    value={bannerUrl}
+                    onChange={(e) => setBannerUrl(e.target.value)}
+                  />
+                  <Box sx={{ display: "flex", gap: 1, mt: 1 }}>
+                    <Button
+                      component="label"
+                      size="small"
+                      variant="outlined"
+                      color="secondary"
+                      startIcon={<ImageIcon />}
+                      disabled={bannerUploading}
+                    >
+                      {bannerUploading ? "Uploading…" : "Upload image"}
+                      <input
+                        type="file"
+                        accept="image/*"
+                        hidden
+                        onChange={(e) => {
+                          void handleBannerUpload(e.target.files?.[0]);
+                          e.target.value = "";
+                        }}
+                      />
+                    </Button>
+                    {bannerUrl && (
+                      <Button size="small" color="inherit" onClick={() => setBannerUrl("")}>
+                        Remove
+                      </Button>
+                    )}
+                  </Box>
+                </Box>
               )}
 
               {/* Hashtags */}
@@ -387,34 +485,14 @@ export default function PublishArticleDialog({
                     }}
                   >
                     {previewMode === "rendered" ? (
-                      <Box
-                        sx={{
-                          fontSize: "0.9rem",
-                          lineHeight: 1.6,
-                          "& h1, & h2, & h3": { mt: 1.5, mb: 0.75, lineHeight: 1.25 },
-                          "& p": { my: 0.75 },
-                          "& img": { maxWidth: "100%", borderRadius: 1 },
-                          "& pre": {
-                            p: 1,
-                            borderRadius: 1,
-                            overflow: "auto",
-                            bgcolor: (t) => (t.palette.mode === "dark" ? "rgba(0,0,0,0.4)" : "rgba(0,0,0,0.06)"),
-                          },
-                          "& code": { fontSize: "0.85em" },
-                          "& table": { borderCollapse: "collapse", width: "100%" },
-                          "& th, & td": { border: "1px solid", borderColor: "divider", p: 0.75 },
-                          "& a": { color: "secondary.main" },
-                          "& blockquote": {
-                            borderLeft: "3px solid",
-                            borderColor: "divider",
-                            pl: 1.5,
-                            ml: 0,
-                            color: "text.secondary",
-                          },
-                        }}
-                      >
-                        <ReactMarkdown remarkPlugins={[remarkGfm]}>{content}</ReactMarkdown>
-                      </Box>
+                      <ArticleRenderer
+                        title={title}
+                        content={content}
+                        banner={!isNip && bannerUrl.trim() ? bannerUrl.trim() : undefined}
+                        topics={hashtags}
+                        isNip={isNip}
+                        compact
+                      />
                     ) : (
                       <Box
                         component="pre"

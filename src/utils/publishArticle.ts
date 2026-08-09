@@ -113,6 +113,21 @@ export async function buildArticleContent({
   return { content: content.trim(), warnings };
 }
 
+/** First markdown image URL in the content, if any — used to suggest a banner. */
+export function firstImageUrl(markdown: string): string | undefined {
+  return markdown.match(/!\[[^\]]*\]\(([^)\s]+)/)?.[1];
+}
+
+/** Upload an image file as a PUBLIC (unencrypted) blossom blob — e.g. a banner. */
+export async function uploadPublicImage(
+  file: File,
+  blossomServers: string[],
+): Promise<string> {
+  const data = new Uint8Array(await file.arrayBuffer());
+  const hash = await sha256Hex(data);
+  return uploadToBlossom(blossomServers, data, hash);
+}
+
 /** URL-safe slug from a title; falls back to a short random id. */
 export function slugify(title: string): string {
   const slug = title
@@ -128,6 +143,8 @@ export interface PublishArticleOptions {
   target: PublishTarget;
   title: string;
   summary?: string;
+  /** Banner/header image URL — NIP-23 `image` tag (long-form only). */
+  image?: string;
   content: string;
   /** Hashtags/topics — published as `t` tags on both kinds. */
   hashtags?: string[];
@@ -146,6 +163,7 @@ export async function publishArticleEvent({
   target,
   title,
   summary,
+  image,
   content,
   hashtags = [],
   kTags = [],
@@ -161,6 +179,7 @@ export async function publishArticleEvent({
   const tags: string[][] = [["d", dTag], ["title", title]];
   if (target === "longform") {
     if (summary) tags.push(["summary", summary]);
+    if (image) tags.push(["image", image]);
     tags.push(["published_at", String(Math.floor(Date.now() / 1000))]);
   } else {
     for (const [k, name] of kTags) tags.push(["k", k, name]);
