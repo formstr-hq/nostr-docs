@@ -29,6 +29,7 @@ import OpenInNewIcon from "@mui/icons-material/OpenInNew";
 import AddIcon from "@mui/icons-material/Add";
 import ImageIcon from "@mui/icons-material/Image";
 import { useEffect, useRef, useState } from "react";
+import type { Event } from "nostr-tools";
 import ArticleRenderer from "./ArticleRenderer";
 import { useRelays } from "../contexts/RelayContext";
 import { useBlossomServers } from "../contexts/BlossomContext";
@@ -49,7 +50,18 @@ type Props = {
   target: PublishTarget;
   initialTitle?: string;
   initialTags?: string[];
+  /**
+   * When set, the dialog edits an already-published article/NIP instead of
+   * creating a new one: fields are pre-filled from the event and the update is
+   * republished under the SAME `d` tag so it replaces the original post.
+   */
+  editEvent?: Event;
 };
+
+/** First value of a single-valued tag on an event. */
+function tagValue(event: Event, name: string): string {
+  return event.tags.find((t) => t[0] === name)?.[1] ?? "";
+}
 
 type KindTag = { kind: string; name: string };
 type PreviewMode = "rendered" | "markdown";
@@ -61,22 +73,41 @@ export default function PublishArticleDialog({
   target,
   initialTitle = "",
   initialTags = [],
+  editEvent,
 }: Props) {
   const { relays } = useRelays();
   const { servers: blossomServers } = useBlossomServers();
 
+  const isEditing = !!editEvent;
+  // The addressable identifier to republish under when editing (keeps identity).
+  const editDTag = editEvent ? tagValue(editEvent, "d") : undefined;
   const isNip = target === "communityNip";
-  const [title, setTitle] = useState(initialTitle);
-  const [summary, setSummary] = useState("");
-  const [bannerUrl, setBannerUrl] = useState("");
+  // When editing, seed each field from the existing event; the dialog is mounted
+  // fresh per article (see DocumentList's `key`), so lazy initializers suffice
+  // and we avoid copying props into state inside an effect.
+  const [title, setTitle] = useState(() =>
+    editEvent ? tagValue(editEvent, "title") : initialTitle,
+  );
+  const [summary, setSummary] = useState(() =>
+    editEvent ? tagValue(editEvent, "summary") : "",
+  );
+  const [bannerUrl, setBannerUrl] = useState(() =>
+    editEvent ? tagValue(editEvent, "image") : "",
+  );
   const [bannerUploading, setBannerUploading] = useState(false);
 
   // Hashtags (→ `t` tags), managed as chips.
-  const [hashtags, setHashtags] = useState<string[]>([]);
+  const [hashtags, setHashtags] = useState<string[]>(() =>
+    editEvent ? editEvent.tags.filter((t) => t[0] === "t").map((t) => t[1]) : [],
+  );
   const [hashtagInput, setHashtagInput] = useState("");
 
   // Kinds (→ `k` tags), community-NIP only, managed as chips.
-  const [kinds, setKinds] = useState<KindTag[]>([]);
+  const [kinds, setKinds] = useState<KindTag[]>(() =>
+    editEvent
+      ? editEvent.tags.filter((t) => t[0] === "k").map((t) => ({ kind: t[1], name: t[2] || t[1] }))
+      : [],
+  );
   const [kindNum, setKindNum] = useState("");
   const [kindName, setKindName] = useState("");
 
@@ -103,7 +134,13 @@ export default function PublishArticleDialog({
     setWarnings([]);
     setError("");
     setPublishedLink("");
-    setHashtags(initialTags.map((t) => t.replace(/^#/, "").toLowerCase()));
+    // Edits keep the event's own `t` tags; new posts carry over any hashtags the
+    // caller passed in.
+    setHashtags(
+      editEvent
+        ? editEvent.tags.filter((t) => t[0] === "t").map((t) => t[1])
+        : initialTags.map((t) => t.replace(/^#/, "").toLowerCase()),
+    );
 
     const upsert = (step: BuildStep) =>
       setSteps((prev) => {
@@ -124,7 +161,7 @@ export default function PublishArticleDialog({
       })
       .catch((err) => setError(err instanceof Error ? err.message : String(err)))
       .finally(() => setBuilding(false));
-  }, [open, markdown, blossomServers, initialTags]);
+  }, [open, markdown, blossomServers, initialTags, editEvent]);
 
   const handleClose = () => {
     builtRef.current = false;
@@ -195,6 +232,7 @@ export default function PublishArticleDialog({
         content,
         hashtags,
         kTags: isNip ? kinds.map((k) => [k.kind, k.name]) : [],
+        dTag: editDTag,
         relays,
       });
       // Link opens our own in-app reader so published pages render here.
@@ -218,19 +256,35 @@ export default function PublishArticleDialog({
       <Dialog open={open} onClose={handleClose} maxWidth="md" fullWidth>
         <DialogTitle sx={{ display: "flex", alignItems: "center", gap: 1 }}>
           <PublicIcon fontSize="small" />
-          {isNip ? "Publish as community NIP" : "Publish as article"}
+          {isEditing
+            ? isNip
+              ? "Edit community NIP"
+              : "Edit article"
+            : isNip
+              ? "Publish as community NIP"
+              : "Publish as article"}
         </DialogTitle>
 
         <DialogContent sx={{ display: "flex", flexDirection: "column", gap: 2, pt: 2 }}>
           <Alert severity="warning">
-            Publishing makes this page — and every image in it — <strong>public and permanent</strong>.
-            Private images are decrypted and re-uploaded as public files. Review the converted draft
-            below before you publish.
+            {isEditing ? (
+              <>
+                Saving republishes this {isNip ? "NIP" : "article"} under the same link,
+                <strong> replacing the version readers currently see</strong>. Older copies may
+                still linger on some relays.
+              </>
+            ) : (
+              <>
+                Publishing makes this page — and every image in it — <strong>public and permanent</strong>.
+                Private images are decrypted and re-uploaded as public files. Review the converted draft
+                below before you publish.
+              </>
+            )}
           </Alert>
 
           {publishedLink ? (
             <Alert severity="success">
-              Published! Anyone can now read your {isNip ? "NIP" : "article"}.
+              {isEditing ? "Updated" : "Published"}! Anyone can now read your {isNip ? "NIP" : "article"}.
               <TextField
                 sx={{ mt: 1 }}
                 fullWidth
@@ -458,7 +512,14 @@ export default function PublishArticleDialog({
               {!building && content && (
                 <Box>
                   <Box sx={{ display: "flex", alignItems: "center", justifyContent: "space-between", mb: 1 }}>
-                    <Typography variant="subtitle2">Draft preview</Typography>
+                    <Typography variant="subtitle2">
+                      {isEditing ? "Content" : "Draft preview"}
+                      {isEditing && previewMode === "rendered" && (
+                        <Typography component="span" variant="caption" color="text.secondary" sx={{ ml: 1 }}>
+                          Switch to Markdown to edit the body
+                        </Typography>
+                      )}
+                    </Typography>
                     <ToggleButtonGroup
                       value={previewMode}
                       exclusive
@@ -492,6 +553,25 @@ export default function PublishArticleDialog({
                         topics={hashtags}
                         isNip={isNip}
                         compact
+                      />
+                    ) : isEditing ? (
+                      // Editing an existing post: the body is plain public markdown,
+                      // so let the user amend it directly before republishing.
+                      <TextField
+                        fullWidth
+                        multiline
+                        value={content}
+                        onChange={(e) => setContent(e.target.value)}
+                        variant="standard"
+                        InputProps={{
+                          disableUnderline: true,
+                          sx: {
+                            p: 1.5,
+                            fontSize: "0.78rem",
+                            fontFamily: "monospace",
+                            alignItems: "flex-start",
+                          },
+                        }}
                       />
                     ) : (
                       <Box
@@ -527,7 +607,13 @@ export default function PublishArticleDialog({
               onClick={handlePublish}
               disabled={building || publishing || !content || !title.trim()}
             >
-              {publishing ? <CircularProgress size={22} color="inherit" /> : "Publish"}
+              {publishing ? (
+                <CircularProgress size={22} color="inherit" />
+              ) : isEditing ? (
+                "Save changes"
+              ) : (
+                "Publish"
+              )}
             </Button>
           )}
         </DialogActions>

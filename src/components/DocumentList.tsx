@@ -55,6 +55,7 @@ import { buildSharedDocPath } from "./editor/utils.ts";
 import { getEventAddress } from "../utils/helpers.ts";
 import { useDocMetadata } from "../contexts/DocMetadataContext.tsx";
 import RenameDialog from "./RenameDialog.tsx";
+import PublishArticleDialog from "./PublishArticleDialog.tsx";
 import EditOutlinedIcon from "@mui/icons-material/EditOutlined";
 import DeleteOutlineIcon from "@mui/icons-material/DeleteOutline";
 import { IconButton } from "@mui/material";
@@ -157,6 +158,8 @@ export default function DocumentList({
   const [renameOpen, setRenameOpen] = useState(false);
   const [renamingAddress, setRenamingAddress] = useState<string | null>(null);
   const [renamingInitialTitle, setRenamingInitialTitle] = useState("");
+  // The published article/NIP event currently open in the edit dialog, if any.
+  const [editingArticle, setEditingArticle] = useState<Event | null>(null);
   const [trashCount, setTrashCount] = useState(0);
   const [query, setQuery] = useState("");
   const { user } = useUser();
@@ -671,7 +674,26 @@ export default function DocumentList({
                                 <DeleteOutlineIcon sx={{ fontSize: 16 }} />
                               </IconButton>
                             </Tooltip>
-                          ) : origin === "published" ? null : (
+                          ) : origin === "published" ? (
+                            <Tooltip title="Edit published article">
+                              <IconButton
+                                className="rename-btn"
+                                size="small"
+                                aria-label="Edit published article"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setEditingArticle(event);
+                                }}
+                                sx={{
+                                  opacity: isSelected ? 1 : 0,
+                                  transition: "opacity 0.2s",
+                                  p: 0.25,
+                                }}
+                              >
+                                <EditOutlinedIcon sx={{ fontSize: 16 }} />
+                              </IconButton>
+                            </Tooltip>
+                          ) : (
                             <IconButton
                               className="rename-btn"
                               size="small"
@@ -925,6 +947,18 @@ export default function DocumentList({
             }
             await setDocTitle(renamingAddress, newTitle);
           }}
+        />
+      )}
+      {editingArticle && (
+        <PublishArticleDialog
+          key={editingArticle.id}
+          open
+          editEvent={editingArticle}
+          markdown={editingArticle.content}
+          target={
+            editingArticle.kind === KIND_COMMUNITY_NIP ? "communityNip" : "longform"
+          }
+          onClose={() => setEditingArticle(null)}
         />
       )}
     </Box>

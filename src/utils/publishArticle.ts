@@ -17,6 +17,7 @@ import { signerManager } from "../signer";
 import { publishEvent } from "../nostr/publish";
 import { decryptFile, sha256Hex } from "./fileEncryption";
 import { uploadToBlossom } from "../blossom/client";
+import { makeTag } from "./makeTag";
 
 export const KIND_LONGFORM = 30023;
 export const KIND_COMMUNITY_NIP = 30817;
@@ -150,6 +151,12 @@ export interface PublishArticleOptions {
   hashtags?: string[];
   /** `["k", kind, name]` entries — community-NIP only. */
   kTags?: [string, string][];
+  /**
+   * Explicit addressable identifier. Pass the original `d` tag when editing an
+   * already-published article so the update REPLACES it instead of creating a
+   * new one (even if the title, and thus its slug, changed). Omit for new posts.
+   */
+  dTag?: string;
   relays: string[];
 }
 
@@ -167,6 +174,7 @@ export async function publishArticleEvent({
   content,
   hashtags = [],
   kTags = [],
+  dTag: fixedDTag,
   relays,
 }: PublishArticleOptions): Promise<PublishedArticle> {
   const signer = await signerManager.getSigner();
@@ -174,7 +182,11 @@ export async function publishArticleEvent({
   const pubkey = await signer.getPublicKey();
 
   const kind = target === "longform" ? KIND_LONGFORM : KIND_COMMUNITY_NIP;
-  const dTag = slugify(title);
+  // Editing keeps the original identifier so the update replaces the post. A new
+  // post gets a readable slug PLUS a random suffix: two articles that happen to
+  // share a title (or the same page published twice) then get distinct
+  // addresses instead of one silently overwriting the other.
+  const dTag = fixedDTag || `${slugify(title)}-${makeTag(3)}`;
 
   const tags: string[][] = [["d", dTag], ["title", title]];
   if (target === "longform") {
