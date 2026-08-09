@@ -81,14 +81,19 @@ export default function ArticleView() {
   const topics = event.tags.filter((t) => t[0] === "t").map((t) => t[1]);
 
   return (
-    <Box sx={{ maxWidth: 760, mx: "auto", px: 3, py: 4, overflowY: "auto", width: "100%" }}>
-      <ArticleRenderer
-        title={title}
-        content={event.content}
-        banner={banner}
-        topics={topics}
-        isNip={event.kind === KIND_COMMUNITY_NIP}
-      />
+    // The main content area is a fixed-height, overflow:hidden shell, so this
+    // container owns its own vertical scroll. Full height + overflowY:auto makes
+    // long articles scrollable rather than clipped.
+    <Box sx={{ height: "100%", overflowY: "auto" }}>
+      <Box sx={{ maxWidth: 760, mx: "auto", px: 3, py: 4, width: "100%" }}>
+        <ArticleRenderer
+          title={title}
+          content={event.content}
+          banner={banner}
+          topics={topics}
+          isNip={event.kind === KIND_COMMUNITY_NIP}
+        />
+      </Box>
     </Box>
   );
 }

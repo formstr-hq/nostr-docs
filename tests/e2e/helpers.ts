@@ -46,6 +46,34 @@ export function queryLocalRelay(filter: Filter): Promise<Event[]> {
   });
 }
 
+/**
+ * Publish a single event to the local test relay over a websocket and resolve
+ * once the relay acknowledges it with OK. Lets a test seed relay state (e.g. a
+ * published article/NIP) directly, without driving the whole in-app publish UI.
+ */
+export function publishToLocalRelay(event: Event): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const ws = new WebSocket(LOCAL_RELAY_URL);
+    const timer = setTimeout(() => {
+      ws.close();
+      reject(new Error("relay publish timed out"));
+    }, 10_000);
+    ws.on("open", () => ws.send(JSON.stringify(["EVENT", event])));
+    ws.on("message", (data) => {
+      const msg = JSON.parse(data.toString());
+      if (msg[0] === "OK" && msg[1] === event.id) {
+        clearTimeout(timer);
+        ws.close();
+        resolve();
+      }
+    });
+    ws.on("error", (e) => {
+      clearTimeout(timer);
+      reject(e);
+    });
+  });
+}
+
 /** Passphrase used for the account the tests create (and to unlock it later). */
 export const TEST_PASSPHRASE = "e2e-test-passphrase";
 
