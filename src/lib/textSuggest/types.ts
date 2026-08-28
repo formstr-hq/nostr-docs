@@ -13,8 +13,6 @@ export interface TextSuggestModelEntry {
 
 export interface TextSuggestPrefs {
   enabled: boolean;
-  /** Underline likely misspellings and offer a tap-to-apply correction. */
-  autoCorrectEnabled: boolean;
   /** All models the user has configured. Empty until they add one. */
   models: TextSuggestModelEntry[];
   /** Which configured model is active. Null = none configured yet. */
@@ -36,7 +34,6 @@ export const DEFAULT_TEMPERATURE = 0.35;
 
 export const DEFAULT_PREFS: TextSuggestPrefs = {
   enabled: false,
-  autoCorrectEnabled: false,
   models: [],
   activeModelId: null,
   debounceMs: DEFAULT_DEBOUNCE_MS,
@@ -64,13 +61,23 @@ export interface SuggestResult {
   msElapsed: number;
 }
 
-export interface CorrectWordRequest {
-  word: string;
-  /** Nearby document text ending just after the candidate word. */
-  context: string;
+export interface ProofreadRequest {
+  /** The complete Markdown document. It is never silently truncated. */
+  document: string;
+  /** The user's requested revision, such as spelling-only correction. */
+  instruction: string;
 }
 
-export interface CorrectWordResult {
-  replacement: string | null;
+export interface ProofreadResult {
+  /** The complete revised Markdown document. */
+  text: string;
   msElapsed: number;
 }
+
+/**
+ * A full rewrite needs room for both the source and an equally long response.
+ * This is an initial UI guard; generation also checks the loaded 4k/8k context
+ * using a conservative byte budget and never truncates the document.
+ */
+export const MAX_PROOFREAD_DOCUMENT_CHARS = 3_000;
+export const MAX_PROOFREAD_INSTRUCTION_CHARS = 500;

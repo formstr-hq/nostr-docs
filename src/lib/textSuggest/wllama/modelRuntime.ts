@@ -1,5 +1,8 @@
 import { Wllama } from "@wllama/wllama/esm/index.js";
-import { shouldUseWebGPUForLocalAI } from "../environment";
+import {
+  isMobileLocalAIRuntime,
+  shouldUseWebGPUForLocalAI,
+} from "../environment";
 import { createCacheManager } from "./cacheManager";
 
 export interface LoadProgress {
@@ -8,7 +11,10 @@ export interface LoadProgress {
 }
 
 const WASM_PATH = "/wllama/wllama.wasm";
-const CONTEXT_SIZE = 2048;
+// Proofreading sends a complete document and receives a complete rewrite, so
+// it needs substantially more context than cursor autocomplete.
+const CONTEXT_SIZE = 8192;
+const MOBILE_CONTEXT_SIZE = 4096;
 const GPU_LAYERS = 999;
 
 export async function loadWllamaModel(
@@ -22,10 +28,13 @@ export async function loadWllamaModel(
   );
   try {
     const useWebGPU = shouldUseWebGPUForLocalAI();
+    const contextSize = isMobileLocalAIRuntime()
+      ? MOBILE_CONTEXT_SIZE
+      : CONTEXT_SIZE;
     onProgress?.({ bytes: 10, total: 100 });
     onProgress?.({ bytes: 30, total: 100 });
     await llm.loadModel([file], {
-      n_ctx: CONTEXT_SIZE,
+      n_ctx: contextSize,
       // Mobile WebGPU can produce corrupt logits for some architectures,
       // notably Qwen, so mobile inference deliberately uses WASM/CPU.
       n_gpu_layers: useWebGPU ? GPU_LAYERS : 0,
@@ -34,6 +43,7 @@ export async function loadWllamaModel(
     console.debug("[textSuggest] model loaded", {
       model: modelLabel,
       backend: useWebGPU ? "WebGPU" : "WASM/CPU",
+      contextSize,
     });
     onProgress?.({ bytes: 100, total: 100 });
     return llm;

@@ -59,6 +59,11 @@ export function isMobileLocalAIRuntime(): boolean {
   );
 }
 
+export function isFirefoxRuntime(): boolean {
+  if (typeof navigator === "undefined") return false;
+  return /Firefox\//i.test(navigator.userAgent);
+}
+
 /**
  * Select the inference backend. Mobile intentionally stays on WASM/CPU even
  * when navigator.gpu exists because some mobile WebGPU/model combinations
@@ -69,6 +74,7 @@ export function shouldUseWebGPUForLocalAI(): boolean {
   return Boolean(
     environment.success &&
       environment.hasWebGPU &&
-      !isMobileLocalAIRuntime(),
+      !isMobileLocalAIRuntime() &&
+      !isFirefoxRuntime(),
   );
 }

@@ -1,13 +1,13 @@
 import type { Wllama } from "@wllama/wllama/esm/index.js";
 import type {
-  CorrectWordRequest,
-  CorrectWordResult,
+  ProofreadRequest,
+  ProofreadResult,
   SuggestRequest,
   SuggestResult,
   TextSuggestModelEntry,
 } from "./types";
 import {
-  generateCorrection,
+  generateProofread,
   generateSuggestion,
   type SuggestOptions,
 } from "./wllama/generation";
@@ -26,7 +26,7 @@ class TextSuggestService {
   private loadingPromise: Promise<void> | null = null;
   private queue = new SerialGenerationQueue();
   private suggestSeq = 0;
-  private correctionSeq = 0;
+  private proofreadSeq = 0;
 
   isModelLoaded(modelId: string): boolean {
     return (
@@ -76,23 +76,23 @@ class TextSuggestService {
     });
   }
 
-  async correctWord(
-    req: CorrectWordRequest,
+  async proofread(
+    req: ProofreadRequest,
     options: { abortSignal?: AbortSignal } = {},
-  ): Promise<CorrectWordResult> {
+  ): Promise<ProofreadResult> {
     const llm = this.requireLoadedModel();
-    const sequence = ++this.correctionSeq;
+    const sequence = ++this.proofreadSeq;
     return this.queue.run(async () => {
       this.assertActive(
-        sequence === this.correctionSeq,
+        sequence === this.proofreadSeq,
         options.abortSignal,
-        "Correction",
+        "Proofreading",
       );
-      const result = await generateCorrection(llm, req, options.abortSignal);
+      const result = await generateProofread(llm, req, options.abortSignal);
       this.assertActive(
-        sequence === this.correctionSeq,
+        sequence === this.proofreadSeq,
         options.abortSignal,
-        "Correction",
+        "Proofreading",
       );
       return result;
     });
@@ -100,11 +100,11 @@ class TextSuggestService {
 
   async unload(): Promise<void> {
     this.suggestSeq++;
-    this.correctionSeq++;
-    await this.queue.idle();
+    this.proofreadSeq++;
     const llm = this.llm;
     this.llm = null;
     this.loadedModelId = null;
+    await this.queue.idle();
     await exitWllama(llm);
   }
 
@@ -116,7 +116,7 @@ class TextSuggestService {
   private assertActive(
     current: boolean,
     signal: AbortSignal | undefined,
-    label: "Suggestion" | "Correction",
+    label: "Suggestion" | "Proofreading",
   ): void {
     if (!current || signal?.aborted) {
       throw new DOMException(`${label} superseded`, "AbortError");

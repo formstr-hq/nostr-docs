@@ -5,6 +5,7 @@ import type { EditorView } from "@tiptap/pm/view";
 
 export interface GhostSuggestionState {
   text: string | null;
+  loading: boolean;
   pos: number;
 }
 
@@ -37,7 +38,7 @@ export const GhostTextSuggestion = Extension.create<GhostTextSuggestionOptions>(
 
         state: {
           init() {
-            return { text: null, pos: -1 };
+            return { text: null, loading: false, pos: -1 };
           },
           apply(tr, prev) {
             const meta = tr.getMeta(ghostSuggestionPluginKey) as
@@ -48,7 +49,7 @@ export const GhostTextSuggestion = Extension.create<GhostTextSuggestionOptions>(
             // a stale suggestion rather than letting it silently drift to
             // the wrong position.
             if (tr.docChanged || tr.selectionSet) {
-              return { text: null, pos: -1 };
+              return { text: null, loading: false, pos: -1 };
             }
             return prev;
           },
@@ -57,7 +58,7 @@ export const GhostTextSuggestion = Extension.create<GhostTextSuggestionOptions>(
         props: {
           decorations(state) {
             const ghost = ghostSuggestionPluginKey.getState(state);
-            if (!ghost?.text) return null;
+            if (!ghost || (!ghost.text && !ghost.loading)) return null;
             // Only render when the cursor is still exactly where the
             // suggestion was generated for — prevents ghost text floating
             // at the wrong spot after an out-of-band change.
@@ -65,20 +66,29 @@ export const GhostTextSuggestion = Extension.create<GhostTextSuggestionOptions>(
             if (!selection.empty || selection.from !== ghost.pos) return null;
 
             const suggestionText = ghost.text;
+            const isLoading = ghost.loading;
 
             return DecorationSet.create(state.doc, [
               Decoration.widget(
                 ghost.pos,
                 (view) => {
                   const widget = document.createElement("span");
-                  widget.className = "ai-ghost-suggestion";
-                  widget.textContent = suggestionText;
+                  widget.className = isLoading
+                    ? "ai-ghost-loading"
+                    : "ai-ghost-suggestion";
+                  widget.textContent = isLoading ? "" : suggestionText;
                   widget.setAttribute("contenteditable", "false");
-                  widget.setAttribute("role", "button");
-                  widget.setAttribute("aria-label", "Accept suggested text");
-                  widget.setAttribute("title", "Tap to accept");
+                  if (isLoading) {
+                    widget.setAttribute("aria-live", "polite");
+                    widget.setAttribute("aria-label", "Generating text");
+                  } else {
+                    widget.setAttribute("role", "button");
+                    widget.setAttribute("aria-label", "Accept suggested text");
+                    widget.setAttribute("title", "Tap to accept");
+                  }
 
                   const accept = () => {
+                    if (isLoading || !suggestionText) return;
                     const accepted = acceptGhostSuggestion(
                       view,
                       suggestionText,
@@ -88,6 +98,7 @@ export const GhostTextSuggestion = Extension.create<GhostTextSuggestionOptions>(
                   };
 
                   widget.addEventListener("pointerdown", (e) => {
+                    if (isLoading) return;
                     if (!e.isPrimary) return;
                     if (e.pointerType === "mouse" && e.button !== 0) return;
                     e.preventDefault();
@@ -97,6 +108,7 @@ export const GhostTextSuggestion = Extension.create<GhostTextSuggestionOptions>(
                   // Some mobile WebViews and assistive technologies emit a
                   // click without a preceding pointer event.
                   widget.addEventListener("click", (e) => {
+                    if (isLoading) return;
                     e.preventDefault();
                     e.stopPropagation();
                     accept();
@@ -105,7 +117,7 @@ export const GhostTextSuggestion = Extension.create<GhostTextSuggestionOptions>(
                 },
                 {
                   side: 1,
-                  key: `ghost:${ghost.pos}:${suggestionText}`,
+                  key: `ghost:${ghost.pos}:${isLoading ? "loading" : suggestionText}`,
                 },
               ),
             ]);
@@ -113,7 +125,7 @@ export const GhostTextSuggestion = Extension.create<GhostTextSuggestionOptions>(
 
           handleKeyDown(view, event) {
             const ghost = ghostSuggestionPluginKey.getState(view.state);
-            if (!ghost?.text) return false;
+            if (!ghost?.text || ghost.loading) return false;
 
             if (event.key === "Tab") {
               event.preventDefault();
@@ -148,7 +160,11 @@ export function setGhostSuggestion(
   const { selection } = view.state;
   if (!selection.empty || selection.from !== pos) return;
 
-  const tr = view.state.tr.setMeta(ghostSuggestionPluginKey, { text, pos });
+  const tr = view.state.tr.setMeta(ghostSuggestionPluginKey, {
+    text,
+    loading: false,
+    pos,
+  });
   // Don't let this show up as a doc-changing/undo-able transaction — it's
   // purely a decoration update.
   tr.setMeta("addToHistory", false);
@@ -158,10 +174,25 @@ export function setGhostSuggestion(
 /** Imperatively clear any ghost suggestion currently showing. */
 export function clearGhostSuggestion(view: EditorView): void {
   const current = ghostSuggestionPluginKey.getState(view.state);
-  if (!current?.text) return;
+  if (!current || (!current.text && !current.loading)) return;
   const tr = view.state.tr.setMeta(ghostSuggestionPluginKey, {
     text: null,
+    loading: false,
     pos: -1,
+  });
+  tr.setMeta("addToHistory", false);
+  view.dispatch(tr);
+}
+
+/** Show an animated status widget at the current cursor position. */
+export function setGhostLoading(view: EditorView, pos: number): void {
+  const { selection } = view.state;
+  if (!selection.empty || selection.from !== pos) return;
+
+  const tr = view.state.tr.setMeta(ghostSuggestionPluginKey, {
+    text: null,
+    loading: true,
+    pos,
   });
   tr.setMeta("addToHistory", false);
   view.dispatch(tr);
@@ -185,7 +216,11 @@ function acceptGhostSuggestion(
 
   const tr = view.state.tr
     .insertText(text, pos)
-    .setMeta(ghostSuggestionPluginKey, { text: null, pos: -1 });
+    .setMeta(ghostSuggestionPluginKey, {
+      text: null,
+      loading: false,
+      pos: -1,
+    });
   view.dispatch(tr);
   view.focus();
   return true;

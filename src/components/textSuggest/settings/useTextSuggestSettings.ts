@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { loadPrefs, savePrefs } from "../../../lib/textSuggest/prefs";
 import { makeModelId } from "../../../lib/textSuggest/modelCatalog";
 import { textSuggestService } from "../../../lib/textSuggest/wllamaService";
@@ -11,7 +11,7 @@ import type {
 
 export function useTextSuggestSettings(
   open: boolean,
-  onSaved?: () => void,
+  onSaved?: () => void | Promise<void>,
 ) {
   const [prefs, setPrefs] = useState<TextSuggestPrefs | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
@@ -19,6 +19,7 @@ export function useTextSuggestSettings(
   const [loadingProgress, setLoadingProgress] =
     useState<LoadProgress | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const loadingRequestRef = useRef(0);
 
   useEffect(() => {
     if (!open) return;
@@ -32,7 +33,7 @@ export function useTextSuggestSettings(
     async (next: TextSuggestPrefs) => {
       setPrefs(next);
       await savePrefs(next);
-      onSaved?.();
+      await onSaved?.();
     },
     [onSaved],
   );
@@ -51,6 +52,7 @@ export function useTextSuggestSettings(
   const addModelFromFile = useCallback(
     async (file: File) => {
       if (!prefs) return;
+      const requestId = ++loadingRequestRef.current;
       setError(null);
       setLoading(true);
       setLoadingProgress({ bytes: 0, total: 100 });
@@ -67,15 +69,23 @@ export function useTextSuggestSettings(
           entry,
           setLoadingProgress,
         );
+        if (requestId !== loadingRequestRef.current) {
+          await textSuggestService.unload();
+          return;
+        }
         await persist({
           ...prefs,
           models: [...prefs.models, entry],
           activeModelId: entry.id,
-          enabled: prefs.enabled || !prefs.autoCorrectEnabled,
+          enabled: prefs.enabled,
         });
       } catch (cause) {
         URL.revokeObjectURL(objectUrl);
-        setError(cause instanceof Error ? cause.message : "Failed to add model");
+        if (requestId === loadingRequestRef.current) {
+          setError(
+            cause instanceof Error ? cause.message : "Failed to add model",
+          );
+        }
       } finally {
         setLoading(false);
         setLoadingProgress(null);
@@ -83,6 +93,13 @@ export function useTextSuggestSettings(
     },
     [persist, prefs],
   );
+
+  const cancelLoading = useCallback(() => {
+    if (!loading) return;
+    loadingRequestRef.current++;
+    setLoading(false);
+    setLoadingProgress(null);
+  }, [loading]);
 
   const selectModel = useCallback(
     async (id: TextSuggestModelId) => {
@@ -118,6 +135,7 @@ export function useTextSuggestSettings(
     busyId,
     loading,
     loadingProgress,
+    cancelLoading,
     error,
     patchPrefs,
     previewPrefs,
