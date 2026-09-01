@@ -4,6 +4,31 @@
   flex-direction: column;
 }
 
+/* ── Custom scrollbar ──────────────────────────────────────── */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(139, 92, 246, 0.18);
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(139, 92, 246, 0.35);
+}
+
+/* Firefox */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(139, 92, 246, 0.18) transparent;
+}
+
 /* ── TipTap editor styles ─────────────────────────────────── */
 .tiptap {
   outline: none;
@@ -25,7 +50,7 @@
 .tiptap p.is-editor-empty:first-child::before {
   content: attr(data-placeholder);
   float: left;
-  color: rgba(150, 150, 150, 0.6);
+  color: rgba(150, 150, 150, 0.5);
   pointer-events: none;
   height: 0;
 }
@@ -59,7 +84,7 @@
 .tiptap h3 { font-size: 1.17em;font-weight: 600; margin: 0.5em 0; }
 
 .tiptap code {
-  background: rgba(128, 128, 128, 0.2);
+  background: rgba(139, 92, 246, 0.08);
   border-radius: 4px;
   padding: 0.15em 0.4em;
   font-family: "Fira Code", "Cascadia Code", monospace;
@@ -67,10 +92,11 @@
 }
 
 .tiptap pre {
-  background: rgba(128, 128, 128, 0.15);
-  border-radius: 8px;
+  background: rgba(128, 128, 128, 0.1);
+  border-radius: 6px;
   padding: 1em;
   overflow-x: auto;
+  border: 1px solid rgba(255, 255, 255, 0.04);
 }
 
 .tiptap pre code {
@@ -82,7 +108,7 @@
 .tiptap ol { padding-left: 1.5em; }
 
 .tiptap blockquote {
-  border-left: 3px solid rgba(128, 128, 128, 0.4);
+  border-left: 3px solid rgba(139, 92, 246, 0.4);
   padding-left: 1em;
   margin: 0.5em 0;
   color: rgba(150, 150, 150, 0.9);
@@ -111,7 +137,7 @@
 
 .tiptap td,
 .tiptap th {
-  border: 1px solid rgba(128, 128, 128, 0.3);
+  border: 1px solid rgba(255, 255, 255, 0.08);
   box-sizing: border-box;
   min-width: 80px;
   padding: 6px 12px;
@@ -121,13 +147,13 @@
 }
 
 .tiptap th {
-  background: rgba(128, 128, 128, 0.1);
+  background: rgba(139, 92, 246, 0.06);
   font-weight: 700;
   text-align: left;
 }
 
 .tiptap .selectedCell::after {
-  background: rgba(100, 100, 200, 0.12);
+  background: rgba(139, 92, 246, 0.1);
   content: "";
   inset: 0;
   pointer-events: none;
@@ -136,7 +162,7 @@
 }
 
 .tiptap .column-resize-handle {
-  background-color: rgba(100, 100, 200, 0.5);
+  background-color: rgba(139, 92, 246, 0.5);
   bottom: -2px;
   pointer-events: none;
   position: absolute;
@@ -167,7 +193,7 @@
   width: 8px;
   height: 8px;
   border-radius: 50%;
-  background: rgba(120, 120, 200, 0.45);
+  background: rgba(139, 92, 246, 0.35);
   border: none;
   cursor: pointer;
   padding: 0;
@@ -183,7 +209,7 @@
 }
 
 .tbl-anchor-dot:hover {
-  background: #1565c0;
+  background: rgba(139, 92, 246, 0.7);
   transform: scale(1.35);
 }
 
@@ -191,12 +217,13 @@
 .tbl-ctx-menu {
   position: absolute;
   z-index: 9999;
-  background: var(--tbl-menu-bg, #fff);
-  border: 1px solid var(--tbl-menu-border, rgba(0, 0, 0, 0.11));
-  border-radius: 8px;
-  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.18);
+  background: var(--tbl-menu-bg, #1C1E2E);
+  border: 1px solid var(--tbl-menu-border, rgba(255, 255, 255, 0.08));
+  border-radius: 12px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
   padding: 4px 0;
   min-width: 168px;
+  backdrop-filter: blur(12px);
 }
 
 .tbl-ctx-item {
@@ -209,15 +236,31 @@
   cursor: pointer;
   font-size: 13px;
   font-family: inherit;
-  color: var(--tbl-menu-text, #222);
+  color: var(--tbl-menu-text, #E8E6F0);
   white-space: nowrap;
+  border-radius: 6px;
+  margin: 0 4px;
+  width: calc(100% - 8px);
+  transition: background-color 0.15s;
 }
 
-.tbl-ctx-item:hover { background: var(--tbl-menu-hover, rgba(0, 0, 0, 0.05)); }
-.tbl-ctx-danger { color: var(--tbl-menu-danger, #c62828); }
-.tbl-ctx-danger:hover { background: var(--tbl-menu-hover, rgba(0, 0, 0, 0.05)); }
+.tbl-ctx-item:hover { background: var(--tbl-menu-hover, rgba(139, 92, 246, 0.1)); }
+.tbl-ctx-danger { color: var(--tbl-menu-danger, #ef5350); }
+.tbl-ctx-danger:hover { background: var(--tbl-menu-hover, rgba(239, 83, 80, 0.08)); }
 
 /* Remove all focus/border artifacts */
 .ProseMirror,
 .ProseMirror:focus,
 .ProseMirror-focused { outline: none !important; border: none !important; box-shadow: none !important; }
+
+/* ── Floating toolbar animation ───────────────────────────── */
+.floating-toolbar-enter {
+  opacity: 0;
+  transform: translateY(8px);
+}
+
+.floating-toolbar-active {
+  opacity: 1;
+  transform: translateY(0);
+  transition: opacity 0.2s ease, transform 0.2s ease;
+}

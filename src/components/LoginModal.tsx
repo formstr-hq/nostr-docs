@@ -10,12 +10,13 @@ import {
   Divider,
   CircularProgress,
   IconButton,
+  Chip,
   useMediaQuery,
 } from "@mui/material";
 import { useTheme, alpha } from "@mui/material/styles";
 import VpnKeyOutlinedIcon from "@mui/icons-material/VpnKeyOutlined";
 import KeyOutlinedIcon from "@mui/icons-material/KeyOutlined";
-import PersonAddAltOutlinedIcon from "@mui/icons-material/PersonAddAltOutlined";
+import AutoAwesomeIcon from "@mui/icons-material/AutoAwesome";
 import PhonelinkLockOutlinedIcon from "@mui/icons-material/PhonelinkLockOutlined";
 import HubOutlinedIcon from "@mui/icons-material/HubOutlined";
 import QrCode2OutlinedIcon from "@mui/icons-material/QrCode2Outlined";
@@ -28,7 +29,7 @@ import QRCode from "qrcode";
 import { signerManager } from "../signer";
 import type { AndroidSignerAppInfo } from "@formstr/signer";
 import { isNativePlatform, isCapacitor } from "../signer/secureStorage";
-import FormstrLogo from "../assets/formstr-pages-logo.png";
+import FormstrLogo from "../assets/formstr-pages-logo.svg";
 
 // Default relays for NIP-46 nostrconnect (QR) pairing. Several, because the
 // pairing fails outright if *every* listed relay is unreachable — and
@@ -462,7 +463,7 @@ export default function LoginModal({
         fullScreen={fullScreen}
         PaperProps={{
           sx: {
-            borderRadius: fullScreen ? 0 : 3,
+            borderRadius: fullScreen ? 0 : 1.5,
             overflow: "hidden",
             bgcolor: "background.paper",
             display: "flex",
@@ -488,7 +489,7 @@ export default function LoginModal({
           <img
             src={FormstrLogo}
             alt="Pages by Form*"
-            style={{ width: 52, height: 52, borderRadius: 14 }}
+            style={{ width: 120, height: 120, objectFit: "contain" }}
           />
           <Box textAlign="center">
             <Typography variant="h6" fontWeight={700}>
@@ -689,7 +690,6 @@ function RecoveryKeyDialog({
   npub: string;
   onDone: () => void;
 }) {
-  const theme = useTheme();
   const [copied, setCopied] = useState(false);
 
   const copy = async () => {
@@ -708,7 +708,7 @@ function RecoveryKeyDialog({
       onClose={onDone}
       maxWidth="xs"
       fullWidth
-      PaperProps={{ sx: { borderRadius: 3, bgcolor: "background.paper" } }}
+      PaperProps={{ sx: { borderRadius: 1.5, bgcolor: "background.paper" } }}
     >
       <Box sx={{ p: 3, display: "flex", flexDirection: "column", gap: 2 }}>
         <Typography variant="h6" fontWeight={700}>
@@ -719,17 +719,7 @@ function RecoveryKeyDialog({
           to recover {npub ? `${npub.slice(0, 12)}…` : "your account"} on another
           device. Store it somewhere safe — we can't recover it for you.
         </Typography>
-        <Box
-          sx={{
-            display: "flex",
-            alignItems: "flex-start",
-            gap: 1,
-            p: 1.5,
-            borderRadius: 2,
-            bgcolor: theme.palette.action.hover,
-            wordBreak: "break-all",
-          }}
-        >
+        <Box sx={{ display: "flex", alignItems: "flex-start", gap: 1, p: 1.5, borderRadius: 0.75, bgcolor: (t) => `${t.palette.primary.main}08`, border: '1px solid rgba(255,255,255,0.06)', wordBreak: "break-all" }}>
           <Typography
             variant="caption"
             sx={{ fontFamily: "monospace", flex: 1 }}
@@ -763,16 +753,13 @@ function HeroCard({ onClick }: { onClick: () => void }) {
         gap: 1.75,
         p: 2,
         textAlign: "left",
-        borderRadius: 2.5,
+        borderRadius: 1,
         border: `1.5px solid ${alpha(p, 0.3)}`,
-        background: `linear-gradient(135deg, ${alpha(p, 0.13)}, ${alpha(
-          s,
-          0.07
-        )})`,
+        background: `linear-gradient(135deg, ${alpha(p, 0.2)}, ${alpha(s, 0.15)})`,
         transition: "transform .14s, box-shadow .14s",
         "&:hover": {
           transform: "translateY(-1px)",
-          boxShadow: `0 8px 20px ${alpha(p, 0.18)}`,
+          boxShadow: `0 8px 20px ${alpha(p, 0.3)}`,
         },
       }}
     >
@@ -780,26 +767,39 @@ function HeroCard({ onClick }: { onClick: () => void }) {
         sx={{
           width: 44,
           height: 44,
-          borderRadius: 2,
+          borderRadius: 0.75,
           flexShrink: 0,
           display: "flex",
           alignItems: "center",
           justifyContent: "center",
-          bgcolor: alpha(p, 0.16),
-          color: p,
+          bgcolor: alpha(s, 0.2),
+          color: s,
         }}
       >
-        <PersonAddAltOutlinedIcon />
+        <AutoAwesomeIcon sx={{ fontSize: 24 }} />
       </Box>
       <Box flex={1} minWidth={0}>
-        <Typography variant="body1" fontWeight={700} lineHeight={1.3}>
-          Create a new account
-        </Typography>
-        <Typography variant="caption" color="text.secondary">
-          Fresh key, protected by a passphrase
+        <Box display="flex" alignItems="center" gap={1}>
+          <Typography variant="body1" fontWeight={700} lineHeight={1.3}>
+            Create new account
+          </Typography>
+          <Chip
+            label="Recommended"
+            size="small"
+            color="secondary"
+            sx={{
+              height: 20,
+              fontSize: "0.68rem",
+              fontWeight: 700,
+              "& .MuiChip-label": { px: 0.75 },
+            }}
+          />
+        </Box>
+        <Typography variant="caption" color="text.secondary" mt={0.25} display="block">
+          One passphrase encrypts your data across all your devices
         </Typography>
       </Box>
-      <ChevronRightIcon sx={{ color: "text.secondary", flexShrink: 0 }} />
+      <ChevronRightIcon sx={{ color: "text.secondary", opacity: 0.7, flexShrink: 0 }} />
     </ButtonBase>
   );
 }
@@ -831,7 +831,7 @@ function MethodRow({
         px: 1.5,
         py: 1.5,
         textAlign: "left",
-        borderRadius: 2,
+        borderRadius: 1,
         transition: "background 0.15s",
         "&:hover": { bgcolor: "action.hover" },
       }}
@@ -840,7 +840,7 @@ function MethodRow({
         sx={{
           width: 42,
           height: 42,
-          borderRadius: 2,
+          borderRadius: 0.75,
           flexShrink: 0,
           display: "flex",
           alignItems: "center",

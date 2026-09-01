@@ -4,8 +4,11 @@ import { signerManager } from "../signer";
 import { getConversationKey } from "nostr-tools/nip44";
 import { hexToBytes } from "nostr-tools/utils";
 import { useUser, type UserProfile } from "./UserContext";
+import { useRelays } from "./RelayContext";
 import { getEventAddress } from "../utils/helpers";
-import { loadVisitedEvents } from "../lib/localStore";
+import { loadAllLocalEvents } from "../lib/localStore";
+import { pool } from "../nostr/relayPool";
+import { KIND_FILE } from "../nostr/kinds";
 
 type DocumentVersion = {
   event: Event;
@@ -87,6 +90,7 @@ export const DocumentProvider: React.FC<{ children: React.ReactNode }> = ({
   children,
 }) => {
   const { user, loginModal } = useUser();
+  const { relays } = useRelays();
   const [documents, setDocuments] = useState<Map<string, DocumentHistory>>(
     new Map(),
   );
@@ -244,37 +248,60 @@ export const DocumentProvider: React.FC<{ children: React.ReactNode }> = ({
     });
   };
 
-  // Hydrate visited pages from IndexedDB on mount so they survive a reload.
-  // Runs independently of login — visited docs decrypt with their stored
-  // viewKey, so no signer is required. Repopulates both the document cache and
-  // sessionVisited (which the Visited tab is derived from).
+  // Hydrate all local pages from IndexedDB on mount so they survive a reload.
+  // addDocument is intentionally omitted — it's a one-shot hydration that only
+  // needs to run at mount. Including it would cause infinite loops since
+  // addDocument is not wrapped in useCallback.
   useEffect(() => {
     (async () => {
       try {
-        const entries = await loadVisitedEvents();
+        const entries = await loadAllLocalEvents();
         if (entries.length === 0) return;
-        const addresses: string[] = [];
+        const visitedAddrs: string[] = [];
         for (const entry of entries) {
           try {
             const keys: Record<string, string> = {};
             if (entry.viewKey) keys.viewKey = entry.viewKey;
             if (entry.editKey) keys.editKey = entry.editKey;
             await addDocument(entry.event, keys);
-            addresses.push(entry.address);
+            if (entry.visited) visitedAddrs.push(entry.address);
           } catch {
-            // Skip entries that can't be decrypted with the stored key.
+            // Skip entries that can't be decrypted
           }
         }
-        if (addresses.length > 0) {
-          setSessionVisited((prev) => new Set([...prev, ...addresses]));
+        if (visitedAddrs.length > 0) {
+          setSessionVisited((prev) => new Set([...prev, ...visitedAddrs]));
         }
       } catch (err) {
-        console.warn("Failed to hydrate visited pages:", err);
+        console.warn("Failed to hydrate local pages:", err);
       }
     })();
-    // Mount-only: addDocument is stable enough for a one-shot hydration.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Fetch user's documents from relays when user is logged in.
+  // addDocument is intentionally omitted — the subscription should only
+  // reset when the user or relays change, not on every render.
+  useEffect(() => {
+    if (!user?.pubkey || relays.length === 0) return;
+
+    const sub = pool.subscribeMany(
+      relays,
+      { kinds: [KIND_FILE], authors: [user.pubkey] },
+      {
+        onevent: async (event: Event) => {
+          await addDocument(event);
+        },
+      },
+    );
+
+    return () => {
+      try {
+        sub.close();
+      } catch {} // eslint-disable-line no-empty
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user?.pubkey, relays]);
 
   return (
     <DocumentContext.Provider

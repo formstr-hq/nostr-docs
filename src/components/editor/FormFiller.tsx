@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { alpha } from "@mui/material/styles";
 import {
   Box,
   Typography,
@@ -119,7 +120,7 @@ function FieldInput({
             <FormControlLabel
               key={opt.id}
               value={opt.id}
-              control={<Radio size="small" disabled={disabled} />}
+              control={<Radio size="small" disabled={disabled} color="secondary" />}
               label={opt.labelHtml}
             />
           ))}
@@ -136,6 +137,7 @@ function FieldInput({
                 <Checkbox
                   size="small"
                   disabled={disabled}
+                  color="secondary"
                   checked={arrVal.includes(opt.id)}
                   onChange={(e) => {
                     if (e.target.checked) {
@@ -314,9 +316,9 @@ export function FormFiller({
     <Box
       sx={{
         my: 1,
-        borderRadius: 2,
+        borderRadius: "12px",
         border: "1px solid",
-        borderColor: "divider",
+        borderColor: (t) => alpha(t.palette.text.primary, 0.06),
         bgcolor: "background.paper",
         overflow: "hidden",
       }}

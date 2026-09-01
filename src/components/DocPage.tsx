@@ -17,8 +17,9 @@ export default function DocPage({
 }) {
   const { naddr } = useParams<{ naddr: string }>();
   const location = useLocation();
-  const outletTextSuggest = useOutletContext<TextSuggestHook>();
-  const textSuggest = textSuggestOverride ?? outletTextSuggest;
+  const outletCtx = useOutletContext<{ textSuggest?: TextSuggestHook; onOpenSidebar?: () => void }>();
+  const textSuggest = textSuggestOverride ?? outletCtx?.textSuggest ?? (outletCtx as any);
+  const onOpenSidebar = outletCtx?.onOpenSidebar;
   const { documents, setSelectedDocumentId, addDocument } =
     useDocumentContext();
   const { relays } = useRelays();
@@ -140,6 +141,7 @@ export default function DocPage({
       viewKey={decodedKeys.viewKey}
       editKey={decodedKeys.editKey}
       textSuggest={textSuggest}
+      onOpenSidebar={onOpenSidebar}
     />
   );
 }

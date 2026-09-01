@@ -6,6 +6,7 @@ import {
   TextField,
   Button,
   Tooltip,
+  alpha,
 } from "@mui/material";
 import ChatBubbleOutlineIcon from "@mui/icons-material/ChatBubbleOutline";
 import type { Editor } from "@tiptap/react";
@@ -282,11 +283,12 @@ export function CommentComposer({ editor, containerRef, docEventId, isMobile }: 
             size="small"
             onClick={handleOpen}
             sx={{
-              bgcolor: "background.paper",
-              border: "1px solid",
-              borderColor: "divider",
+              bgcolor: (t) => alpha(t.palette.primary.main, 0.08),
+              color: "primary.main",
+              border: "1px solid rgba(255,255,255,0.06)",
+              backdropFilter: "blur(8px)",
               boxShadow: 2,
-              "&:hover": { bgcolor: "action.hover" },
+              "&:hover": { bgcolor: (t) => alpha(t.palette.primary.main, 0.16) },
             }}
           >
             <ChatBubbleOutlineIcon fontSize="small" />
@@ -304,8 +306,11 @@ export function CommentComposer({ editor, containerRef, docEventId, isMobile }: 
         p: 1.5,
         display: "flex",
         flexDirection: "column",
-        gap: 1,
-        borderRadius: 2,
+        gap: 1.5,
+        borderRadius: "12px",
+        border: "1px solid",
+        borderColor: (t) => alpha(t.palette.text.primary, 0.06),
+        bgcolor: "background.paper",
       }}
       onMouseDown={(e) => e.stopPropagation()}
       onClick={(e) => e.stopPropagation()}
@@ -341,6 +346,12 @@ export function CommentComposer({ editor, containerRef, docEventId, isMobile }: 
         onKeyDown={(e) => {
           if (e.key === "Escape") handleClose();
           if ((e.ctrlKey || e.metaKey) && e.key === "Enter") handleSubmit();
+        }}
+        sx={{
+          "& .MuiOutlinedInput-root": {
+            borderRadius: "8px",
+            bgcolor: (t) => alpha(t.palette.background.default, 0.6),
+          },
         }}
       />
       <Box sx={{ display: "flex", justifyContent: "flex-end", gap: 0.75 }}>

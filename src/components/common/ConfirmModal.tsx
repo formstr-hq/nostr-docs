@@ -27,7 +27,7 @@ export default function ConfirmModal({
   onCancel,
 }: Props) {
   return (
-    <Dialog open={open} onClose={onCancel} maxWidth="xs" fullWidth>
+    <Dialog open={open} onClose={onCancel} maxWidth="xs" fullWidth PaperProps={{ sx: { borderRadius: 1.5, border: '1px solid', borderColor: 'divider', backgroundImage: 'none', bgcolor: 'background.paper' } }}>
       <DialogTitle>{title}</DialogTitle>
       {description && (
         <DialogContent>
@@ -38,7 +38,7 @@ export default function ConfirmModal({
         <Button color="warning" onClick={onCancel}>
           {cancelText}
         </Button>
-        <Button variant="contained" color="error" onClick={onConfirm}>
+        <Button variant="contained" color="error" onClick={onConfirm} sx={{ border: (t) => `1px solid ${t.palette.error.main}33` }}>
           {confirmText}
         </Button>
       </DialogActions>

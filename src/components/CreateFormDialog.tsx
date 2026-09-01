@@ -275,7 +275,7 @@ export default function CreateFormDialog({ open, onClose, onCreated, signer }: P
 
   if (result) {
     return (
-      <Dialog open={open} onClose={handleClose} maxWidth="sm" fullWidth PaperProps={{ sx: { borderRadius: 3, boxShadow: "0 20px 60px rgba(0,0,0,0.18)" } }}>
+      <Dialog open={open} onClose={handleClose} maxWidth="sm" fullWidth PaperProps={{ sx: { borderRadius: 1.5, boxShadow: "0 20px 60px rgba(0,0,0,0.18)" } }}>
         <DialogContent sx={{ p: 3 }}>
           <Box sx={{ display: "flex", alignItems: "center", gap: 1, mb: 0.5 }}>
             <CheckCircleOutlineIcon sx={{ fontSize: 18, color: "success.main" }} />
@@ -326,7 +326,7 @@ export default function CreateFormDialog({ open, onClose, onCreated, signer }: P
       fullWidth
       PaperProps={{
         sx: {
-          borderRadius: 3,
+          borderRadius: 1.5,
           boxShadow: "0 20px 60px rgba(0,0,0,0.18)",
         },
       }}
@@ -377,9 +377,8 @@ export default function CreateFormDialog({ open, onClose, onCreated, signer }: P
               key={field.id}
               sx={{
                 borderRadius: 2,
-                border: "1px solid",
-                borderColor: "divider",
-                bgcolor: "background.default",
+                border: "1px solid rgba(255,255,255,0.06)",
+                bgcolor: (t) => `${t.palette.primary.main}03`,
                 overflow: "hidden",
                 "&:hover .field-drag": { opacity: 0.4 },
               }}

@@ -41,3 +41,29 @@ test("a saved document appears in the sidebar and reopens from it", async ({
     timeout: 20_000,
   });
 });
+
+test("workspace sidebar options update the home filter state", async ({ page }) => {
+  await page.addInitScript(() => localStorage.clear());
+  await page.goto("/");
+
+  const workspaceButtons = [
+    { name: "All pages", filter: "all" },
+    { name: "Personal", filter: "personal" },
+    { name: "Shared with me", filter: "shared" },
+    { name: "Published", filter: "published" },
+  ];
+
+  for (const { name, filter } of workspaceButtons) {
+    await page.getByRole("button", { name }).click();
+
+    if (filter === "all") {
+      await expect(page).toHaveURL(/^(?:http:\/\/localhost:\d+\/)?$/, {
+        timeout: 10_000,
+      });
+    } else {
+      await expect(page).toHaveURL(new RegExp(`workspace=${filter}`), {
+        timeout: 10_000,
+      });
+    }
+  }
+});

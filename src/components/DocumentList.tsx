@@ -1,370 +1,95 @@
 import { useEffect, useMemo, useState } from "react";
-import { useTheme } from "@mui/material/styles";
 import { alpha } from "@mui/material/styles";
-import { fetchAllDocuments } from "../nostr/fetchFile.ts";
-import {
-  loadAllLocalEvents,
-  loadTrashedEvents,
-  storeLocalEvent,
-  markBroadcast,
-  removeLocalEvent,
-} from "../lib/localStore.ts";
-import { publishEvent } from "../nostr/publish.ts";
-import {
-  useDocSearch,
-  buildSnippet,
-  heuristicTitle,
-  type DocOrigin,
-  type DocumentHistory,
-} from "../lib/docSearch.ts";
-import {
-  Box,
-  Typography,
-  List,
-  ListItemText,
-  ListItemButton,
-  Button,
-  Skeleton,
-  Tab,
-  Tabs,
-  Chip,
-  Divider,
-  Tooltip,
-  InputAdornment,
-  TextField,
-} from "@mui/material";
-import AddIcon from "@mui/icons-material/Add";
+import { Box, Typography, ListItemButton, Chip, Tooltip, IconButton } from "@mui/material";
 import DeleteForeverIcon from "@mui/icons-material/DeleteForever";
-import SmartphoneIcon from "@mui/icons-material/Smartphone";
-import SearchIcon from "@mui/icons-material/Search";
-import CloseIcon from "@mui/icons-material/Close";
-import ArchiveOutlinedIcon from "@mui/icons-material/ArchiveOutlined";
 import { useDocumentContext } from "../contexts/DocumentContext.tsx";
-import { signerManager } from "../signer/index.ts";
-import { useRelays } from "../contexts/RelayContext.tsx";
-import { nip19, type Event } from "nostr-tools";
-import { fetchDeleteRequests } from "../nostr/fetchDelete.ts";
-import { useUser } from "../contexts/UserContext.tsx";
-import { useNavigate } from "react-router-dom";
 import { useSharedPages } from "../contexts/SharedDocsContext.tsx";
 import { usePublished } from "../contexts/PublishedContext.tsx";
-import { KIND_LONGFORM, KIND_COMMUNITY_NIP } from "../utils/publishArticle.ts";
-import TrashDialog from "./TrashDialog.tsx";
-import { encodeNKeys } from "../utils/nkeys.ts";
-import { buildSharedDocPath } from "./editor/utils.ts";
-import { getEventAddress } from "../utils/helpers.ts";
+import { useNavigate, useLocation } from "react-router-dom";
+import { loadTrashedEvents } from "../lib/localStore.ts";
 import { useDocMetadata } from "../contexts/DocMetadataContext.tsx";
-import RenameDialog from "./RenameDialog.tsx";
-import PublishArticleDialog from "./PublishArticleDialog.tsx";
-import EditOutlinedIcon from "@mui/icons-material/EditOutlined";
-import DeleteOutlineIcon from "@mui/icons-material/DeleteOutline";
-import { IconButton } from "@mui/material";
-import DictationButton from "./dictation/DictationButton";
-
-/** Deterministic hue (0–359) from a tag string. */
-function tagHue(tag: string): number {
-  let hash = 0;
-  for (let i = 0; i < tag.length; i++) {
-    hash = tag.charCodeAt(i) + ((hash << 5) - hash);
-  }
-  return Math.abs(hash) % 360;
-}
-
-function useTagColor(tag: string) {
-  const theme = useTheme();
-  const hue = tagHue(tag);
-  const dark = theme.palette.mode === "dark";
-  return {
-    bg: `hsla(${hue}, 60%, ${dark ? 55 : 45}%, 0.18)`,
-    text: `hsl(${hue}, ${dark ? 75 : 55}%, ${dark ? 78 : 32}%)`,
-  };
-}
-
-function TagChip({
-  tag,
-  selected,
-  onClick,
-  size = "filter",
-}: {
-  tag: string;
-  selected?: boolean;
-  onClick?: (e: React.MouseEvent) => void;
-  size?: "filter" | "inline";
-}) {
-  const { bg, text } = useTagColor(tag);
-  return (
-    <Chip
-      label={tag}
-      size="small"
-      onClick={onClick}
-      sx={{
-        height: size === "filter" ? 22 : 16,
-        fontSize: size === "filter" ? "0.72rem" : "0.6rem",
-        bgcolor: selected ? `${text}33` : bg,
-        color: text,
-        border: selected ? `1px solid ${text}` : "none",
-        fontWeight: selected ? 700 : 400,
-        cursor: onClick ? "pointer" : "default",
-        "& .MuiChip-label": { px: size === "filter" ? 1 : 0.75 },
-        "&:hover": onClick ? { bgcolor: `${text}33` } : {},
-      }}
-    />
-  );
-}
-
+import { getDocumentTags } from "./AllPagesView.tsx";
+import type { DocumentHistory } from "../lib/docSearch";
+import TrashDialog from "./TrashDialog.tsx";
+import UserMenu from "./UserMenu";
+import FormstrLogo from "../assets/formstr-pages-logo.svg";
 
 export default function DocumentList({
   onEdit,
 }: {
   onEdit: (docId: string | null) => void;
 }) {
-  const {
-    setSelectedDocumentId,
-    visibleDocuments,
-    visitedDocuments,
-    addDocument,
-    addDeletionRequest,
-    selectedDocumentId,
-    localOnlyAddresses,
-    markLocalOnly,
-    unmarkVisited,
-    removeDocument,
-  } = useDocumentContext();
-
-  // Remove a visited page from this device: drop it from the Visited tab and
-  // delete its local cache. It stays reachable via its original share link.
-  const handleRemoveVisited = async (address: string) => {
-    unmarkVisited(address);
-    removeDocument(address);
-    await removeLocalEvent(address).catch(() => {});
-  };
-  const [docRelays, setDocRelays] = useState<Map<string, string[]>>(new Map());
-
-  const { sharedDocuments, getKeys } = useSharedPages();
+  const { visibleDocuments, visitedDocuments, setSelectedDocumentId } = useDocumentContext();
+  const { sharedDocuments } = useSharedPages();
   const { publishedDocuments } = usePublished();
-
-  // A page that's already in the Shared list shouldn't also show under Visited —
-  // once saved to Shared it's no longer just a transient visit.
-  const visitedOnly = useMemo(() => {
-    if (sharedDocuments.size === 0) return visitedDocuments;
-    const next = new Map(visitedDocuments);
-    for (const addr of sharedDocuments.keys()) next.delete(addr);
-    return next;
-  }, [visitedDocuments, sharedDocuments]);
-  const { docTags, docTitles, setDocTitle, docSharedAs, allTags, selectedTag, setSelectedTag } = useDocMetadata();
-  const [loading, setLoading] = useState(true);
-  const [tab, setTab] = useState<"personal" | "shared" | "visited" | "published">("personal");
-  const [trashOpen, setTrashOpen] = useState(false);
-  const [renameOpen, setRenameOpen] = useState(false);
-  const [renamingAddress, setRenamingAddress] = useState<string | null>(null);
-  const [renamingInitialTitle, setRenamingInitialTitle] = useState("");
-  // The published article/NIP event currently open in the edit dialog, if any.
-  const [editingArticle, setEditingArticle] = useState<Event | null>(null);
-  const [trashCount, setTrashCount] = useState(0);
-  const [query, setQuery] = useState("");
-  const { user } = useUser();
-  const { relays } = useRelays();
+  const { docTags, selectedTag, setSelectedTag } = useDocMetadata();
   const navigate = useNavigate();
+  const location = useLocation();
+  const isHome = location.pathname === "/";
+  const workspaceFilter = new URLSearchParams(location.search).get("workspace") ?? "all";
+  const [trashOpen, setTrashOpen] = useState(false);
+  const [trashCount, setTrashCount] = useState(0);
 
-  const searchHits = useDocSearch(
-    visibleDocuments,
-    sharedDocuments,
-    visitedOnly,
-    docTitles,
-    docTags,
-    query,
-  );
-  const isSearching = searchHits !== null;
+  // Tags belonging to currently selected workspace
+  const currentWorkspaceTags = useMemo(() => {
+    const tagSet = new Set<string>();
+    const list: { address: string; history?: DocumentHistory }[] = [];
 
-  const handleDocumentSelect = (doc: Event) => {
-    const dTag = doc.tags.find((t) => t[0] === "d")?.[1];
-    const address = getEventAddress(doc);
-    if (!address) {
-      alert("Invalid Doc");
-      return;
+    if (workspaceFilter === "all") {
+      visibleDocuments.forEach((history, address) => list.push({ address, history }));
+      sharedDocuments.forEach((history, address) => list.push({ address, history }));
+      visitedDocuments.forEach((history, address) => {
+        if (!sharedDocuments.has(address)) list.push({ address, history });
+      });
+      publishedDocuments.forEach((history, address) => list.push({ address, history }));
+    } else if (workspaceFilter === "personal") {
+      visibleDocuments.forEach((history, address) => list.push({ address, history }));
+    } else if (workspaceFilter === "shared") {
+      sharedDocuments.forEach((history, address) => list.push({ address, history }));
+      visitedDocuments.forEach((history, address) => {
+        if (!sharedDocuments.has(address)) list.push({ address, history });
+      });
+    } else if (workspaceFilter === "published") {
+      publishedDocuments.forEach((history, address) => list.push({ address, history }));
     }
 
-
-    const naddr = nip19.naddrEncode({
-      identifier: dTag!,
-      pubkey: doc.pubkey,
-      kind: doc.kind,
-    });
-
-    // Published articles/NIPs open in the in-app reader, not the doc editor.
-    if (doc.kind === KIND_LONGFORM || doc.kind === KIND_COMMUNITY_NIP) {
-      navigate(`/article/${naddr}`);
-      return;
+    for (const item of list) {
+      const tags = getDocumentTags(item.address, docTags, item.history);
+      for (const t of tags) tagSet.add(t);
     }
 
-    const keys = getKeys(`${doc.kind}:${doc.pubkey}:${dTag}`);
+    return Array.from(tagSet).filter(Boolean).sort();
+  }, [workspaceFilter, visibleDocuments, sharedDocuments, visitedDocuments, publishedDocuments, docTags]);
 
-    let path = `/doc/${naddr}`;
-    if (keys.length > 0 && keys[0]) {
-      const nkeysObj: Record<string, string> = { viewKey: keys[0] };
-      if (keys[1]) nkeysObj.editKey = keys[1];
-      path = `/doc/${naddr}#${encodeNKeys(nkeysObj)}`;
-    }
-
-    setSelectedDocumentId(address);
-    navigate(path);
+  const selectWorkspace = (filter: "all" | "personal" | "shared" | "published") => {
+    setSelectedDocumentId(null);
+    setSelectedTag(null);
+    onEdit(null);
+    const nextUrl = filter === "all" ? "/" : `/?workspace=${filter}`;
+    navigate(nextUrl);
   };
 
-  useEffect(() => {
-    (async () => {
-      if (!user) {
-        setLoading(false);
-        return;
-      }
-      const signer = await signerManager.getSigner();
-      if (!signer) {
-        setLoading(false);
-        return;
-      }
-      setLoading(true);
+  const selectTag = (tag: string) => {
+    setSelectedDocumentId(null);
+    onEdit(null);
+    const norm = tag.trim().toLowerCase().replace(/^#/, "");
+    const currentNorm = selectedTag?.trim().toLowerCase().replace(/^#/, "");
+    const nextTag = currentNorm === norm ? null : norm;
+    setSelectedTag(nextTag);
+    const params = new URLSearchParams();
+    if (workspaceFilter !== "all") params.set("workspace", workspaceFilter);
+    if (nextTag) params.set("tag", nextTag);
+    const searchStr = params.toString();
+    navigate(searchStr ? `/?${searchStr}` : "/");
+  };
 
-      // ── Phase 1: local-first hydration ──────────────────
-      let localEntries: Awaited<ReturnType<typeof loadAllLocalEvents>> = [];
-      try {
-        localEntries = await loadAllLocalEvents();
-        for (const entry of localEntries) {
-          try {
-            await addDocument(entry.event, {
-              viewKey: entry.viewKey,
-              editKey: entry.editKey,
-            });
-            if (entry.localOnly) {
-              markLocalOnly(entry.address, true);
-            }
-          } catch {
-            // Skip events that can't be decrypted (e.g. belong to another user)
-          }
-        }
-      } catch (err) {
-        console.warn("Failed to load local events:", err);
-      }
-
-      // ── Phase 2: relay sync ──────────────────────────────
-      try {
-        const pubkey = await signer.getPublicKey();
-        const { relayMap } = await fetchAllDocuments(
-          relays,
-          async (doc: Event) => {
-            const address = getEventAddress(doc);
-            const localEntry = address
-              ? localEntries.find((e) => e.address === address)
-              : undefined;
-            await addDocument(doc, {
-              viewKey: localEntry?.viewKey,
-              editKey: localEntry?.editKey,
-            });
-            if (address) {
-              storeLocalEvent({
-                address,
-                event: doc,
-                viewKey: localEntry?.viewKey,
-                editKey: localEntry?.editKey,
-                pendingBroadcast: false,
-                savedAt: Date.now(),
-              }).catch(() => {});
-            }
-          },
-          pubkey,
-        );
-        setDocRelays(relayMap);
-        await fetchDeleteRequests(relays, addDeletionRequest, pubkey);
-
-        // ── Phase 3: re-broadcast any events saved while offline ──
-        for (const entry of localEntries) {
-          // Never re-broadcast device-only events. They are stored unsigned
-          // (sig: "") so relays would reject them anyway, but skip explicitly.
-          if (entry.pendingBroadcast && !entry.localOnly) {
-            publishEvent(entry.event, relays)
-              .then(() => markBroadcast(entry.address))
-              .catch(() => {});
-          }
-        }
-      } catch (err) {
-        console.error("Failed to fetch documents:", err);
-      } finally {
-        setLoading(false);
-      }
-    })();
-  }, [user, relays]);
-
-  // Load trash count on mount and after the dialog closes
   const refreshTrashCount = () => {
     loadTrashedEvents().then((items) => setTrashCount(items.length)).catch(() => {});
   };
-  useEffect(() => { refreshTrashCount(); }, []);
 
-  const handleNewDoc = () => {
-    setSelectedDocumentId(null);
-    onEdit(null);
-    navigate("/");
-  };
-
-  const allDocs =
-    tab === "personal"  ? visibleDocuments
-    : tab === "shared"    ? sharedDocuments
-    : tab === "published" ? publishedDocuments
-    :                       visitedOnly;
-
-  // Auto-switch to the tab that owns the currently selected doc
   useEffect(() => {
-    if (!selectedDocumentId) return;
-    if (visibleDocuments.has(selectedDocumentId)) setTab("personal");
-    else if (sharedDocuments.has(selectedDocumentId)) setTab("shared");
-    else if (visitedOnly.has(selectedDocumentId)) setTab("visited");
-    else if (publishedDocuments.has(selectedDocumentId)) setTab("published");
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedDocumentId]);
-
-  type RenderEntry = {
-    address: string;
-    history: DocumentHistory;
-    origin: DocOrigin;
-    terms?: string[];
-  };
-
-  const matchesTagFilter = (address: string) =>
-    !selectedTag || (docTags.get(address) ?? []).includes(selectedTag);
-
-  // Search spans all three maps; resolve which one an address came from.
-  const resolveDoc = (
-    address: string,
-  ): { history: DocumentHistory; origin: DocOrigin } | null => {
-    const personal = visibleDocuments.get(address);
-    if (personal) return { history: personal, origin: "personal" };
-    const shared = sharedDocuments.get(address);
-    if (shared) return { history: shared, origin: "shared" };
-    const visit = visitedOnly.get(address);
-    if (visit) return { history: visit, origin: "visited" };
-    return null;
-  };
-
-  const entries: RenderEntry[] = isSearching
-    ? (searchHits!
-        .map((hit) => {
-          if (!matchesTagFilter(hit.address)) return null;
-          const resolved = resolveDoc(hit.address);
-          if (!resolved) return null;
-          return { address: hit.address, ...resolved, terms: hit.terms };
-        })
-        .filter(Boolean) as RenderEntry[])
-    : [...allDocs.entries()]
-        .filter(([address]) => matchesTagFilter(address))
-        .sort(([, a], [, b]) => {
-          const aTime = a.versions.at(-1)?.event.created_at ?? 0;
-          const bTime = b.versions.at(-1)?.event.created_at ?? 0;
-          return bTime - aTime;
-        })
-        .map(([address, history]) => ({ address, history, origin: tab }));
-
-  const personalCount = visibleDocuments.size;
-  const sharedCount = sharedDocuments.size;
-  const visitedCount = visitedOnly.size;
-  const publishedCount = publishedDocuments.size;
+    refreshTrashCount();
+  }, []);
 
   return (
     <Box
@@ -374,557 +99,279 @@ export default function DocumentList({
         display: "flex",
         flexDirection: "column",
         overflow: "hidden",
+        pt: 3,
+        pl: 1,
       }}
     >
-      {/* New document button */}
-      <Box sx={{ px: 2, pt: 1.5, pb: 1, flexShrink: 0 }}>
-        <Button
-          fullWidth
-          variant="contained"
-          color="secondary"
-          startIcon={<AddIcon />}
-          onClick={handleNewDoc}
-          sx={{ fontWeight: 700, borderRadius: 2 }}
-        >
-          New Document
-        </Button>
-      </Box>
-
-      {/* Search */}
-      <Box sx={{ px: 2, pb: 1, flexShrink: 0 }}>
-        <TextField
-          fullWidth
-          size="small"
-          placeholder="Search all pages"
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          InputProps={{
-            startAdornment: (
-              <InputAdornment position="start">
-                <SearchIcon sx={{ fontSize: 18, opacity: 0.6 }} />
-              </InputAdornment>
-            ),
-            endAdornment: (
-              <InputAdornment position="end">
-                {query && (
-                  <IconButton
-                    size="small"
-                    onClick={() => setQuery("")}
-                    sx={{ p: 0.25 }}
-                  >
-                    <CloseIcon sx={{ fontSize: 16 }} />
-                  </IconButton>
-                )}
-                <DictationButton
-                  size="small"
-                  tooltip="Dictate search"
-                  onTranscript={(text) => setQuery(text)}
-                />
-              </InputAdornment>
-            ),
-            sx: { fontSize: "0.85rem", borderRadius: 2 },
-          }}
-        />
-      </Box>
-
-      {/* Tab switcher */}
-      <Tabs
-        value={tab}
-        onChange={(_, v) => setTab(v)}
-        variant="scrollable"
-        scrollButtons="auto"
-        allowScrollButtonsMobile
-        sx={{ flexShrink: 0, borderBottom: "1px solid", borderColor: "divider" }}
-        textColor="secondary"
-        indicatorColor="secondary"
+      <Box
+        onClick={() => {
+          setSelectedDocumentId(null);
+          setSelectedTag(null);
+          onEdit(null);
+          navigate("/");
+        }}
+        sx={{
+          display: "flex",
+          alignItems: "center",
+          gap: 1.25,
+          px: 2,
+          pt: 1,
+          pb: 1.5,
+          flexShrink: 0,
+          cursor: "pointer",
+          userSelect: "none",
+        }}
       >
-        <Tab
-          value="personal"
-          label={
-            <Box sx={{ display: "flex", alignItems: "center", gap: 0.75 }}>
-              My Pages
-              {personalCount > 0 && (
-                <Chip
-                  label={personalCount}
-                  size="small"
-                  color="secondary"
-                  sx={{ height: 18, fontSize: "0.65rem" }}
-                />
-              )}
-            </Box>
-          }
+        <img
+          src={FormstrLogo}
+          alt="Pages"
+          style={{ height: 60, width: 60, objectFit: "contain" }}
         />
-        <Tab
-          value="shared"
-          label={
-            <Box sx={{ display: "flex", alignItems: "center", gap: 0.75 }}>
-              Shared
-              {sharedCount > 0 && (
-                <Chip
-                  label={sharedCount}
-                  size="small"
-                  color="secondary"
-                  sx={{ height: 18, fontSize: "0.65rem" }}
-                />
-              )}
-            </Box>
-          }
-        />
-        <Tab
-          value="visited"
-          label={
-            <Box sx={{ display: "flex", alignItems: "center", gap: 0.75 }}>
-              Visited
-              {visitedCount > 0 && (
-                <Chip
-                  label={visitedCount}
-                  size="small"
-                  color="secondary"
-                  sx={{ height: 18, fontSize: "0.65rem" }}
-                />
-              )}
-            </Box>
-          }
-        />
-        <Tab
-          value="published"
-          label={
-            <Box sx={{ display: "flex", alignItems: "center", gap: 0.75 }}>
-              Published
-              {publishedCount > 0 && (
-                <Chip
-                  label={publishedCount}
-                  size="small"
-                  color="secondary"
-                  sx={{ height: 18, fontSize: "0.65rem" }}
-                />
-              )}
-            </Box>
-          }
-        />
-      </Tabs>
-
-      {/* Tag filter chips */}
-      {allTags.length > 0 && (
-        <Box
+        <Typography
+          variant="subtitle1"
           sx={{
-            px: 1.5,
-            py: 0.75,
-            display: "flex",
-            gap: 0.5,
-            flexWrap: "wrap",
-            flexShrink: 0,
-            borderBottom: "1px solid",
-            borderColor: "divider",
+            fontWeight: 700,
+            fontSize: "1.15rem",
+            letterSpacing: "-0.01em",
+            color: "text.primary",
           }}
         >
-          <Chip
-            label="All"
-            size="small"
-            onClick={() => setSelectedTag(null)}
-            color={selectedTag === null ? "secondary" : "default"}
-            sx={{ height: 22, fontSize: "0.72rem" }}
-          />
-          {allTags.map((tag) => (
-            <TagChip
-              key={tag}
-              tag={tag}
-              selected={selectedTag === tag}
-              onClick={() => setSelectedTag(selectedTag === tag ? null : tag)}
+          Pages
+        </Typography>
+      </Box>
+
+      <Box sx={{ px: 1.5, pb: 0.5, flexShrink: 0 }}>
+        <Typography
+          variant="caption"
+          sx={{
+            display: "block",
+            px: 1,
+            pt: 0.5,
+            pb: 0.75,
+            fontSize: "0.68rem",
+            fontWeight: 700,
+            letterSpacing: "0.08em",
+            color: "text.disabled",
+            textTransform: "uppercase",
+          }}
+        >
+          Workspace
+        </Typography>
+
+        <ListItemButton
+          onClick={() => selectWorkspace("all")}
+          sx={{
+            borderRadius: 1,
+            py: 0.65,
+            px: 1.25,
+            mb: 0.4,
+            bgcolor: isHome && workspaceFilter === "all" && !selectedTag ? "secondary.main" : "transparent",
+            color: isHome && workspaceFilter === "all" && !selectedTag ? "secondary.contrastText" : "text.primary",
+            "&:hover": {
+              bgcolor: isHome && workspaceFilter === "all" && !selectedTag ? "secondary.main" : (t) => alpha(t.palette.secondary.main, 0.08),
+            },
+            transition: "all 0.15s ease",
+          }}
+        >
+          <Box sx={{ display: "flex", alignItems: "center", gap: 1.25 }}>
+            <Box
+              sx={{
+                width: 6,
+                height: 6,
+                borderRadius: "50%",
+                bgcolor: isHome && !selectedTag ? "currentColor" : "secondary.main",
+              }}
             />
-          ))}
+            <Typography variant="body2" sx={{ fontWeight: isHome && !selectedTag ? 700 : 500, fontSize: "0.82rem" }}>
+              All pages
+            </Typography>
+          </Box>
+        </ListItemButton>
+
+        <ListItemButton
+          onClick={() => selectWorkspace("personal")}
+          sx={{
+            borderRadius: 1,
+            py: 0.55,
+            px: 1.25,
+            mb: 0.3,
+            bgcolor: workspaceFilter === "personal" && !selectedTag ? (t) => alpha(t.palette.secondary.main, 0.18) : "transparent",
+            color: workspaceFilter === "personal" && !selectedTag ? "secondary.main" : "text.secondary",
+            "&:hover": {
+              bgcolor: (t) => alpha(t.palette.secondary.main, 0.08),
+              color: "text.primary",
+            },
+            transition: "all 0.15s ease",
+          }}
+        >
+          <Box sx={{ display: "flex", alignItems: "center", gap: 1.25 }}>
+            <Box
+              sx={{
+                width: 6,
+                height: 6,
+                borderRadius: "50%",
+                bgcolor: workspaceFilter === "personal" && !selectedTag ? "secondary.main" : (t) => alpha(t.palette.text.primary, 0.35),
+              }}
+            />
+            <Typography variant="body2" sx={{ fontWeight: workspaceFilter === "personal" && !selectedTag ? 700 : 500, fontSize: "0.82rem" }}>
+              Personal
+            </Typography>
+          </Box>
+        </ListItemButton>
+
+        <ListItemButton
+          onClick={() => selectWorkspace("shared")}
+          sx={{
+            borderRadius: 1,
+            py: 0.55,
+            px: 1.25,
+            mb: 0.3,
+            bgcolor: workspaceFilter === "shared" && !selectedTag ? (t) => alpha(t.palette.secondary.main, 0.18) : "transparent",
+            color: workspaceFilter === "shared" && !selectedTag ? "secondary.main" : "text.secondary",
+            "&:hover": {
+              bgcolor: (t) => alpha(t.palette.secondary.main, 0.08),
+              color: "text.primary",
+            },
+            transition: "all 0.15s ease",
+          }}
+        >
+          <Box sx={{ display: "flex", alignItems: "center", gap: 1.25 }}>
+            <Box
+              sx={{
+                width: 6,
+                height: 6,
+                borderRadius: "50%",
+                bgcolor: workspaceFilter === "shared" && !selectedTag ? "secondary.main" : (t) => alpha(t.palette.text.primary, 0.35),
+              }}
+            />
+            <Typography variant="body2" sx={{ fontWeight: workspaceFilter === "shared" && !selectedTag ? 700 : 500, fontSize: "0.82rem" }}>
+              Shared with me
+            </Typography>
+          </Box>
+        </ListItemButton>
+
+        <ListItemButton
+          onClick={() => selectWorkspace("published")}
+          sx={{
+            borderRadius: 1,
+            py: 0.55,
+            px: 1.25,
+            mb: 0.3,
+            bgcolor: workspaceFilter === "published" && !selectedTag ? (t) => alpha(t.palette.secondary.main, 0.18) : "transparent",
+            color: workspaceFilter === "published" && !selectedTag ? "secondary.main" : "text.secondary",
+            "&:hover": {
+              bgcolor: (t) => alpha(t.palette.secondary.main, 0.08),
+              color: "text.primary",
+            },
+            transition: "all 0.15s ease",
+          }}
+        >
+          <Box sx={{ display: "flex", alignItems: "center", gap: 1.25 }}>
+            <Box
+              sx={{
+                width: 6,
+                height: 6,
+                borderRadius: "50%",
+                bgcolor: workspaceFilter === "published" && !selectedTag ? "secondary.main" : (t) => alpha(t.palette.text.primary, 0.35),
+              }}
+            />
+            <Typography variant="body2" sx={{ fontWeight: workspaceFilter === "published" && !selectedTag ? 700 : 500, fontSize: "0.82rem" }}>
+              Published
+            </Typography>
+          </Box>
+        </ListItemButton>
+      </Box>
+
+      {/* ── Workspace Tags in Sidebar ── */}
+      {currentWorkspaceTags.length > 0 && (
+        <Box sx={{ px: 1.5, pt: 1, pb: 0.5, flexShrink: 0 }}>
+          <Typography
+            variant="caption"
+            sx={{
+              display: "block",
+              px: 1,
+              pt: 0.5,
+              pb: 0.5,
+              fontSize: "0.68rem",
+              fontWeight: 700,
+              letterSpacing: "0.08em",
+              color: "text.disabled",
+              textTransform: "uppercase",
+            }}
+          >
+            Tags ({currentWorkspaceTags.length})
+          </Typography>
+          <Box sx={{ display: "flex", flexDirection: "column", gap: 0.25, maxHeight: 180, overflowY: "auto" }}>
+            {currentWorkspaceTags.map((tag) => {
+              const isTagActive = selectedTag?.toLowerCase() === tag.toLowerCase();
+              return (
+                <ListItemButton
+                  key={tag}
+                  onClick={() => selectTag(tag)}
+                  sx={{
+                    borderRadius: 1,
+                    py: 0.4,
+                    px: 1.25,
+                    bgcolor: isTagActive ? (t) => alpha(t.palette.secondary.main, 0.18) : "transparent",
+                    color: isTagActive ? "secondary.main" : "text.secondary",
+                    "&:hover": {
+                      bgcolor: (t) => alpha(t.palette.secondary.main, 0.08),
+                      color: "text.primary",
+                    },
+                    transition: "all 0.15s ease",
+                  }}
+                >
+                  <Typography variant="body2" sx={{ fontSize: "0.8rem", fontWeight: isTagActive ? 700 : 500 }}>
+                    #{tag}
+                  </Typography>
+                </ListItemButton>
+              );
+            })}
+          </Box>
         </Box>
       )}
 
-      {/* List area */}
-      <Box sx={{ flex: 1, overflowY: "auto", px: 1.5, py: 1, pb: 0 }}>
-        {loading ? (
-          <Box sx={{ display: "flex", flexDirection: "column", gap: 1, pt: 1 }}>
-            {[1, 2, 3, 4].map((i) => (
-              <Box key={i} sx={{ px: 1 }}>
-                <Skeleton variant="text" width="80%" height={20} />
-                <Skeleton variant="text" width="50%" height={14} />
-              </Box>
-            ))}
-          </Box>
-        ) : entries.length === 0 ? (
-          <Box
-            sx={{
-              pt: 4,
-              display: "flex",
-              flexDirection: "column",
-              alignItems: "center",
-              gap: 1,
-            }}
-          >
-            <Typography
-              variant="body2"
-              color="text.secondary"
-              textAlign="center"
-            >
-              {isSearching
-                ? `No matches for "${query.trim()}".`
-                : tab === "personal"
-                ? "No documents yet.\nCreate your first page!"
-                : tab === "visited"
-                ? "No visited pages yet.\nOpen a shared link to see it here."
-                : tab === "published"
-                ? "Nothing published yet.\nUse Share → Publish to post an article or NIP."
-                : "No shared documents found."}
-            </Typography>
-            {!isSearching && tab === "personal" && (
-              <Button
-                variant="outlined"
-                color="secondary"
-                size="small"
-                startIcon={<AddIcon />}
-                onClick={handleNewDoc}
-                sx={{ mt: 1 }}
-              >
-                Create page
-              </Button>
-            )}
-          </Box>
-        ) : (
-          <List disablePadding>
-            {entries.map(({ address, history, origin, terms }, idx) => {
-              const latest = history.versions.at(-1);
-              if (!latest) return null;
+      <Box sx={{ flex: 1 }} />
 
-              const { event, decryptedContent } = latest;
-              const isSelected = selectedDocumentId === address;
-              const tags = docTags.get(address) ?? [];
-              const relays = docRelays.get(address) ?? [];
-
-              const customTitle = docTitles.get(address);
-              // Published articles/NIPs carry an authoritative `title` tag.
-              const titleTag = event.tags.find((t) => t[0] === "title")?.[1];
-              const displayTitle =
-                customTitle || titleTag || heuristicTitle(decryptedContent ?? "", 42) || "Untitled";
-
-              const snippet =
-                isSearching && terms
-                  ? buildSnippet(decryptedContent ?? "", terms)
-                  : null;
-
-              return (
-                <Box
-                  key={address}
-                  sx={{ position: "relative", "&:hover .rename-btn": { opacity: 1 } }}
-                >
-                  {idx > 0 && (
-                    <Divider
-                      sx={{ my: 0.25, borderColor: "rgba(255,255,255,0.05)" }}
-                    />
-                  )}
-                  <ListItemButton
-                    onClick={() => handleDocumentSelect(event)}
-                    sx={{
-                      borderRadius: 2,
-                      py: 1,
-                      pr: 0.5,
-                      bgcolor: isSelected
-                        ? (t) => alpha(t.palette.secondary.main, 0.12)
-                        : "transparent",
-                      borderLeft: "3px solid",
-                      borderLeftColor: isSelected
-                        ? "secondary.main"
-                        : "transparent",
-                      "&:hover": {
-                        bgcolor: (t) =>
-                          alpha(
-                            t.palette.secondary.main,
-                            isSelected ? 0.18 : 0.06,
-                          ),
-                      },
-                      transition: "background-color 0.15s",
-                    }}
-                  >
-                    <ListItemText
-                      primary={
-                        <Box sx={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                          <Box
-                            component="span"
-                            sx={{
-                              flex: 1,
-                              minWidth: 0,
-                              overflow: "hidden",
-                              textOverflow: "ellipsis",
-                              whiteSpace: "nowrap",
-                            }}
-                          >
-                            {displayTitle}
-                          </Box>
-                          {origin === "visited" ? (
-                            <Tooltip title="Remove from visited">
-                              <IconButton
-                                className="rename-btn"
-                                size="small"
-                                aria-label="Remove from visited"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  void handleRemoveVisited(address);
-                                }}
-                                sx={{
-                                  opacity: isSelected ? 1 : 0,
-                                  transition: "opacity 0.2s",
-                                  p: 0.25,
-                                }}
-                              >
-                                <DeleteOutlineIcon sx={{ fontSize: 16 }} />
-                              </IconButton>
-                            </Tooltip>
-                          ) : origin === "published" ? (
-                            <Tooltip title="Edit published article">
-                              <IconButton
-                                className="rename-btn"
-                                size="small"
-                                aria-label="Edit published article"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  setEditingArticle(event);
-                                }}
-                                sx={{
-                                  opacity: isSelected ? 1 : 0,
-                                  transition: "opacity 0.2s",
-                                  p: 0.25,
-                                }}
-                              >
-                                <EditOutlinedIcon sx={{ fontSize: 16 }} />
-                              </IconButton>
-                            </Tooltip>
-                          ) : (
-                            <IconButton
-                              className="rename-btn"
-                              size="small"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setRenamingAddress(address);
-                                setRenamingInitialTitle(displayTitle);
-                                setRenameOpen(true);
-                              }}
-                              sx={{
-                                opacity: isSelected ? 1 : 0,
-                                transition: "opacity 0.2s",
-                                p: 0.25,
-                              }}
-                            >
-                              <EditOutlinedIcon sx={{ fontSize: 16 }} />
-                            </IconButton>
-                          )}
-                        </Box>
-                      }
-                      secondary={
-                        <Box component="span" sx={{ display: "block" }}>
-                          <Box component="span" sx={{ opacity: 0.6, fontSize: "0.7rem", display: "flex", alignItems: "center", gap: 0.5 }}>
-                            {new Date(event.created_at * 1000).toLocaleDateString(
-                              undefined,
-                              { month: "short", day: "numeric", year: "numeric" },
-                            )}
-                            {isSearching && (
-                              <Box
-                                component="span"
-                                sx={{
-                                  fontSize: "0.58rem",
-                                  fontWeight: 600,
-                                  textTransform: "uppercase",
-                                  letterSpacing: 0.4,
-                                  opacity: 0.7,
-                                  bgcolor: (t) => alpha(t.palette.secondary.main, 0.15),
-                                  color: "secondary.main",
-                                  borderRadius: 0.75,
-                                  px: 0.6,
-                                  py: 0.1,
-                                  lineHeight: 1.6,
-                                }}
-                              >
-                                {origin === "personal" ? "Mine" : origin === "shared" ? "Shared" : origin === "published" ? "Published" : "Visited"}
-                              </Box>
-                            )}
-                          </Box>
-                          {snippet && (
-                            <Box
-                              component="span"
-                              sx={{
-                                display: "-webkit-box",
-                                WebkitLineClamp: 2,
-                                WebkitBoxOrient: "vertical",
-                                overflow: "hidden",
-                                fontSize: "0.72rem",
-                                opacity: 0.75,
-                                mt: 0.35,
-                                lineHeight: 1.35,
-                              }}
-                            >
-                              {snippet.map((seg, i) =>
-                                seg.match ? (
-                                  <Box
-                                    key={i}
-                                    component="mark"
-                                    sx={{
-                                      bgcolor: (t) => alpha(t.palette.secondary.main, 0.35),
-                                      color: "inherit",
-                                      borderRadius: 0.5,
-                                      px: 0.25,
-                                    }}
-                                  >
-                                    {seg.text}
-                                  </Box>
-                                ) : (
-                                  <span key={i}>{seg.text}</span>
-                                ),
-                              )}
-                            </Box>
-                          )}
-                          {tags.length > 0 && (
-                            <Box
-                              component="span"
-                              sx={{ display: "flex", flexWrap: "wrap", gap: 0.4, mt: 0.4 }}
-                            >
-                              {tags.map((tag) => (
-                                <TagChip
-                                  key={tag}
-                                  tag={tag}
-                                  size="inline"
-                                  selected={selectedTag === tag}
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    setSelectedTag(selectedTag === tag ? null : tag);
-                                  }}
-                                />
-                              ))}
-                            </Box>
-                          )}
-                          {docSharedAs.has(address) && (() => {
-                            const sharedAddr = docSharedAs.get(address)!;
-                            const sharedPath = buildSharedDocPath(sharedAddr, getKeys);
-                            return (
-                              <Tooltip title="Go to live shared version">
-                                <Box
-                                  component="span"
-                                  onClick={(e) => { e.stopPropagation(); navigate(sharedPath); }}
-                                  sx={{ display: "flex", alignItems: "center", gap: 0.3, mt: 0.4, cursor: "pointer" }}
-                                >
-                                  <ArchiveOutlinedIcon sx={{ fontSize: "0.58rem", opacity: 0.55 }} />
-                                  <Box
-                                    component="span"
-                                    sx={{
-                                      fontSize: "0.58rem",
-                                      fontFamily: "monospace",
-                                      opacity: 0.55,
-                                      bgcolor: (t) => alpha(t.palette.text.primary, 0.07),
-                                      borderRadius: 0.75,
-                                      px: 0.6,
-                                      py: 0.1,
-                                      lineHeight: 1.6,
-                                      "&:hover": { opacity: 1 },
-                                    }}
-                                  >
-                                    backup
-                                  </Box>
-                                </Box>
-                              </Tooltip>
-                            );
-                          })()}
-                          {localOnlyAddresses.has(address) ? (
-                            <Box
-                              component="span"
-                              sx={{ display: "flex", alignItems: "center", gap: 0.3, mt: 0.4 }}
-                            >
-                              <SmartphoneIcon sx={{ fontSize: "0.58rem", opacity: 0.45 }} />
-                              <Box
-                                component="span"
-                                sx={{
-                                  fontSize: "0.58rem",
-                                  fontFamily: "monospace",
-                                  opacity: 0.45,
-                                  bgcolor: (t) => alpha(t.palette.text.primary, 0.07),
-                                  borderRadius: 0.75,
-                                  px: 0.6,
-                                  py: 0.1,
-                                  lineHeight: 1.6,
-                                }}
-                              >
-                                Device only
-                              </Box>
-                            </Box>
-                          ) : relays.length > 0 && (
-                            <Box
-                              component="span"
-                              sx={{ display: "flex", flexWrap: "wrap", gap: 0.4, mt: 0.4 }}
-                            >
-                              {relays.map((r) => {
-                                const host = new URL(r).hostname;
-                                return (
-                                  <Tooltip key={r} title={r}>
-                                    <Box
-                                      component="span"
-                                      sx={{
-                                        fontSize: "0.58rem",
-                                        fontFamily: "monospace",
-                                        opacity: 0.5,
-                                        bgcolor: (t) => alpha(t.palette.text.primary, 0.07),
-                                        borderRadius: 0.75,
-                                        px: 0.6,
-                                        py: 0.1,
-                                        lineHeight: 1.6,
-                                      }}
-                                    >
-                                      {host}
-                                    </Box>
-                                  </Tooltip>
-                                );
-                              })}
-                            </Box>
-                          )}
-                        </Box>
-                      }
-                      primaryTypographyProps={{
-                        variant: "body2",
-                        fontWeight: isSelected ? 700 : 400,
-                        noWrap: true,
-                      }}
-                      secondaryTypographyProps={{ component: "span" }}
-                    />
-                  </ListItemButton>
-                </Box>
-              );
-            })}
-          </List>
-        )}
-      </Box>
-
-      {/* Trash link */}
       <Box
         sx={{
-          px: 2,
-          py: 1,
+          px: 1.75,
+          py: 1.25,
+          minHeight: 54,
+          boxSizing: "border-box",
           borderTop: "1px solid",
           borderColor: "divider",
           flexShrink: 0,
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          gap: 1,
         }}
       >
-        <Button
-          size="small"
-          startIcon={<DeleteForeverIcon sx={{ fontSize: 15 }} />}
-          onClick={() => setTrashOpen(true)}
-          sx={{
-            color: "text.disabled",
-            fontWeight: 400,
-            fontSize: "0.75rem",
-            textTransform: "none",
-            "&:hover": { color: "text.secondary" },
-          }}
-        >
-          Trash
-          {trashCount > 0 && (
-            <Chip
-              label={trashCount}
-              size="small"
-              sx={{ ml: 0.75, height: 16, fontSize: "0.6rem", "& .MuiChip-label": { px: 0.75 } }}
-            />
-          )}
-        </Button>
+        <Box sx={{ flex: 1, minWidth: 0 }}>
+          <UserMenu triggerMode="pill" />
+        </Box>
+
+        <Tooltip title="Trash">
+          <IconButton
+            size="small"
+            onClick={() => setTrashOpen(true)}
+            sx={{
+              p: 0.5,
+              color: "text.disabled",
+              "&:hover": { color: "text.secondary" },
+            }}
+          >
+            <DeleteForeverIcon sx={{ fontSize: 16 }} />
+            {trashCount > 0 && (
+              <Chip
+                label={trashCount}
+                size="small"
+                sx={{ ml: 0.5, height: 14, fontSize: "0.55rem", "& .MuiChip-label": { px: 0.4 } }}
+              />
+            )}
+          </IconButton>
+        </Tooltip>
       </Box>
 
       <TrashDialog
@@ -934,33 +381,6 @@ export default function DocumentList({
           refreshTrashCount();
         }}
       />
-      {renamingAddress && (
-        <RenameDialog
-          open={renameOpen}
-          initialTitle={renamingInitialTitle}
-          onClose={() => setRenameOpen(false)}
-          onSave={async (newTitle) => {
-            // If they clear it, we'll save empty string to remove custom title.
-            // If they didn't change it from the initial title, we don't need to save
-            if (newTitle === docTitles.get(renamingAddress)) {
-              return;
-            }
-            await setDocTitle(renamingAddress, newTitle);
-          }}
-        />
-      )}
-      {editingArticle && (
-        <PublishArticleDialog
-          key={editingArticle.id}
-          open
-          editEvent={editingArticle}
-          markdown={editingArticle.content}
-          target={
-            editingArticle.kind === KIND_COMMUNITY_NIP ? "communityNip" : "longform"
-          }
-          onClose={() => setEditingArticle(null)}
-        />
-      )}
     </Box>
   );
 }

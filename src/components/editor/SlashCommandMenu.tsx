@@ -5,7 +5,7 @@ import {
   useRef,
   useState,
 } from "react";
-import { Box, Paper, Typography, useTheme } from "@mui/material";
+import { Box, Paper, Typography, useTheme, alpha } from "@mui/material";
 import type { SlashCommandItem } from "./extensions/SlashCommand";
 
 export interface SlashCommandMenuHandle {
@@ -58,9 +58,10 @@ export const SlashCommandMenu = forwardRef<SlashCommandMenuHandle, Props>(
           width: 280,
           maxHeight: 320,
           overflowY: "auto",
-          borderRadius: 2,
-          border: `1px solid ${theme.palette.divider}`,
-          bgcolor: "background.paper",
+          borderRadius: "12px",
+          border: `1px solid ${alpha(theme.palette.text.primary, 0.08)}`,
+          bgcolor: alpha(theme.palette.background.paper, 0.8),
+          backdropFilter: "blur(12px)",
           py: 0.5,
           // Notion-like shadow
           boxShadow:
@@ -98,12 +99,12 @@ export const SlashCommandMenu = forwardRef<SlashCommandMenuHandle, Props>(
               px: 2,
               py: 0.75,
               cursor: "pointer",
-              borderRadius: 1,
+              borderRadius: "8px",
               mx: 0.5,
               bgcolor:
-                index === selectedIndex ? "action.selected" : "transparent",
-              "&:hover": { bgcolor: "action.hover" },
-              transition: "background-color 0.1s",
+                index === selectedIndex ? alpha(theme.palette.primary.main, 0.1) : "transparent",
+              "&:hover": { bgcolor: alpha(theme.palette.primary.main, 0.05) },
+              transition: "all 0.2s ease",
             }}
           >
             {/* Icon swatch — Notion-style light box */}
@@ -111,9 +112,10 @@ export const SlashCommandMenu = forwardRef<SlashCommandMenuHandle, Props>(
               sx={{
                 width: 32,
                 height: 32,
-                borderRadius: 1,
-                border: `1px solid ${theme.palette.divider}`,
-                bgcolor: "background.default",
+                borderRadius: "8px",
+                border: `1px solid ${alpha(theme.palette.text.primary, 0.06)}`,
+                bgcolor: alpha(theme.palette.primary.main, 0.12),
+                color: "primary.main",
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "center",
