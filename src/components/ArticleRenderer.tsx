@@ -1,4 +1,4 @@
-import { Box, Typography, Chip, Stack } from "@mui/material";
+import { Box, Typography, Chip, Stack, alpha } from "@mui/material";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 
@@ -64,20 +64,24 @@ export default function ArticleRenderer({
           "& img": { maxWidth: "100%", borderRadius: 1 },
           "& pre": {
             p: 1.5,
-            borderRadius: 1,
+            borderRadius: "12px",
             overflow: "auto",
-            bgcolor: (t) => (t.palette.mode === "dark" ? "rgba(0,0,0,0.4)" : "rgba(0,0,0,0.06)"),
+            bgcolor: (t) => (t.palette.mode === "dark" ? alpha(t.palette.primary.main, 0.04) : "rgba(0,0,0,0.06)"),
+            border: "1px solid rgba(255,255,255,0.06)",
           },
           "& code": { fontSize: "0.9em" },
           "& table": { borderCollapse: "collapse", width: "100%" },
-          "& th, & td": { border: "1px solid", borderColor: "divider", p: 1 },
+          "& th, & td": { border: "1px solid rgba(255,255,255,0.06)", p: 1 },
           "& a": { color: "secondary.main" },
           "& blockquote": {
-            borderLeft: "3px solid",
-            borderColor: "divider",
+            borderLeft: "4px solid",
+            borderColor: "secondary.main",
             pl: 2,
             ml: 0,
             color: "text.secondary",
+            bgcolor: (t) => alpha(t.palette.secondary.main, 0.04),
+            py: 1,
+            borderRadius: "0 8px 8px 0",
           },
         }}
       >

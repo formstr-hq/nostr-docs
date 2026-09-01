@@ -20,11 +20,16 @@ export async function fetchAllDocMetadata(
     const events: Event[] = [];
     const seenIds = new Set<string>();
     let settled = false;
+    let eoseCount = 0;
 
     const finish = async () => {
       if (settled) return;
       settled = true;
-      sub.close();
+      subs.forEach((s) => {
+        try {
+          s.close();
+        } catch {} // eslint-disable-line no-empty
+      });
 
       const result = new Map<string, DocMetadata>();
       events.sort((a, b) => b.created_at - a.created_at);
@@ -38,13 +43,16 @@ export async function fetchAllDocMetadata(
 
       for (const event of events) {
         const dTag = event.tags.find((t: string[]) => t[0] === "d")?.[1];
-        if (!dTag || seenAddresses.has(dTag)) continue;
-        seenAddresses.add(dTag);
+        if (!dTag) continue;
+
+        const address = dTag;
+        if (seenAddresses.has(address)) continue;
+        seenAddresses.add(address);
 
         try {
           const decrypted = await signer.nip44Decrypt!(pubkey, event.content);
           const metadata: DocMetadata = JSON.parse(decrypted);
-          result.set(dTag, metadata);
+          result.set(address, metadata);
         } catch {
           // skip undecryptable events
         }
@@ -53,23 +61,28 @@ export async function fetchAllDocMetadata(
       resolve(result);
     };
 
-    const timeout = setTimeout(finish, 5000);
+    const timeout = setTimeout(finish, 6000);
 
-    const sub = pool.subscribeMany(
-      relays,
-      { kinds: [KIND_DOC_METADATA], authors: [pubkey] },
-      {
-        onevent(event) {
-          if (!seenIds.has(event.id)) {
-            seenIds.add(event.id);
-            events.push(event);
-          }
+    const subs = relays.map((relay) =>
+      pool.subscribeMany(
+        [relay],
+        { kinds: [KIND_DOC_METADATA], authors: [pubkey] },
+        {
+          onevent(event) {
+            if (!seenIds.has(event.id)) {
+              seenIds.add(event.id);
+              events.push(event);
+            }
+          },
+          oneose: () => {
+            eoseCount++;
+            if (eoseCount >= relays.length) {
+              clearTimeout(timeout);
+              finish();
+            }
+          },
         },
-        oneose: () => {
-          clearTimeout(timeout);
-          finish();
-        },
-      },
+      ),
     );
   });
 }

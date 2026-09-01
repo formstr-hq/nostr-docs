@@ -87,6 +87,7 @@ export const TEST_PASSPHRASE = "e2e-test-passphrase";
  * changes.
  */
 export async function loginAsGuest(page: Page) {
+  await page.addInitScript(() => localStorage.clear());
   await page.goto("/");
   await page.getByRole("button", { name: "Login to Save" }).click();
   // The login modal and the recovery-key dialog can overlap in the DOM while

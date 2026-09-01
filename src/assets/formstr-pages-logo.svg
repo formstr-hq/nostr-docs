@@ -1,35 +1,13 @@
-<svg width="128" height="128" viewBox="0 0 128 128" xmlns="http://www.w3.org/2000/svg">
+<svg viewBox="0 0 160 190" xmlns="http://www.w3.org/2000/svg">
+  <!-- rounded note shape -->
+  <path d="M42,20 L118,20 A22,22 0 0 1 140,42 L140,148 A22,22 0 0 1 118,170 L42,170 A22,22 0 0 1 20,148 L20,42 A22,22 0 0 1 42,20 Z" fill="#14151A"/>
 
-  <!-- Background -->
-  <rect width="128" height="128" fill="#ffffff" />
+  <!-- line 1 -->
+  <path d="M46,79 L84,79 A4,4 0 0 1 88,83 A4,4 0 0 1 84,87 L46,87 A4,4 0 0 1 42,83 A4,4 0 0 1 46,79 Z" fill="#FFFFFF"/>
 
-  <!-- Subtle grid -->
-  <g stroke="#000000" stroke-opacity="0.08" stroke-width="1">
-    <line x1="32" y1="0" x2="32" y2="128" />
-    <line x1="64" y1="0" x2="64" y2="128" />
-    <line x1="96" y1="0" x2="96" y2="128" />
-    <line x1="0" y1="32" x2="128" y2="32" />
-    <line x1="0" y1="64" x2="128" y2="64" />
-    <line x1="0" y1="96" x2="128" y2="96" />
-  </g>
+  <!-- line 2 -->
+  <path d="M46,101 L102,101 A4,4 0 0 1 106,105 A4,4 0 0 1 102,109 L46,109 A4,4 0 0 1 42,105 A4,4 0 0 1 46,101 Z" fill="#FFFFFF"/>
 
-  <!-- Coffee-written "form*" -->
-  <text x="64" y="74" text-anchor="middle" font-size="22" font-family="Georgia, serif" font-weight="600" fill="#3b2a1f"
-    stroke="#3b2a1f" stroke-width="0.4" opacity="0.95" letter-spacing="0.5">
-    form*
-  </text>
-
-  <!-- Coffee stain (bottom-right with rim) -->
-  <g transform="translate(128,128)">
-
-    <!-- outer stain -->
-    <circle cx="-18" cy="-18" r="32" fill="#6f4e37" opacity="0.10" />
-
-    <!-- cup rim -->
-    <circle cx="-18" cy="-18" r="24" fill="none" stroke="#6f4e37" stroke-width="3" stroke-opacity="0.28" />
-
-    <!-- irregular variation -->
-    <circle cx="-12" cy="-22" r="28" fill="#6f4e37" opacity="0.05" />
-  </g>
-
+  <!-- line 3 -->
+  <path d="M46,123 L72,123 A4,4 0 0 1 76,127 A4,4 0 0 1 72,131 L46,131 A4,4 0 0 1 42,127 A4,4 0 0 1 46,123 Z" fill="#FFFFFF"/>
 </svg>

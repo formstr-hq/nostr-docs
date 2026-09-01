@@ -4,7 +4,6 @@ import {
   DialogContent,
   DialogActions,
   Button,
-  Paper,
   Typography,
   Switch,
   Box,
@@ -79,17 +78,15 @@ export default function ShareModal({ open, onClose, onPrivateLink, onPublish, ex
 
   return (
     <>
-      <Dialog open={open} onClose={handleClose} maxWidth="sm" fullWidth>
+      <Dialog open={open} onClose={handleClose} maxWidth="sm" fullWidth PaperProps={{ sx: { borderRadius: 1.5, border: '1px solid', borderColor: 'divider', backgroundImage: 'none', bgcolor: 'background.paper' } }}>
         <DialogTitle>Share Page</DialogTitle>
 
         <DialogContent
           sx={{ display: "flex", flexDirection: "column", gap: 2, pt: 2 }}
         >
           {/* PRIVATE LINK */}
-          <Paper variant="outlined" sx={{ p: 2 }}>
-            <Typography variant="h6" fontWeight={800}>
-              Get private link
-            </Typography>
+          <Box sx={{ bgcolor: (theme) => `${theme.palette.primary.main}08`, borderRadius: 0.75, border: '1px solid rgba(255,255,255,0.06)', p: 2 }}>
+            <Typography sx={{ textTransform: 'uppercase', fontSize: '0.7rem', letterSpacing: '1px', color: 'text.secondary', fontWeight: 700, mb: 1 }}>SHARING</Typography>
             <Typography color="text.secondary" sx={{ mb: 1 }}>
               Only people with the link will have access.
             </Typography>
@@ -158,14 +155,12 @@ export default function ShareModal({ open, onClose, onPrivateLink, onPublish, ex
                 onFocus={(e) => e.target.select()}
               />
             )}
-          </Paper>
+          </Box>
 
           {/* PUBLISH PUBLICLY */}
           {onPublish && (
-            <Paper variant="outlined" sx={{ p: 2 }}>
-              <Typography variant="h6" fontWeight={800}>
-                Publish publicly
-              </Typography>
+            <Box sx={{ bgcolor: (theme) => `${theme.palette.primary.main}08`, borderRadius: 0.75, border: '1px solid rgba(255,255,255,0.06)', p: 2 }}>
+              <Typography sx={{ textTransform: 'uppercase', fontSize: '0.7rem', letterSpacing: '1px', color: 'text.secondary', fontWeight: 700, mb: 1 }}>PUBLISH</Typography>
               <Typography color="text.secondary" sx={{ mb: 1 }}>
                 Post this page to Nostr for anyone to read — images become public.
               </Typography>
@@ -189,7 +184,7 @@ export default function ShareModal({ open, onClose, onPrivateLink, onPublish, ex
                   Publish as NIP
                 </Button>
               </Box>
-            </Paper>
+            </Box>
           )}
         </DialogContent>
 

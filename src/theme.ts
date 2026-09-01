@@ -6,6 +6,7 @@ const sharedComponents = {
       root: {
         lineHeight: 1,
         textTransform: "none" as const,
+        borderRadius: "6px",
       },
     },
   },
@@ -14,6 +15,35 @@ const sharedComponents = {
       root: {
         lineHeight: 1,
         textTransform: "none" as const,
+        borderRadius: "6px",
+      },
+    },
+  },
+  MuiPaper: {
+    styleOverrides: {
+      root: {
+        borderRadius: "8px",
+      },
+    },
+  },
+  MuiDialog: {
+    styleOverrides: {
+      paper: {
+        borderRadius: "10px",
+      },
+    },
+  },
+  MuiChip: {
+    styleOverrides: {
+      root: {
+        borderRadius: "5px",
+      },
+    },
+  },
+  MuiOutlinedInput: {
+    styleOverrides: {
+      root: {
+        borderRadius: "6px",
       },
     },
   },
@@ -51,7 +81,7 @@ export const themes: Record<ThemeId, ThemeDefinition> = {
         text: { primary: "#2C2520", secondary: "#7A7068" },
       },
       typography: { fontFamily: `"Inter", sans-serif` },
-      shape: { borderRadius: 12 },
+      shape: { borderRadius: 8 },
       components: sharedComponents,
     }),
   },
@@ -69,7 +99,7 @@ export const themes: Record<ThemeId, ThemeDefinition> = {
         text: { primary: "#F0EDE8", secondary: "#A89C90" },
       },
       typography: { fontFamily: `"Inter", sans-serif` },
-      shape: { borderRadius: 12 },
+      shape: { borderRadius: 8 },
       components: sharedComponents,
     }),
   },
@@ -87,7 +117,7 @@ export const themes: Record<ThemeId, ThemeDefinition> = {
         text: { primary: "#3A2010", secondary: "#8B5A30" },
       },
       typography: { fontFamily: `"Inter", sans-serif` },
-      shape: { borderRadius: 12 },
+      shape: { borderRadius: 8 },
       components: sharedComponents,
     }),
   },
@@ -105,7 +135,7 @@ export const themes: Record<ThemeId, ThemeDefinition> = {
         text: { primary: "#D8EDD4", secondary: "#8FBB87" },
       },
       typography: { fontFamily: `"Inter", sans-serif` },
-      shape: { borderRadius: 12 },
+      shape: { borderRadius: 8 },
       components: sharedComponents,
     }),
   },
@@ -123,7 +153,7 @@ export const themes: Record<ThemeId, ThemeDefinition> = {
         text: { primary: "#D0E8F5", secondary: "#7EB8D4" },
       },
       typography: { fontFamily: `"Inter", sans-serif` },
-      shape: { borderRadius: 12 },
+      shape: { borderRadius: 8 },
       components: sharedComponents,
     }),
   },
@@ -141,7 +171,7 @@ export const themes: Record<ThemeId, ThemeDefinition> = {
         text: { primary: "#00FF41", secondary: "#00AA22" },
       },
       typography: { fontFamily: `"Fira Code", "Cascadia Code", monospace` },
-      shape: { borderRadius: 4 },
+      shape: { borderRadius: 6 },
       components: sharedComponents,
     }),
   },
@@ -159,7 +189,7 @@ export const themes: Record<ThemeId, ThemeDefinition> = {
         text: { primary: "#F8F8F2", secondary: "#A0A8C3" },
       },
       typography: { fontFamily: `"Inter", sans-serif` },
-      shape: { borderRadius: 12 },
+      shape: { borderRadius: 8 },
       components: sharedComponents,
     }),
   },
@@ -196,19 +226,8 @@ export const themes: Record<ThemeId, ThemeDefinition> = {
         divider: "#E0E0E0",
       },
       typography: { fontFamily: `"Inter", "Arial", sans-serif` },
-      shape: { borderRadius: 4 },
-      components: {
-        ...sharedComponents,
-        MuiButton: {
-          styleOverrides: {
-            root: {
-              lineHeight: 1,
-              textTransform: "none" as const,
-              fontWeight: 500,
-            },
-          },
-        },
-      },
+      shape: { borderRadius: 8 },
+      components: sharedComponents,
     }),
   },
 };

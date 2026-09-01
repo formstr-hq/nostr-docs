@@ -1,4 +1,4 @@
-import { Box, Chip, IconButton, Tooltip, Typography } from "@mui/material";
+import { Box, Chip, IconButton, Tooltip, Typography, alpha } from "@mui/material";
 import CheckCircleIcon from "@mui/icons-material/CheckCircle";
 import CheckCircleOutlineIcon from "@mui/icons-material/CheckCircleOutline";
 import type { DecryptedComment } from "../../contexts/CommentContext";
@@ -22,12 +22,15 @@ export function CommentCard({ comment, isResolved, isOutdated, onResolve, onUnre
       sx={{
         display: "flex",
         flexDirection: "column",
-        gap: 0.75,
+        gap: 1,
         p: 1.5,
-        borderRadius: 2,
-        border: "1px solid",
-        borderColor: "divider",
-        bgcolor: "background.paper",
+        borderRadius: "12px",
+        border: "1px solid rgba(255,255,255,0.06)",
+        bgcolor: (t) => alpha(t.palette.primary.main, 0.04),
+        transition: "background-color 0.2s ease",
+        "&:hover": {
+          bgcolor: (t) => alpha(t.palette.primary.main, 0.08),
+        },
         ...(onCardClick && { cursor: "pointer" }),
         ...(isResolved || isOutdated) && { opacity: isResolved ? 0.6 : isOutdated ? 0.5 : 1 },
       }}

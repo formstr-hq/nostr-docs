@@ -3,28 +3,21 @@ import "./App.css";
 import {
   Box,
   Drawer,
-  IconButton,
-  AppBar,
-  Toolbar,
   Typography,
   useMediaQuery,
 } from "@mui/material";
-import MenuIcon from "@mui/icons-material/Menu";
 import {
   createBrowserRouter,
   createHashRouter,
   RouterProvider,
   Outlet,
   useLocation,
-  useOutletContext,
 } from "react-router-dom";
 
 import DocumentList from "./components/DocumentList";
-import UserMenu from "./components/UserMenu";
 import { DocumentProvider } from "./contexts/DocumentContext";
 import { UserProvider, useUser } from "./contexts/UserContext";
-import { ThemeModeProvider, useThemeMode } from "./contexts/ThemeModeContext";
-import FormstrLogo from "./assets/formstr-pages-logo.png";
+import { ThemeModeProvider } from "./contexts/ThemeModeContext";
 import DocPage from "./components/DocPage";
 import ArticleView from "./components/ArticleView";
 import { SharedPagesProvider } from "./contexts/SharedDocsContext";
@@ -34,9 +27,10 @@ import { PublishedProvider } from "./contexts/PublishedContext";
 import { BlossomProvider } from "./contexts/BlossomContext";
 import { MyFormsProvider } from "./contexts/MyFormsContext";
 import { useTextSuggest } from "./hooks/useTextSuggest";
-import type { TextSuggestHook } from "./hooks/useTextSuggest";
 
-const drawerWidth = 320;
+import AllPagesView from "./components/AllPagesView";
+
+const drawerWidth = 264;
 
 /* ── Route components ───────────────────────────────────── */
 
@@ -51,8 +45,7 @@ function ArticleViewWrapper() {
 }
 
 export function HomePage() {
-  const textSuggest = useOutletContext<TextSuggestHook>();
-  return <DocPage textSuggest={textSuggest} />;
+  return <AllPagesView />;
 }
 
 export function AboutPage() {
@@ -76,6 +69,8 @@ const router = createRouter([
     element: <AppLayout />,
     children: [
       { index: true, element: <HomePage /> },
+      { path: "new", element: <DocPageWrapper /> },
+      { path: "doc/new", element: <DocPageWrapper /> },
       { path: "doc/:naddr", element: <DocPageWrapper /> },
       { path: "article/:naddr", element: <ArticleViewWrapper /> },
       { path: "about", element: <AboutPage /> },
@@ -133,48 +128,19 @@ export default function App() {
 // the app root; here we just read/set the active theme id for the switcher.
 function AppLayout() {
   const [mobileOpen, setMobileOpen] = React.useState(false);
-  const { themeId, setThemeId } = useThemeMode();
   const isDesktop = useMediaQuery("(min-width:900px)");
   const textSuggest = useTextSuggest();
 
+  const outletContext = React.useMemo(
+    () => ({
+      textSuggest,
+      onOpenSidebar: () => setMobileOpen(true),
+    }),
+    [textSuggest],
+  );
+
   return (
     <>
-      {/* ===== TOP BAR ===== */}
-      <AppBar
-        position="fixed"
-        elevation={3}
-        sx={{
-          zIndex: (theme) => theme.zIndex.drawer + 1,
-          bgcolor: "background.paper",
-          color: "text.primary",
-          borderBottom: "1px solid rgba(0,0,0,0.08)",
-        }}
-      >
-        <Toolbar sx={{ display: "flex", justifyContent: "space-between" }}>
-          <Box sx={{ display: "flex", alignItems: "center", gap: 2 }}>
-            {!isDesktop && (
-              <IconButton
-                color="inherit"
-                edge="start"
-                onClick={() => setMobileOpen((prev) => !prev)}
-              >
-                <MenuIcon />
-              </IconButton>
-            )}
-
-            <img
-              src={FormstrLogo}
-              alt="Formstr Pages"
-              style={{ height: 36, width: "auto", borderRadius: 10 }}
-            />
-          </Box>
-
-          <Box sx={{ display: "flex", alignItems: "center", gap: 2 }}>
-            <UserMenu themeId={themeId} onSelectTheme={setThemeId} />
-          </Box>
-        </Toolbar>
-      </AppBar>
-
       {/* ===== SIDEBAR + MAIN CONTENT ===== */}
       <Box sx={{ display: "flex", height: "100%", overflow: "hidden" }}>
         {/* MOBILE DRAWER */}
@@ -184,17 +150,22 @@ function AppLayout() {
             onClose={() => setMobileOpen(false)}
             keepMounted
             sx={{
+              zIndex: 1600,
               "& .MuiDrawer-paper": {
                 width: drawerWidth,
                 bgcolor: "background.paper",
+                borderRadius: 0,
                 display: "flex",
                 flexDirection: "column",
+                borderRight: "1px solid",
+                borderColor: "divider",
+                backgroundImage: "none",
+                zIndex: 1600,
               },
             }}
           >
             <Box
               sx={{
-                mt: "64px",
                 flex: 1,
                 overflow: "hidden",
                 display: "flex",
@@ -218,14 +189,17 @@ function AppLayout() {
                 width: drawerWidth,
                 boxSizing: "border-box",
                 bgcolor: "background.paper",
+                borderRadius: 0,
                 display: "flex",
                 flexDirection: "column",
+                borderRight: "1px solid",
+                borderColor: "divider",
+                backgroundImage: "none",
               },
             }}
           >
             <Box
               sx={{
-                mt: "64px",
                 flex: 1,
                 overflow: "hidden",
                 display: "flex",
@@ -242,14 +216,14 @@ function AppLayout() {
           component="main"
           sx={{
             flexGrow: 1,
-            p: 3,
-            mt: "64px",
-            height: "calc(100% - 64px)",
+            p: 0,
+            height: "100%",
             overflow: "hidden",
             boxSizing: "border-box",
+            bgcolor: "background.default",
           }}
         >
-          <Outlet context={textSuggest} />
+          <Outlet context={outletContext} />
         </Box>
       </Box>
     </>

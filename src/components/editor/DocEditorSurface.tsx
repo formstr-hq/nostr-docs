@@ -169,7 +169,7 @@ export function DocEditorSurface({
   /* ── Preview mode ─────────────────────────────────────── */
   if (mode === "preview") {
     return (
-      <Box sx={{ display: "flex", flex: 1, overflow: "hidden" }}>
+      <Box sx={{ display: "flex", flex: 1, overflow: "hidden", bgcolor: "background.default" }}>
         <Box
           ref={previewRef}
           onClick={handleHighlightClick}
@@ -177,6 +177,7 @@ export function DocEditorSurface({
             flex: 1,
             overflowY: "auto",
             p: 3,
+            pb: 8,
             ...markdownSxBase,
             ...linkSx,
             color: theme.palette.text.primary,
@@ -258,13 +259,14 @@ export function DocEditorSurface({
     if (isMobile) return markdownPane;
 
     return (
-      <Box sx={{ display: "flex", flex: 1, overflow: "hidden" }}>
+      <Box sx={{ display: "flex", flex: 1, overflow: "hidden", bgcolor: "background.default" }}>
         {markdownPane}
         <Box
           sx={{
             flex: 1,
             overflowY: "auto",
             p: 3,
+            pb: 8,
             ...markdownSxBase,
             ...linkSx,
             color: theme.palette.text.primary,
@@ -291,9 +293,9 @@ export function DocEditorSurface({
   };
 
   return (
-    <Box sx={{ display: "flex", flex: 1, overflow: "hidden" }}>
+    <Box sx={{ display: "flex", flex: 1, overflow: "hidden", bgcolor: "background.default" }}>
       <Box
-        sx={{ flex: 1, overflowY: "auto", p: 3, cursor: "text" }}
+        sx={{ flex: 1, overflowY: "auto", p: { xs: 2, sm: 3 }, pb: { xs: 12, sm: 8 }, cursor: "text" }}
         onClick={handleEditorClick}
       >
         <EditorContent editor={editor} />

@@ -21,6 +21,7 @@ import EditOutlinedIcon from "@mui/icons-material/EditOutlined";
 import SmartphoneIcon from "@mui/icons-material/Smartphone";
 import ChatBubbleOutlineIcon from "@mui/icons-material/ChatBubbleOutline";
 import { useDocMetadata } from "../../contexts/DocMetadataContext";
+import { getDocumentTags } from "../AllPagesView";
 import { useNavigate, useBlocker } from "react-router-dom";
 import { finalizeEvent, getPublicKey, getEventHash, nip19, type Event } from "nostr-tools";
 import { hexToBytes } from "nostr-tools/utils";
@@ -128,12 +129,12 @@ function parseMarkdownDocument(editor: Editor, markdown: string): ProseMirrorNod
 
 function TagRow({ address }: { address: string }) {
   const { docTags, setDocTags } = useDocMetadata();
-  const tags = docTags.get(address) ?? [];
+  const tags = getDocumentTags(address, docTags);
   const [input, setInput] = useState("");
   const [saving, setSaving] = useState(false);
 
   const handleAdd = async () => {
-    const tag = input.trim().toLowerCase();
+    const tag = input.trim().toLowerCase().replace(/^#/, "");
     if (!tag || tags.includes(tag)) { setInput(""); return; }
     setSaving(true);
     try { await setDocTags(address, [...tags, tag]); }
@@ -211,10 +212,12 @@ export function DocumentEditorController({
   viewKey,
   editKey,
   textSuggest,
+  onOpenSidebar,
 }: {
   viewKey?: string;
   editKey?: string;
   textSuggest: TextSuggestHook;
+  onOpenSidebar?: () => void;
 }) {
   const {
     documents,
@@ -1343,13 +1346,12 @@ export function DocumentEditorController({
         display: "flex",
         flexDirection: "column",
         overflow: "hidden",
-        gap: 1,
+        bgcolor: "background.default",
         ...(focusMode && {
           position: "fixed",
           inset: 0,
           zIndex: 1300,
           bgcolor: "background.default",
-          p: 3,
         }),
       }}
     >
@@ -1361,11 +1363,10 @@ export function DocumentEditorController({
             justifyContent: "space-between",
             px: 2,
             py: 0.75,
-            borderRadius: 2,
             bgcolor: (t) => t.palette.mode === "dark"
               ? "rgba(255,255,255,0.05)"
               : "rgba(0,0,0,0.04)",
-            border: "1px solid",
+            borderBottom: "1px solid",
             borderColor: "divider",
             flexShrink: 0,
           }}
@@ -1393,11 +1394,10 @@ export function DocumentEditorController({
             justifyContent: "space-between",
             px: 2,
             py: 0.75,
-            borderRadius: 2,
             bgcolor: (t) => t.palette.mode === "dark"
               ? "rgba(255,255,255,0.05)"
               : "rgba(0,0,0,0.04)",
-            border: "1px solid",
+            borderBottom: "1px solid",
             borderColor: "divider",
             flexShrink: 0,
           }}
@@ -1418,79 +1418,83 @@ export function DocumentEditorController({
         </Box>
       )}
 
-      {!isViewOnly && !proofreadReview && (
-        <EditorToolbar
-          saving={saving}
-          mode={mode}
-          onSetMode={(newMode) => {
-            // Pre-sync TipTap before the re-render so that if onUpdate fires
-            // during EditorContent remount it fires with the correct content.
-            if (newMode === "edit" && editor) {
-              editor.commands.setContent(mdRef.current, { emitUpdate: false });
-            }
-            setMode(newMode);
-          }}
-          onSave={() => handleSave(false)}
-          handleDelete={handleDelete}
-          onShare={() => setShareOpen(true)}
-          versions={versions}
-          onSelectVersion={handleSelectVersion}
-          editor={editor}
-          focusMode={focusMode}
-          onToggleFocusMode={() => setFocusMode((f) => !f)}
-          isViewOnly={isViewOnly}
-          onAttachFile={(files) => Array.from(files).forEach(handleFileUpload)}
-          uploading={uploading}
-          isLocalOnly={isLocalOnly}
-          onToggleLocalOnly={handleToggleLocalOnly}
-          showLocalOnlyToggle={!viewKey && !editKey}
-          onExportMarkdown={handleExportMarkdown}
-          onExportHtml={handleExportHtml}
-          onExportPlainText={handleExportPlainText}
-          onExportPdf={handleExportPdf}
-          onExportDoc={handleExportDoc}
-          showComments={commentsEnabled ? showComments : undefined}
-          onToggleComments={commentsEnabled ? () => setShowComments((s) => !s) : undefined}
-          documentAddress={selectedDocumentId ?? undefined}
-          heuristicTitle={getDocTitle()}
-          hasEditKey={!!editKey}
-          textSuggestState={textSuggest.state}
-          textSuggestEnabled={textSuggest.prefs?.enabled ?? false}
-          onToggleTextSuggest={(next) => {
-            if (!textSuggest.prefs) return;
-            void textSuggest.updatePrefs({ ...textSuggest.prefs, enabled: next });
-          }}
-          onTextSuggestSettingsSaved={textSuggest.reload}
-          proofreadDocumentLength={md.length}
-          proofreadStatus={textSuggest.proofreadStatus}
-          onProofread={handleProofread}
-          onCancelProofread={cancelProofread}
-        />
-      )}
-      {isViewOnly && commentsEnabled && (
-        <Box sx={{ display: "flex", justifyContent: "flex-end", p: 1 }}>
-          <Tooltip title={showComments ? "Hide comments" : "Show comments"}>
-            <IconButton
-              size="small"
-              onClick={() => setShowComments((s) => !s)}
-              color={showComments ? "secondary" : "default"}
-            >
-              <ChatBubbleOutlineIcon fontSize="small" />
-            </IconButton>
-          </Tooltip>
-        </Box>
-      )}
-
       <Paper
+        elevation={0}
         sx={{
           flex: 1,
-          borderRadius: 3,
+          borderRadius: 0,
           overflow: "hidden",
-          bgcolor: "background.paper",
+          bgcolor: "background.default",
           display: "flex",
           flexDirection: "column",
+          border: "none",
+          backgroundImage: "none",
         }}
       >
+        {!isViewOnly && !proofreadReview && (
+          <EditorToolbar
+            saving={saving}
+            mode={mode}
+            onSetMode={(newMode) => {
+              // Pre-sync TipTap before the re-render so that if onUpdate fires
+              // during EditorContent remount it fires with the correct content.
+              if (newMode === "edit" && editor) {
+                editor.commands.setContent(mdRef.current, { emitUpdate: false });
+              }
+              setMode(newMode);
+            }}
+            onSave={() => handleSave(false)}
+            handleDelete={handleDelete}
+            onShare={() => setShareOpen(true)}
+            versions={versions}
+            onSelectVersion={handleSelectVersion}
+            editor={editor}
+            focusMode={focusMode}
+            onToggleFocusMode={() => setFocusMode((f) => !f)}
+            isViewOnly={isViewOnly}
+            onAttachFile={(files) => Array.from(files).forEach(handleFileUpload)}
+            uploading={uploading}
+            isLocalOnly={isLocalOnly}
+            onToggleLocalOnly={handleToggleLocalOnly}
+            showLocalOnlyToggle={!viewKey && !editKey}
+            onExportMarkdown={handleExportMarkdown}
+            onExportHtml={handleExportHtml}
+            onExportPlainText={handleExportPlainText}
+            onExportPdf={handleExportPdf}
+            onExportDoc={handleExportDoc}
+            showComments={commentsEnabled ? showComments : undefined}
+            onToggleComments={commentsEnabled ? () => setShowComments((s) => !s) : undefined}
+            documentAddress={selectedDocumentId ?? undefined}
+            heuristicTitle={getDocTitle()}
+            hasEditKey={!!editKey}
+            textSuggestState={textSuggest.state}
+            textSuggestEnabled={textSuggest.prefs?.enabled ?? false}
+            onToggleTextSuggest={(next) => {
+              if (!textSuggest.prefs) return;
+              void textSuggest.updatePrefs({ ...textSuggest.prefs, enabled: next });
+            }}
+            onTextSuggestSettingsSaved={() => void textSuggest.reload()}
+            proofreadDocumentLength={md.length}
+            proofreadStatus={textSuggest.proofreadStatus}
+            onProofread={handleProofread}
+            onCancelProofread={cancelProofread}
+            onOpenSidebar={onOpenSidebar}
+          />
+        )}
+        {isViewOnly && commentsEnabled && (
+          <Box sx={{ display: "flex", justifyContent: "flex-end", p: 1, borderBottom: "1px solid", borderColor: "divider" }}>
+            <Tooltip title={showComments ? "Hide comments" : "Show comments"}>
+              <IconButton
+                size="small"
+                onClick={() => setShowComments((s) => !s)}
+                color={showComments ? "secondary" : "default"}
+              >
+                <ChatBubbleOutlineIcon fontSize="small" />
+              </IconButton>
+            </Tooltip>
+          </Box>
+        )}
+
         {!isViewOnly && selectedDocumentId && (
           <TagRow address={selectedDocumentId} />
         )}
@@ -1532,8 +1536,12 @@ export function DocumentEditorController({
           justifyContent: "flex-end",
           alignItems: "center",
           gap: 2,
-          px: 1,
+          px: 2,
+          py: 0.5,
           flexShrink: 0,
+          bgcolor: "background.default",
+          borderTop: "1px solid",
+          borderColor: "divider",
         }}
       >
         {!isDraft && !isOwner && !!user && (
