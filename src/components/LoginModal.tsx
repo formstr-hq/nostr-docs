@@ -98,18 +98,36 @@ export default function LoginModal({
   const [installedSigners, setInstalledSigners] = useState<
     AndroidSignerAppInfo[]
   >([]);
+  // Browser NIP-55 (intents + clipboard). Resolved async because it goes
+  // through the lazily-constructed package signer; false until then.
+  const [canUseNip55Web, setCanUseNip55Web] = useState(false);
   const ncAbortRef = useRef<AbortController | null>(null);
 
   useEffect(() => {
-    if (!isCapacitor) return;
-    const loadSigners = async () => {
-      try {
-        setInstalledSigners(await signerManager.listNip55Apps());
-      } catch {
-        setInstalledSigners([]);
-      }
+    if (isCapacitor) {
+      const loadSigners = async () => {
+        try {
+          setInstalledSigners(await signerManager.listNip55Apps());
+        } catch {
+          setInstalledSigners([]);
+        }
+      };
+      loadSigners();
+      return;
+    }
+    // Not native: the browser NIP-55 row is offered only where it can work.
+    let cancelled = false;
+    signerManager
+      .supportsNip55Web()
+      .then((ok) => {
+        if (!cancelled) setCanUseNip55Web(ok);
+      })
+      .catch(() => {
+        if (!cancelled) setCanUseNip55Web(false);
+      });
+    return () => {
+      cancelled = true;
     };
-    loadSigners();
   }, []);
 
   // Abort any in-flight nostrconnect pairing and clear transient QR state.
@@ -171,6 +189,16 @@ export default function LoginModal({
     setError("");
     try {
       await signerManager.loginWithNip55(packageName);
+      handleClose();
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : "Signer sign-in failed");
+    }
+  };
+
+  const handleNip55Web = async () => {
+    setError("");
+    try {
+      await signerManager.loginWithNip55Web();
       handleClose();
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "Signer sign-in failed");
@@ -545,6 +573,18 @@ export default function LoginModal({
                     description="Alby, nos2x, Flamingo"
                     accent={theme.palette.secondary.main}
                     onClick={handleNip07}
+                  />
+                )}
+
+                {/* NIP-55 from the browser — Android web only, one-tap. In the
+                    native shell the Capacitor rows below take over. */}
+                {!isCapacitor && canUseNip55Web && (
+                  <MethodRow
+                    icon={<PhonelinkLockOutlinedIcon />}
+                    title="Signer App"
+                    description="Amber or another NIP-55 app on this device"
+                    accent={theme.palette.secondary.main}
+                    onClick={handleNip55Web}
                   />
                 )}
 

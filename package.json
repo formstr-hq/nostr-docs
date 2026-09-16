@@ -24,7 +24,7 @@
     "@emotion/react": "^11.14.0",
     "@emotion/styled": "^11.14.1",
     "@formstr/sdk": "^0.2.7",
-    "@formstr/signer": "^0.2.2",
+    "@formstr/signer": "^0.3.0",
     "@mui/icons-material": "^7.3.5",
     "@mui/material": "^7.3.5",
     "@tauri-apps/api": "^2.10.1",

@@ -253,6 +253,23 @@ class Signer {
     return pkg.listAndroidSignerApps();
   }
 
+  /**
+   * Browser NIP-55: pair with an Android signer app from the browser, with
+   * no Capacitor bridge. Only supported in an Android browser with clipboard
+   * access — see {@link supportsNip55Web}.
+   */
+  async loginWithNip55Web() {
+    const pkg = await getPkg();
+    const account = await pkg.loginWithNip55Web();
+    this.setFromPackage(pkg, account);
+  }
+
+  /** Whether the browser NIP-55 flow can run here (Android browser, not native). */
+  async supportsNip55Web(): Promise<boolean> {
+    const pkg = await getPkg();
+    return pkg.supportsNip55Web();
+  }
+
   // ── NIP-49 (passphrase-encrypted key) ──
 
   /**
