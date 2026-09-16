@@ -5,6 +5,7 @@ import type {
   ActiveSigner,
   AndroidSignerPlugin,
   AndroidSignerAppInfo,
+  Nip55WebSupport,
 } from "@formstr/signer";
 import type { NostrSigner, AccountSummary, AuthMethod } from "./types";
 import { isCapacitor } from "./secureStorage";
@@ -262,6 +263,15 @@ class Signer {
     const pkg = await getPkg();
     const account = await pkg.loginWithNip55Web();
     this.setFromPackage(pkg, account);
+  }
+
+  /**
+   * Whether to offer the browser NIP-55 row and whether to warn about it.
+   * Async here because the package signer is constructed lazily.
+   */
+  async nip55WebSupport(): Promise<Nip55WebSupport> {
+    const pkg = await getPkg();
+    return pkg.nip55WebSupport();
   }
 
   /** Whether the browser NIP-55 flow can run here (Android browser, not native). */

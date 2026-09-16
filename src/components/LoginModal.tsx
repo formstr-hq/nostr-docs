@@ -26,7 +26,7 @@ import ShieldOutlinedIcon from "@mui/icons-material/ShieldOutlined";
 import { useState, useEffect, useRef, type ReactNode } from "react";
 import QRCode from "qrcode";
 import { signerManager } from "../signer";
-import type { AndroidSignerAppInfo } from "@formstr/signer";
+import type { AndroidSignerAppInfo, Nip55WebSupport } from "@formstr/signer";
 import { isNativePlatform, isCapacitor } from "../signer/secureStorage";
 import FormstrLogo from "../assets/formstr-pages-logo.png";
 
@@ -99,8 +99,10 @@ export default function LoginModal({
     AndroidSignerAppInfo[]
   >([]);
   // Browser NIP-55 (intents + clipboard). Resolved async because it goes
-  // through the lazily-constructed package signer; false until then.
-  const [canUseNip55Web, setCanUseNip55Web] = useState(false);
+  // through the lazily-constructed package signer; hidden until resolved.
+  const [nip55Web, setNip55Web] = useState<Nip55WebSupport>({
+    visible: false,
+  });
   const ncAbortRef = useRef<AbortController | null>(null);
 
   useEffect(() => {
@@ -115,15 +117,16 @@ export default function LoginModal({
       loadSigners();
       return;
     }
-    // Not native: the browser NIP-55 row is offered only where it can work.
+    // Not native: offer the row where it can work, and carry the warning
+    // Firefox for Android needs (it cannot read the clipboard).
     let cancelled = false;
     signerManager
-      .supportsNip55Web()
-      .then((ok) => {
-        if (!cancelled) setCanUseNip55Web(ok);
+      .nip55WebSupport()
+      .then((status) => {
+        if (!cancelled) setNip55Web(status);
       })
       .catch(() => {
-        if (!cancelled) setCanUseNip55Web(false);
+        if (!cancelled) setNip55Web({ visible: false });
       });
     return () => {
       cancelled = true;
@@ -578,14 +581,21 @@ export default function LoginModal({
 
                 {/* NIP-55 from the browser — Android web only, one-tap. In the
                     native shell the Capacitor rows below take over. */}
-                {!isCapacitor && canUseNip55Web && (
-                  <MethodRow
-                    icon={<PhonelinkLockOutlinedIcon />}
-                    title="Signer App"
-                    description="Amber or another NIP-55 app on this device"
-                    accent={theme.palette.secondary.main}
-                    onClick={handleNip55Web}
-                  />
+                {!isCapacitor && nip55Web.visible && (
+                  <>
+                    <MethodRow
+                      icon={<PhonelinkLockOutlinedIcon />}
+                      title="Signer App"
+                      description="Amber or another NIP-55 app on this device"
+                      accent={theme.palette.secondary.main}
+                      onClick={handleNip55Web}
+                    />
+                    {nip55Web.warning && (
+                      <Alert severity="warning" sx={{ mb: 1 }}>
+                        {nip55Web.warning}
+                      </Alert>
+                    )}
+                  </>
                 )}
 
                 {/* NIP-55 external signers — Capacitor (Android) only, one-tap */}
