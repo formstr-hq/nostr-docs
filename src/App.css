@@ -42,16 +42,83 @@
   white-space: pre-wrap;
 }
 
-/* GGUF-powered typo suggestion. Tap/click the word to apply the replacement. */
-.ai-auto-correction {
-  text-decoration-line: underline;
-  text-decoration-style: wavy;
-  text-decoration-color: #d32f2f;
-  text-decoration-thickness: 1.5px;
-  text-underline-offset: 3px;
-  cursor: pointer;
-  touch-action: manipulation;
-  -webkit-tap-highlight-color: transparent;
+.ai-ghost-loading {
+  color: rgba(150, 150, 150, 0.7);
+  display: inline-block;
+  width: 1.25em;
+  height: 1em;
+  line-height: inherit;
+  vertical-align: baseline;
+  pointer-events: none;
+  user-select: none;
+  -webkit-user-select: none;
+  white-space: pre;
+}
+
+.ai-ghost-loading::after {
+  content: "...";
+  animation: ai-ghost-loading-dots 1.2s ease-in-out infinite;
+}
+
+@keyframes ai-ghost-loading-dots {
+  0%, 100% { opacity: 0.35; }
+  50% { opacity: 1; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ai-ghost-loading::after {
+    animation: none;
+    opacity: 1;
+  }
+}
+
+/* Bright border segment that travels around the proofreading panel while the
+   local model is generating a revision. The content stays completely still. */
+.proofread-border-orbit {
+  --proofread-border-angle: 0deg;
+  position: absolute;
+  inset: -1px;
+  z-index: 2;
+  color: currentColor;
+  border-radius: inherit;
+  padding: 2px;
+  pointer-events: none;
+  background: conic-gradient(
+    from var(--proofread-border-angle),
+    transparent 0deg,
+    transparent 292deg,
+    color-mix(in srgb, currentColor 18%, transparent) 316deg,
+    currentColor 340deg,
+    color-mix(in srgb, currentColor 50%, transparent) 350deg,
+    transparent 360deg
+  );
+  -webkit-mask:
+    linear-gradient(#fff 0 0) content-box,
+    linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask:
+    linear-gradient(#fff 0 0) content-box,
+    linear-gradient(#fff 0 0);
+  mask-composite: exclude;
+  animation: proofread-border-orbit 2s linear infinite;
+}
+
+@property --proofread-border-angle {
+  syntax: "<angle>";
+  initial-value: 0deg;
+  inherits: false;
+}
+
+@keyframes proofread-border-orbit {
+  to { --proofread-border-angle: 360deg; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .proofread-border-orbit {
+    --proofread-border-angle: 340deg;
+    background: currentColor;
+    animation: none;
+  }
 }
 
 .tiptap h1 { font-size: 2em;   font-weight: 800; margin: 0.5em 0; }

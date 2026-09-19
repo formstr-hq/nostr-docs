@@ -1,6 +1,7 @@
 import { Chip, Stack } from "@mui/material";
 import {
   checkLocalAIEnvironment,
+  isFirefoxRuntime,
   shouldUseWebGPUForLocalAI,
 } from "../../lib/textSuggest/environment";
 
@@ -38,7 +39,9 @@ export function RuntimeCapabilities() {
           }
           title={
             environment.hasWebGPU && !useWebGPU
-              ? "WebGPU is disabled on mobile for inference stability."
+              ? isFirefoxRuntime()
+                ? "WebGPU is disabled in Firefox for inference compatibility."
+                : "WebGPU is disabled on mobile for inference stability."
               : undefined
           }
         />

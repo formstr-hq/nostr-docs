@@ -8,21 +8,15 @@ import type {
   TextSuggestState,
 } from "../lib/textSuggest/types";
 import { useSuggestionRequest } from "./textSuggest/useSuggestionRequest";
-import { useCorrectionRequest } from "./textSuggest/useCorrectionRequest";
+import { useProofreadRequest } from "./textSuggest/useProofreadRequest";
 import type { UseTextSuggestReturn } from "./textSuggest/types";
 
 export type {
-  TextCorrection,
-  TextCorrectionRequest,
   TextSuggestion,
 } from "./textSuggest/types";
 
-function hasEnabledFeature(prefs: TextSuggestPrefs): boolean {
-  return prefs.enabled || prefs.autoCorrectEnabled;
-}
-
 function stateForPrefs(prefs: TextSuggestPrefs): TextSuggestState {
-  if (!hasEnabledFeature(prefs)) return { kind: "disabled" };
+  if (!prefs.enabled && !resolveActiveModel(prefs)) return { kind: "disabled" };
   return resolveActiveModel(prefs) ? { kind: "ready" } : { kind: "needs-setup" };
 }
 
@@ -31,7 +25,11 @@ export function useTextSuggest(): UseTextSuggestReturn {
   const [prefs, setPrefs] = useState<TextSuggestPrefs | null>(null);
   const prefsRef = useRef<TextSuggestPrefs | null>(null);
   const suggestionRequest = useSuggestionRequest({ prefsRef, setState });
-  const correctionRequest = useCorrectionRequest({ prefsRef, setState });
+  const proofreadRequest = useProofreadRequest({
+    prefsRef,
+    setState,
+    clearSuggestion: suggestionRequest.clearSuggestion,
+  });
 
   const applyPrefs = useCallback((next: TextSuggestPrefs) => {
     prefsRef.current = next;
@@ -71,7 +69,7 @@ export function useTextSuggest(): UseTextSuggestReturn {
     };
     const nextPrefs: TextSuggestPrefs = {
       ...currentPrefs,
-      enabled: currentPrefs.enabled || !currentPrefs.autoCorrectEnabled,
+      enabled: currentPrefs.enabled,
       models: [...currentPrefs.models, model],
       activeModelId: model.id,
     };
@@ -108,7 +106,6 @@ export function useTextSuggest(): UseTextSuggestReturn {
     const nextPrefs: TextSuggestPrefs = {
       ...currentPrefs,
       enabled: currentPrefs.enabled && models.length > 0,
-      autoCorrectEnabled: currentPrefs.autoCorrectEnabled && models.length > 0,
       models,
       activeModelId: models[0]?.id ?? null,
     };
@@ -124,7 +121,7 @@ export function useTextSuggest(): UseTextSuggestReturn {
     state,
     prefs,
     ...suggestionRequest,
-    ...correctionRequest,
+    ...proofreadRequest,
     reload,
     updatePrefs,
     loadModelFromFile,

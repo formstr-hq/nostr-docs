@@ -54,6 +54,7 @@ import type { Editor } from "@tiptap/react";
 import DictationButton from "../dictation/DictationButton";
 import TextSuggestButton from "../textSuggest/TextSuggestButton";
 import type { TextSuggestState } from "../../lib/textSuggest/types";
+import type { ProofreadStatus } from "../../hooks/textSuggest/useProofreadRequest";
 
 type EditorMode = "edit" | "preview" | "split";
 
@@ -93,7 +94,11 @@ type Props = {
   textSuggestState?: TextSuggestState;
   textSuggestEnabled?: boolean;
   onToggleTextSuggest?: (next: boolean) => void;
-  onTextSuggestSettingsSaved?: () => void;
+  onTextSuggestSettingsSaved?: () => void | Promise<void>;
+  proofreadDocumentLength?: number;
+  proofreadStatus?: ProofreadStatus;
+  onProofread?: (instruction: string) => Promise<void>;
+  onCancelProofread?: () => void;
 };
 
 export function EditorToolbar({
@@ -128,6 +133,10 @@ export function EditorToolbar({
   textSuggestEnabled = false,
   onToggleTextSuggest,
   onTextSuggestSettingsSaved,
+  proofreadDocumentLength = 0,
+  proofreadStatus = { kind: "idle" },
+  onProofread,
+  onCancelProofread,
 }: Props) {
   const { user, loginModal } = useUser();
   const [menuAnchor, setMenuAnchor] = useState<null | HTMLElement>(null);
@@ -804,6 +813,10 @@ export function EditorToolbar({
                 state={textSuggestState}
                 enabled={textSuggestEnabled}
                 onSettingsSaved={onTextSuggestSettingsSaved ?? (() => {})}
+                documentLength={proofreadDocumentLength}
+                proofreadStatus={proofreadStatus}
+                onProofread={onProofread ?? (async () => {})}
+                onCancelProofread={onCancelProofread ?? (() => {})}
               />
             )}
 
