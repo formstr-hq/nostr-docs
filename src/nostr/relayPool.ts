@@ -18,6 +18,7 @@ const relayOverride = import.meta.env.VITE_DEFAULT_RELAYS as string | undefined;
 export const DEFAULT_RELAYS = relayOverride
   ? relayOverride.split(",").map((r) => r.trim()).filter(Boolean)
   : [
+      "wss://relay.formstr.app",
       "wss://relay.damus.io",
       "wss://relay.primal.net",
       "wss://nos.lol",
