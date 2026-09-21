@@ -38,6 +38,7 @@ const METHOD_LABEL: Record<AuthMethod, string> = {
   extension: "Browser extension",
   nip46: "Remote signer",
   android: "Android signer",
+  "nip55-web": "Signer app",
   ncryptsec: "Passphrase key",
 };
 

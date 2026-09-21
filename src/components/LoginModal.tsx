@@ -26,7 +26,7 @@ import ShieldOutlinedIcon from "@mui/icons-material/ShieldOutlined";
 import { useState, useEffect, useRef, type ReactNode } from "react";
 import QRCode from "qrcode";
 import { signerManager } from "../signer";
-import type { AndroidSignerAppInfo } from "@formstr/signer";
+import type { AndroidSignerAppInfo, Nip55WebSupport } from "@formstr/signer";
 import { isNativePlatform, isCapacitor } from "../signer/secureStorage";
 import FormstrLogo from "../assets/formstr-pages-logo.png";
 
@@ -98,18 +98,39 @@ export default function LoginModal({
   const [installedSigners, setInstalledSigners] = useState<
     AndroidSignerAppInfo[]
   >([]);
+  // Browser NIP-55 (intents + clipboard). Resolved async because it goes
+  // through the lazily-constructed package signer; hidden until resolved.
+  const [nip55Web, setNip55Web] = useState<Nip55WebSupport>({
+    visible: false,
+  });
   const ncAbortRef = useRef<AbortController | null>(null);
 
   useEffect(() => {
-    if (!isCapacitor) return;
-    const loadSigners = async () => {
-      try {
-        setInstalledSigners(await signerManager.listNip55Apps());
-      } catch {
-        setInstalledSigners([]);
-      }
+    if (isCapacitor) {
+      const loadSigners = async () => {
+        try {
+          setInstalledSigners(await signerManager.listNip55Apps());
+        } catch {
+          setInstalledSigners([]);
+        }
+      };
+      loadSigners();
+      return;
+    }
+    // Not native: offer the row where it can work, and carry the warning
+    // Firefox for Android needs (it cannot read the clipboard).
+    let cancelled = false;
+    signerManager
+      .nip55WebSupport()
+      .then((status) => {
+        if (!cancelled) setNip55Web(status);
+      })
+      .catch(() => {
+        if (!cancelled) setNip55Web({ visible: false });
+      });
+    return () => {
+      cancelled = true;
     };
-    loadSigners();
   }, []);
 
   // Abort any in-flight nostrconnect pairing and clear transient QR state.
@@ -171,6 +192,16 @@ export default function LoginModal({
     setError("");
     try {
       await signerManager.loginWithNip55(packageName);
+      handleClose();
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : "Signer sign-in failed");
+    }
+  };
+
+  const handleNip55Web = async () => {
+    setError("");
+    try {
+      await signerManager.loginWithNip55Web();
       handleClose();
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "Signer sign-in failed");
@@ -546,6 +577,25 @@ export default function LoginModal({
                     accent={theme.palette.secondary.main}
                     onClick={handleNip07}
                   />
+                )}
+
+                {/* NIP-55 from the browser — Android web only, one-tap. In the
+                    native shell the Capacitor rows below take over. */}
+                {!isCapacitor && nip55Web.visible && (
+                  <>
+                    <MethodRow
+                      icon={<PhonelinkLockOutlinedIcon />}
+                      title="Signer App"
+                      description="Amber or another NIP-55 app on this device"
+                      accent={theme.palette.secondary.main}
+                      onClick={handleNip55Web}
+                    />
+                    {nip55Web.warning && (
+                      <Alert severity="warning" sx={{ mb: 1 }}>
+                        {nip55Web.warning}
+                      </Alert>
+                    )}
+                  </>
                 )}
 
                 {/* NIP-55 external signers — Capacitor (Android) only, one-tap */}
