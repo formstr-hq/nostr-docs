@@ -53,6 +53,12 @@ export const ThemeModeProvider: React.FC<{ children: React.ReactNode }> = ({
         <CssBaseline />
         <GlobalStyles
           styles={(t) => ({
+            body: {
+              fontFamily: t.typography.fontFamily,
+            },
+            ".tiptap": {
+              fontFamily: t.typography.fontFamily,
+            },
             ":root": {
               "--comment-highlight-color": alpha(t.palette.secondary.main, 0.4),
             },

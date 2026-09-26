@@ -169,25 +169,33 @@ export default function UserMenu({
         slotProps={{
           paper: {
             sx: {
-              borderRadius: 1.5,
+              borderRadius: "10px",
               border: "1px solid",
-              borderColor: (t) => alpha(t.palette.text.primary, 0.06),
+              borderColor: (t) => alpha(t.palette.text.primary, 0.08),
               backgroundImage: "none",
               backdropFilter: "blur(12px)",
-              minWidth: 228,
-              maxWidth: 260,
+              width: 216,
+              maxWidth: 216,
               maxHeight: "calc(100dvh - 32px)",
-              overflowY: "auto",
+              overflow: "hidden",
               bgcolor: (t) => alpha(t.palette.background.paper, 0.95),
               mt: triggerMode === "avatar" ? 1 : 0,
               mb: triggerMode === "avatar" ? 0 : 1,
               "& .MuiList-root": {
-                pt: 0,
-                pb: 0.5,
+                p: 0,
+                maxHeight: "calc(100dvh - 32px)",
+                overflowY: "auto",
+              },
+              "& .MuiMenuItem-root": {
+                borderRadius: 0,
               },
               "& .MuiMenuItem-root:first-of-type": {
-                borderTopLeftRadius: "10px",
-                borderTopRightRadius: "10px",
+                borderTopLeftRadius: "inherit",
+                borderTopRightRadius: "inherit",
+              },
+              "& .MuiMenuItem-root:last-of-type": {
+                borderBottomLeftRadius: "inherit",
+                borderBottomRightRadius: "inherit",
               },
             },
           },
@@ -205,24 +213,32 @@ export default function UserMenu({
                   if (!isActive) switchAccount(acct.pubkey);
                   handleClose();
                 }}
-                sx={{ pr: 1 }}
+                sx={{ px: 1.25, py: 0.75 }}
               >
-                <ListItemIcon>
+                <ListItemIcon sx={{ minWidth: 26, mr: 0.75 }}>
                   <NostrAvatar
                     user={acct}
-                    size={26}
+                    size={24}
                     fallbackText={(acct.name?.[0] || acct.pubkey.slice(0, 2)).toUpperCase()}
                   />
                 </ListItemIcon>
                 <ListItemText
                   primary={accountLabel(acct.pubkey, acct.name)}
                   secondary={METHOD_LABEL[acct.method]}
-                  secondaryTypographyProps={{ variant: "caption" }}
+                  primaryTypographyProps={{
+                    noWrap: true,
+                    sx: { fontSize: "0.82rem", fontWeight: 600 },
+                  }}
+                  secondaryTypographyProps={{
+                    noWrap: true,
+                    variant: "caption",
+                    sx: { fontSize: "0.68rem" },
+                  }}
+                  sx={{ minWidth: 0, my: 0 }}
                 />
                 {isActive && (
                   <CheckIcon
-                    fontSize="small"
-                    sx={{ ml: 1, mr: 0.5, opacity: 0.7 }}
+                    sx={{ fontSize: 16, opacity: 0.75, ml: 0.5, flexShrink: 0 }}
                   />
                 )}
                 <IconButton
@@ -232,15 +248,16 @@ export default function UserMenu({
                     e.stopPropagation();
                     logout(acct.pubkey);
                   }}
+                  sx={{ p: 0.25, ml: 0.25, flexShrink: 0 }}
                 >
-                  <LogoutIcon fontSize="small" />
+                  <LogoutIcon sx={{ fontSize: 16 }} />
                 </IconButton>
               </MenuItem>
             );
           })
         ) : (
-          <MenuItem disabled sx={{ opacity: "1 !important" }}>
-            <Typography variant="body2" color="text.secondary">
+          <MenuItem disabled sx={{ opacity: "1 !important", px: 1.25, py: 0.75 }}>
+            <Typography variant="body2" color="text.secondary" sx={{ fontSize: "0.82rem" }}>
               Not logged in
             </Typography>
           </MenuItem>
@@ -253,14 +270,17 @@ export default function UserMenu({
               unlock();
               handleClose();
             }}
+            sx={{ px: 1.25, py: 0.6 }}
           >
-            <ListItemIcon>
+            <ListItemIcon sx={{ minWidth: 26, mr: 0.75 }}>
               <LockOpenOutlinedIcon fontSize="small" color="primary" />
             </ListItemIcon>
             <ListItemText
               primary="Unlock"
-              secondary="Enter your passphrase"
-              secondaryTypographyProps={{ variant: "caption" }}
+              secondary="Enter passphrase"
+              primaryTypographyProps={{ noWrap: true, sx: { fontSize: "0.82rem" } }}
+              secondaryTypographyProps={{ noWrap: true, variant: "caption", sx: { fontSize: "0.68rem" } }}
+              sx={{ minWidth: 0, my: 0 }}
             />
           </MenuItem>
         )}
@@ -271,15 +291,20 @@ export default function UserMenu({
             addAccount();
             handleClose();
           }}
+          sx={{ px: 1.25, py: 0.6 }}
         >
-          <ListItemIcon>
+          <ListItemIcon sx={{ minWidth: 26, mr: 0.75 }}>
             {accounts.length > 0 ? (
               <PersonAddAltOutlinedIcon fontSize="small" />
             ) : (
               <LoginIcon fontSize="small" />
             )}
           </ListItemIcon>
-          <ListItemText primary={accounts.length > 0 ? "Add account" : "Login"} />
+          <ListItemText
+            primary={accounts.length > 0 ? "Add account" : "Login"}
+            primaryTypographyProps={{ sx: { fontSize: "0.82rem" } }}
+            sx={{ minWidth: 0, my: 0 }}
+          />
         </MenuItem>
 
         <Divider />
@@ -290,19 +315,22 @@ export default function UserMenu({
             setThemeDialogOpen(true);
             handleClose();
           }}
+          sx={{ px: 1.25, py: 0.6 }}
         >
-          <ListItemIcon>
+          <ListItemIcon sx={{ minWidth: 26, mr: 0.75 }}>
             <PaletteIcon fontSize="small" />
           </ListItemIcon>
           <ListItemText
             primary="Theme"
             secondary={themes[themeId].label}
-            secondaryTypographyProps={{ variant: "caption" }}
+            primaryTypographyProps={{ noWrap: true, sx: { fontSize: "0.82rem" } }}
+            secondaryTypographyProps={{ noWrap: true, variant: "caption", sx: { fontSize: "0.68rem" } }}
+            sx={{ minWidth: 0, my: 0 }}
           />
           <Box
             sx={{
-              width: 24,
-              height: 15,
+              width: 22,
+              height: 14,
               borderRadius: "4px",
               overflow: "hidden",
               border: "1px solid rgba(128,128,128,0.3)",
@@ -322,14 +350,17 @@ export default function UserMenu({
             setBlossomOpen(true);
             handleClose();
           }}
+          sx={{ px: 1.25, py: 0.6 }}
         >
-          <ListItemIcon>
+          <ListItemIcon sx={{ minWidth: 26, mr: 0.75 }}>
             <CloudUploadIcon fontSize="small" />
           </ListItemIcon>
           <ListItemText
             primary="Blossom Servers"
             secondary="File upload servers"
-            secondaryTypographyProps={{ variant: "caption" }}
+            primaryTypographyProps={{ noWrap: true, sx: { fontSize: "0.82rem" } }}
+            secondaryTypographyProps={{ noWrap: true, variant: "caption", sx: { fontSize: "0.68rem" } }}
+            sx={{ minWidth: 0, my: 0 }}
           />
         </MenuItem>
 
@@ -339,14 +370,17 @@ export default function UserMenu({
             setDictationOpen(true);
             handleClose();
           }}
+          sx={{ px: 1.25, py: 0.6 }}
         >
-          <ListItemIcon>
+          <ListItemIcon sx={{ minWidth: 26, mr: 0.75 }}>
             <MicIcon fontSize="small" />
           </ListItemIcon>
           <ListItemText
             primary="Dictation"
             secondary="On-device voice typing"
-            secondaryTypographyProps={{ variant: "caption" }}
+            primaryTypographyProps={{ noWrap: true, sx: { fontSize: "0.82rem" } }}
+            secondaryTypographyProps={{ noWrap: true, variant: "caption", sx: { fontSize: "0.68rem" } }}
+            sx={{ minWidth: 0, my: 0 }}
           />
         </MenuItem>
       </Menu>

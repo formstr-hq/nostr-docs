@@ -5,7 +5,7 @@ import { fetchDocumentByNaddr } from "../nostr/fetchFile";
 import { useRelays } from "../contexts/RelayContext";
 import { nip19 } from "nostr-tools";
 import { decodeNKeys } from "../utils/nkeys";
-import type { TextSuggestHook } from "../hooks/useTextSuggest";
+import { useTextSuggest, type TextSuggestHook } from "../hooks/useTextSuggest";
 import { DocumentEditorController } from "./editor/DocEditorController";
 import { storeLocalEvent } from "../lib/localStore";
 import { useUser } from "../contexts/UserContext";
@@ -17,9 +17,9 @@ export default function DocPage({
 }) {
   const { naddr } = useParams<{ naddr: string }>();
   const location = useLocation();
-  const outletCtx = useOutletContext<{ textSuggest?: TextSuggestHook; onOpenSidebar?: () => void }>();
-  const textSuggest = textSuggestOverride ?? outletCtx?.textSuggest ?? (outletCtx as any);
-  const onOpenSidebar = outletCtx?.onOpenSidebar;
+  const outletCtx = useOutletContext<{ textSuggest?: TextSuggestHook } | null>();
+  const fallbackTextSuggest = useTextSuggest();
+  const textSuggest = textSuggestOverride ?? outletCtx?.textSuggest ?? fallbackTextSuggest;
   const { documents, setSelectedDocumentId, addDocument } =
     useDocumentContext();
   const { relays } = useRelays();
@@ -141,7 +141,6 @@ export default function DocPage({
       viewKey={decodedKeys.viewKey}
       editKey={decodedKeys.editKey}
       textSuggest={textSuggest}
-      onOpenSidebar={onOpenSidebar}
     />
   );
 }

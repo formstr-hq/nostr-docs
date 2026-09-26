@@ -127,14 +127,12 @@ export default function App() {
 // and in any descendant. The theme itself is provided by ThemeModeProvider at
 // the app root; here we just read/set the active theme id for the switcher.
 function AppLayout() {
-  const [mobileOpen, setMobileOpen] = React.useState(false);
   const isDesktop = useMediaQuery("(min-width:900px)");
   const textSuggest = useTextSuggest();
 
   const outletContext = React.useMemo(
     () => ({
       textSuggest,
-      onOpenSidebar: () => setMobileOpen(true),
     }),
     [textSuggest],
   );
@@ -143,40 +141,6 @@ function AppLayout() {
     <>
       {/* ===== SIDEBAR + MAIN CONTENT ===== */}
       <Box sx={{ display: "flex", height: "100%", overflow: "hidden" }}>
-        {/* MOBILE DRAWER */}
-        {!isDesktop && (
-          <Drawer
-            open={mobileOpen}
-            onClose={() => setMobileOpen(false)}
-            keepMounted
-            sx={{
-              zIndex: 1600,
-              "& .MuiDrawer-paper": {
-                width: drawerWidth,
-                bgcolor: "background.paper",
-                borderRadius: 0,
-                display: "flex",
-                flexDirection: "column",
-                borderRight: "1px solid",
-                borderColor: "divider",
-                backgroundImage: "none",
-                zIndex: 1600,
-              },
-            }}
-          >
-            <Box
-              sx={{
-                flex: 1,
-                overflow: "hidden",
-                display: "flex",
-                flexDirection: "column",
-              }}
-            >
-              <DocumentList onEdit={() => setMobileOpen(false)} />
-            </Box>
-          </Drawer>
-        )}
-
         {/* DESKTOP DRAWER */}
         {isDesktop && (
           <Drawer

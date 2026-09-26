@@ -9,21 +9,32 @@ import {
   TextField,
   InputAdornment,
   IconButton,
+  Menu,
+  MenuItem,
+  SwipeableDrawer,
+  ListItemButton,
+  Divider,
 } from "@mui/material";
 import AddIcon from "@mui/icons-material/Add";
-import DescriptionOutlinedIcon from "@mui/icons-material/DescriptionOutlined";
+import LockOutlinedIcon from "@mui/icons-material/LockOutlined";
+import GroupOutlinedIcon from "@mui/icons-material/GroupOutlined";
 import PublicOutlinedIcon from "@mui/icons-material/PublicOutlined";
+import SmartphoneOutlinedIcon from "@mui/icons-material/SmartphoneOutlined";
 import SearchIcon from "@mui/icons-material/Search";
 import CloseIcon from "@mui/icons-material/Close";
-import MenuIcon from "@mui/icons-material/Menu";
-import FormstrLogo from "../assets/formstr-pages-logo.svg";
+import SortIcon from "@mui/icons-material/Sort";
+import KeyboardArrowDownIcon from "@mui/icons-material/KeyboardArrowDown";
+import KeyboardArrowUpIcon from "@mui/icons-material/KeyboardArrowUp";
+import CheckIcon from "@mui/icons-material/Check";
+import FormstrLogo from "../assets/formstr-pages-logo.png";
 import UserMenu from "./UserMenu";
+import TrashDialog from "./TrashDialog";
+import { loadTrashedEvents } from "../lib/localStore";
 import { useDocumentContext } from "../contexts/DocumentContext";
 import { useSharedPages } from "../contexts/SharedDocsContext";
 import { usePublished } from "../contexts/PublishedContext";
 import { useDocMetadata } from "../contexts/DocMetadataContext";
-import { useRelays } from "../contexts/RelayContext";
-import { useLocation, useNavigate, useOutletContext } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import { nip19, type Event } from "nostr-tools";
 import { encodeNKeys } from "../utils/nkeys";
 import { getEventAddress } from "../utils/helpers";
@@ -111,22 +122,32 @@ export function getDocumentTags(
   return Array.from(tagSet);
 }
 
+type SortOption = "last_edited" | "title" | "date_created";
+
 export default function AllPagesView() {
   const {
     visibleDocuments,
     visitedDocuments,
     setSelectedDocumentId,
+    localOnlyAddresses,
   } = useDocumentContext();
   const { sharedDocuments, getKeys } = useSharedPages();
   const { publishedDocuments } = usePublished();
   const { docTitles, docTags, selectedTag, setSelectedTag } = useDocMetadata();
-  const { relays } = useRelays();
   const navigate = useNavigate();
   const location = useLocation();
-  const outletCtx = useOutletContext<{ onOpenSidebar?: () => void }>() || {};
-  const onOpenSidebar = outletCtx?.onOpenSidebar;
 
   const [activeCategory, setActiveCategory] = useState<string>("all");
+  const [workspaceDrawerOpen, setWorkspaceDrawerOpen] = useState(false);
+  const [trashOpen, setTrashOpen] = useState(false);
+  const [trashCount, setTrashCount] = useState(0);
+
+  useEffect(() => {
+    loadTrashedEvents().then((items) => setTrashCount(items.length)).catch(() => {});
+  }, []);
+
+  const [sortBy, setSortBy] = useState<SortOption>("last_edited");
+  const [sortAnchorEl, setSortAnchorEl] = useState<null | HTMLElement>(null);
   const [query, setQuery] = useState("");
   const searchRef = useRef<HTMLInputElement>(null);
 
@@ -150,16 +171,13 @@ export default function AllPagesView() {
   useEffect(() => {
     const params = new URLSearchParams(location.search);
     const workspaceFilter = params.get("workspace") ?? "all";
-    const tagFilter = params.get("tag");
+    const rawTag = params.get("tag") ?? params.get("tags") ?? null;
+    const cleanTag = rawTag ? rawTag.trim().toLowerCase().replace(/^#/, "") : null;
 
-    if (["all", "personal", "shared", "published"].includes(workspaceFilter)) {
+    if (["all", "device", "personal", "shared", "published"].includes(workspaceFilter)) {
       setActiveCategory(workspaceFilter);
     }
-    if (tagFilter) {
-      setSelectedTag(tagFilter.trim().toLowerCase().replace(/^#/, ""));
-    } else {
-      setSelectedTag(null);
-    }
+    setSelectedTag(cleanTag);
   }, [location.search, setSelectedTag]);
 
   const visitedOnly = useMemo(() => {
@@ -206,19 +224,9 @@ export default function AllPagesView() {
     navigate("/new");
   };
 
-  const handleWorkspaceSelect = (catId: string) => {
-    setActiveCategory(catId);
-    setSelectedTag(null);
-    const params = new URLSearchParams();
-    if (catId !== "all") params.set("workspace", catId);
-    const searchStr = params.toString();
-    navigate(searchStr ? `/?${searchStr}` : "/");
-  };
-
   const handleTagClick = (tag: string) => {
     const norm = tag.trim().toLowerCase().replace(/^#/, "");
-    const currentNorm = selectedTag?.trim().toLowerCase().replace(/^#/, "");
-    const nextTag = currentNorm === norm ? null : norm;
+    const nextTag = selectedTag?.toLowerCase() === norm ? null : norm;
     setSelectedTag(nextTag);
     const params = new URLSearchParams(location.search);
     if (nextTag) {
@@ -226,6 +234,16 @@ export default function AllPagesView() {
     } else {
       params.delete("tag");
     }
+    params.delete("tags");
+    const searchStr = params.toString();
+    navigate(searchStr ? `/?${searchStr}` : "/", { replace: true });
+  };
+
+  const handleClearTag = () => {
+    setSelectedTag(null);
+    const params = new URLSearchParams(location.search);
+    params.delete("tag");
+    params.delete("tags");
     const searchStr = params.toString();
     navigate(searchStr ? `/?${searchStr}` : "/", { replace: true });
   };
@@ -262,12 +280,16 @@ export default function AllPagesView() {
   // Documents belonging to the current workspace
   const workspaceItems = useMemo(() => {
     return allItems.filter((item) => {
-      if (activeCategory === "personal") return item.origin === "personal";
+      const isLocal =
+        item.origin === "personal" &&
+        (localOnlyAddresses.has(item.address) || !item.history.versions.at(-1)?.event.sig);
+      if (activeCategory === "device") return isLocal;
+      if (activeCategory === "personal") return item.origin === "personal" && !isLocal;
       if (activeCategory === "shared") return item.origin === "shared" || item.origin === "visited";
       if (activeCategory === "published") return item.origin === "published";
       return true; // 'all'
     });
-  }, [allItems, activeCategory]);
+  }, [allItems, activeCategory, localOnlyAddresses]);
 
   // Workspace-specific tags only!
   const workspaceTags = useMemo(() => {
@@ -290,19 +312,17 @@ export default function AllPagesView() {
     query,
   );
 
-  // Filter items by tag and search query within current workspace
+  // Filter items by tag and search query within current workspace, and apply sort
   const filteredItems = useMemo(() => {
     const queryMatches = new Set(
       (searchHits ?? []).map((hit) => hit.address),
     );
 
-    const cleanSelected = selectedTag ? selectedTag.trim().toLowerCase().replace(/^#/, "") : null;
-
-    return workspaceItems.filter((item) => {
-      if (cleanSelected) {
+    const items = workspaceItems.filter((item) => {
+      if (selectedTag) {
         const itemTags = getDocumentTags(item.address, docTags, item.history);
         const cleanItemTags = itemTags.map((t) => t.trim().toLowerCase().replace(/^#/, ""));
-        if (!cleanItemTags.includes(cleanSelected)) {
+        if (!cleanItemTags.includes(selectedTag.toLowerCase())) {
           return false;
         }
       }
@@ -313,12 +333,43 @@ export default function AllPagesView() {
 
       return true;
     });
-  }, [workspaceItems, selectedTag, docTags, query, searchHits]);
+
+    return items.sort((a, b) => {
+      if (sortBy === "title") {
+        const getTitle = (item: DocItem) => {
+          const latest = item.history.versions.at(-1);
+          if (!latest) return "";
+          const customTitle = docTitles.get(item.address);
+          const titleTag = latest.event.tags.find((t) => t[0] === "title")?.[1];
+          return (
+            customTitle ||
+            titleTag ||
+            heuristicTitle(latest.decryptedContent ?? "", 40) ||
+            "Untitled"
+          ).toLowerCase();
+        };
+        return getTitle(a).localeCompare(getTitle(b));
+      }
+
+      if (sortBy === "date_created") {
+        const aFirst = a.history.versions.at(0)?.event.created_at ?? 0;
+        const bFirst = b.history.versions.at(0)?.event.created_at ?? 0;
+        return bFirst - aFirst;
+      }
+
+      // Default: "last_edited" (newest update first)
+      const aTime = a.history.versions.at(-1)?.event.created_at ?? 0;
+      const bTime = b.history.versions.at(-1)?.event.created_at ?? 0;
+      return bTime - aTime;
+    });
+  }, [workspaceItems, selectedTag, docTags, query, searchHits, sortBy, docTitles]);
 
   const totalCount = filteredItems.length;
 
   const headerTitle =
-    activeCategory === "personal"
+    activeCategory === "device"
+      ? "Device"
+      : activeCategory === "personal"
       ? "Personal"
       : activeCategory === "shared"
       ? "Shared with me"
@@ -334,7 +385,7 @@ export default function AllPagesView() {
         overflowY: "auto",
         pt: { xs: 0, md: 6 },
         px: { xs: 2.5, sm: 3, md: 4 },
-        pb: { xs: 6, sm: 5 },
+        pb: { xs: 12, md: 5 },
         boxSizing: "border-box",
         display: "flex",
         flexDirection: "column",
@@ -347,9 +398,9 @@ export default function AllPagesView() {
           display: { xs: "flex", md: "none" },
           alignItems: "center",
           justifyContent: "space-between",
-          px: { xs: 2, sm: 2.5 },
-          py: 1.25,
-          minHeight: 58,
+          px: { xs: 2.5, sm: 3 },
+          py: 1.5,
+          minHeight: 66,
           position: "sticky",
           top: 0,
           zIndex: 100,
@@ -361,53 +412,32 @@ export default function AllPagesView() {
           mb: { xs: 0.5, md: 0 },
         }}
       >
-        <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
-          {onOpenSidebar && (
-            <IconButton
-              size="small"
-              aria-label="Open sidebar menu"
-              onClick={onOpenSidebar}
-              sx={{
-                p: 0.75,
-                borderRadius: 1.25,
-                border: "none",
-                color: "text.primary",
-                "&:hover": {
-                  bgcolor: (t) => alpha(t.palette.text.primary, 0.06),
-                },
-              }}
-            >
-              <MenuIcon sx={{ fontSize: 22 }} />
-            </IconButton>
-          )}
-
-          <Box
-            onClick={() => navigate("/")}
+        <Box
+          onClick={() => navigate("/")}
+          sx={{
+            display: "flex",
+            alignItems: "center",
+            gap: 1.25,
+            cursor: "pointer",
+            userSelect: "none",
+          }}
+        >
+          <img
+            src={FormstrLogo}
+            alt="Pages"
+            style={{ height: 34, width: 34, objectFit: "contain" }}
+          />
+          <Typography
+            variant="subtitle1"
             sx={{
-              display: "flex",
-              alignItems: "center",
-              gap: 1,
-              cursor: "pointer",
-              userSelect: "none",
+              fontWeight: 700,
+              fontSize: "1.18rem",
+              color: "text.primary",
+              letterSpacing: "-0.015em",
             }}
           >
-            <img
-              src={FormstrLogo}
-              alt="Pages"
-              style={{ height: 28, width: 28, objectFit: "contain" }}
-            />
-            <Typography
-              variant="subtitle1"
-              sx={{
-                fontWeight: 700,
-                fontSize: "1.05rem",
-                color: "text.primary",
-                letterSpacing: "-0.01em",
-              }}
-            >
-              Pages
-            </Typography>
-          </Box>
+            Pages
+          </Typography>
         </Box>
 
         <Box sx={{ display: "flex", alignItems: "center" }}>
@@ -438,61 +468,17 @@ export default function AllPagesView() {
             >
               {headerTitle}
             </Typography>
-
-            {selectedTag && (
-              <Chip
-                label={`#${selectedTag}`}
-                onDelete={() => handleTagClick(selectedTag)}
-                color="secondary"
-                size="small"
-                sx={{
-                  fontWeight: 700,
-                  fontSize: "0.78rem",
-                  borderRadius: 1,
-                }}
-              />
-            )}
           </Box>
           <Box
             sx={{
               display: "flex",
               alignItems: "center",
-              gap: 0.75,
-              flexWrap: "wrap",
               mt: 0.75,
               color: "text.secondary",
               fontSize: "0.84rem",
             }}
           >
             <span>{totalCount} {totalCount === 1 ? "page" : "pages"}</span>
-            <span>·</span>
-            <span>synced across {relays.length} relays</span>
-            <Box sx={{ display: "inline-flex", alignItems: "center", gap: 0.4, ml: 0.25 }}>
-              <Box
-                sx={{
-                  width: 6,
-                  height: 6,
-                  borderRadius: "50%",
-                  bgcolor: "#34D399",
-                }}
-              />
-              <Box
-                sx={{
-                  width: 6,
-                  height: 6,
-                  borderRadius: "50%",
-                  bgcolor: "#34D399",
-                }}
-              />
-              <Box
-                sx={{
-                  width: 6,
-                  height: 6,
-                  borderRadius: "50%",
-                  bgcolor: "#34D399",
-                }}
-              />
-            </Box>
           </Box>
         </Box>
 
@@ -519,137 +505,211 @@ export default function AllPagesView() {
 
       {/* ── Search & Workspace-scoped Tags ────────────────── */}
       <Box sx={{ display: "flex", flexDirection: "column", gap: 1.5 }}>
-        {/* Search */}
-        <TextField
-          inputRef={searchRef}
-          fullWidth
-          placeholder="Search pages…"
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          InputProps={{
-            startAdornment: (
-              <InputAdornment position="start" sx={{ mr: 1.25, ml: 0.5 }}>
-                <SearchIcon
-                  sx={{
-                    fontSize: 20,
-                    color: query ? "secondary.main" : "text.secondary",
-                    opacity: query ? 1 : 0.65,
-                    transition: "color 0.15s ease, opacity 0.15s ease",
-                  }}
-                />
-              </InputAdornment>
-            ),
-            endAdornment: query ? (
-              <InputAdornment position="end" sx={{ mr: 0.5 }}>
-                <IconButton
-                  size="small"
-                  onClick={() => {
-                    setQuery("");
-                    searchRef.current?.focus();
-                  }}
-                  sx={{
-                    p: 0.35,
-                    color: "text.secondary",
-                    "&:hover": { color: "text.primary" },
-                  }}
-                >
-                  <CloseIcon sx={{ fontSize: 16 }} />
-                </IconButton>
-              </InputAdornment>
-            ) : null,
-            sx: {
-              fontSize: "0.88rem",
+        {/* Search & Sort Filters */}
+        <Box sx={{ display: "flex", gap: 1.25, alignItems: "center" }}>
+          <TextField
+            inputRef={searchRef}
+            fullWidth
+            placeholder="Search pages…"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            InputProps={{
+              startAdornment: (
+                <InputAdornment position="start" sx={{ mr: 1.25, ml: 0.5 }}>
+                  <SearchIcon
+                    sx={{
+                      fontSize: 20,
+                      color: query ? "secondary.main" : "text.secondary",
+                      opacity: query ? 1 : 0.65,
+                      transition: "color 0.15s ease, opacity 0.15s ease",
+                    }}
+                  />
+                </InputAdornment>
+              ),
+              endAdornment: query ? (
+                <InputAdornment position="end" sx={{ mr: 0.5 }}>
+                  <IconButton
+                    size="small"
+                    onClick={() => {
+                      setQuery("");
+                      searchRef.current?.focus();
+                    }}
+                    sx={{
+                      p: 0.35,
+                      color: "text.secondary",
+                      "&:hover": { color: "text.primary" },
+                    }}
+                  >
+                    <CloseIcon sx={{ fontSize: 16 }} />
+                  </IconButton>
+                </InputAdornment>
+              ) : null,
+              sx: {
+                fontSize: "0.88rem",
+                borderRadius: 1.5,
+                bgcolor: (t) => alpha(t.palette.background.paper, 0.6),
+                backdropFilter: "blur(8px)",
+                "& fieldset": {
+                  borderColor: (t) => alpha(t.palette.text.primary, 0.08),
+                  transition: "all 0.18s ease",
+                },
+                "&:hover fieldset": {
+                  borderColor: (t) => `${alpha(t.palette.secondary.main, 0.35)} !important`,
+                },
+                "&.Mui-focused": {
+                  boxShadow: (t) => `0 0 0 3px ${alpha(t.palette.secondary.main, 0.15)}`,
+                },
+                "&.Mui-focused fieldset": {
+                  borderColor: (t) => `${t.palette.secondary.main} !important`,
+                  borderWidth: "1px !important",
+                },
+                py: 0,
+                height: 48,
+                transition: "box-shadow 0.18s ease",
+              },
+            }}
+          />
+
+          {/* Sort Filter Dropdown */}
+          <Button
+            variant="outlined"
+            onClick={(e) => setSortAnchorEl(e.currentTarget)}
+            startIcon={<SortIcon sx={{ fontSize: 18 }} />}
+            endIcon={<KeyboardArrowDownIcon sx={{ fontSize: 18 }} />}
+            sx={{
+              height: 48,
+              px: { xs: 1.5, sm: 2 },
               borderRadius: 1.5,
+              borderColor: (t) => alpha(t.palette.text.primary, 0.08),
               bgcolor: (t) => alpha(t.palette.background.paper, 0.6),
               backdropFilter: "blur(8px)",
-              "& fieldset": {
-                borderColor: (t) => alpha(t.palette.text.primary, 0.08),
-                transition: "all 0.18s ease",
-              },
-              "&:hover fieldset": {
+              color: "text.primary",
+              textTransform: "none",
+              fontWeight: 600,
+              fontSize: "0.84rem",
+              whiteSpace: "nowrap",
+              flexShrink: 0,
+              "&:hover": {
                 borderColor: (t) => `${alpha(t.palette.secondary.main, 0.35)} !important`,
+                bgcolor: (t) => alpha(t.palette.background.paper, 0.8),
               },
-              "&.Mui-focused": {
-                boxShadow: (t) => `0 0 0 3px ${alpha(t.palette.secondary.main, 0.15)}`,
-              },
-              "&.Mui-focused fieldset": {
-                borderColor: (t) => `${t.palette.secondary.main} !important`,
-                borderWidth: "1px !important",
-              },
-              py: 0,
-              height: 48,
-              transition: "box-shadow 0.18s ease",
-            },
-          }}
-        />
+            }}
+          >
+            <Box component="span" sx={{ display: { xs: "none", sm: "inline" } }}>
+              {sortBy === "last_edited"
+                ? "Last edited"
+                : sortBy === "title"
+                ? "Title, A–Z"
+                : "Date created"}
+            </Box>
+          </Button>
 
-        {/* Workspace Pills */}
-        <Box
-          sx={{
-            display: "flex",
-            gap: 1,
-            alignItems: "center",
-            overflowX: "auto",
-            flexWrap: { xs: "nowrap", sm: "wrap" },
-            pb: { xs: 0.5, sm: 0 },
-            scrollbarWidth: "none",
-            "&::-webkit-scrollbar": { display: "none" },
-            "& > *": { flexShrink: 0 },
-          }}
-        >
-          {[
-            { id: "all", label: "All" },
-            { id: "personal", label: "Personal" },
-            { id: "shared", label: "Shared with me" },
-            { id: "published", label: "Published" },
-          ].map((cat) => {
-            const isActive = activeCategory === cat.id;
-            return (
-              <Button
-                key={cat.id}
-                size="small"
-                onClick={() => handleWorkspaceSelect(cat.id)}
-                sx={{
-                  borderRadius: 1,
-                  px: 1.75,
-                  py: 0.5,
-                  fontSize: "0.8rem",
-                  fontWeight: isActive ? 700 : 500,
-                  bgcolor: isActive
-                    ? (t) => t.palette.secondary.main
-                    : (t) => alpha(t.palette.text.primary, 0.04),
-                  color: isActive ? "secondary.contrastText" : "text.primary",
+          <Menu
+            anchorEl={sortAnchorEl}
+            open={Boolean(sortAnchorEl)}
+            onClose={() => setSortAnchorEl(null)}
+            anchorOrigin={{ vertical: "bottom", horizontal: "right" }}
+            transformOrigin={{ vertical: "top", horizontal: "right" }}
+            slotProps={{
+              paper: {
+                sx: {
+                  mt: 1,
+                  minWidth: 170,
+                  borderRadius: 2,
+                  bgcolor: (t) =>
+                    t.palette.mode === "dark"
+                      ? alpha(t.palette.background.paper, 0.95)
+                      : t.palette.background.paper,
+                  backdropFilter: "blur(16px)",
                   border: "1px solid",
-                  borderColor: isActive
-                    ? "transparent"
-                    : (t) => alpha(t.palette.text.primary, 0.08),
-                  "&:hover": {
-                    bgcolor: isActive
+                  borderColor: "divider",
+                  boxShadow: (t) => `0 8px 32px ${alpha(t.palette.common.black, 0.35)}`,
+                  p: 0.75,
+                },
+              },
+            }}
+          >
+            {[
+              { id: "last_edited", label: "Last edited" },
+              { id: "title", label: "Title, A–Z" },
+              { id: "date_created", label: "Date created" },
+            ].map((option) => {
+              const isSelected = sortBy === option.id;
+              return (
+                <MenuItem
+                  key={option.id}
+                  onClick={() => {
+                    setSortBy(option.id as SortOption);
+                    setSortAnchorEl(null);
+                  }}
+                  sx={{
+                    borderRadius: 1.25,
+                    py: 1,
+                    px: 1.5,
+                    my: 0.25,
+                    fontSize: "0.84rem",
+                    fontWeight: isSelected ? 700 : 500,
+                    bgcolor: isSelected
                       ? (t) => t.palette.secondary.main
-                      : (t) => alpha(t.palette.text.primary, 0.08),
-                  },
-                }}
-              >
-                {cat.label}
-              </Button>
-            );
-          })}
+                      : "transparent",
+                    color: isSelected ? "secondary.contrastText" : "text.primary",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 1,
+                    "&:hover": {
+                      bgcolor: isSelected
+                        ? (t) => t.palette.secondary.main
+                        : (t) => alpha(t.palette.text.primary, 0.06),
+                    },
+                  }}
+                >
+                  {isSelected ? (
+                    <CheckIcon sx={{ fontSize: 16, color: "inherit" }} />
+                  ) : (
+                    <Box sx={{ width: 16 }} />
+                  )}
+                  {option.label}
+                </MenuItem>
+              );
+            })}
+          </Menu>
         </Box>
 
         {/* Workspace-scoped Tags */}
         <Box sx={{ display: "flex", flexDirection: "column", gap: 0.75 }}>
-          <Typography
-            variant="caption"
-            sx={{
-              fontWeight: 700,
-              letterSpacing: "0.08em",
-              textTransform: "uppercase",
-              color: "text.disabled",
-              fontSize: "0.68rem",
-            }}
-          >
-            Tags {workspaceTags.length > 0 ? `(${workspaceTags.length})` : ""}
-          </Typography>
+          <Box sx={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+            <Typography
+              variant="caption"
+              sx={{
+                fontWeight: 700,
+                letterSpacing: "0.08em",
+                textTransform: "uppercase",
+                color: "text.disabled",
+                fontSize: "0.68rem",
+              }}
+            >
+              Tags {workspaceTags.length > 0 ? `(${workspaceTags.length})` : ""}
+            </Typography>
+            {selectedTag && (
+              <Button
+                size="small"
+                onClick={handleClearTag}
+                sx={{
+                  fontSize: "0.68rem",
+                  py: 0,
+                  px: 0.75,
+                  minWidth: 0,
+                  height: 20,
+                  textTransform: "none",
+                  fontWeight: 600,
+                  color: "text.secondary",
+                  "&:hover": { color: "secondary.main" },
+                }}
+              >
+                Clear
+              </Button>
+            )}
+          </Box>
           {workspaceTags.length > 0 ? (
             <Box
               sx={{
@@ -665,7 +725,8 @@ export default function AllPagesView() {
               }}
             >
               {workspaceTags.map((tag) => {
-                const isSelected = selectedTag?.toLowerCase() === tag.toLowerCase();
+                const normTag = tag.trim().toLowerCase().replace(/^#/, "");
+                const isSelected = selectedTag?.toLowerCase() === normTag;
                 return (
                   <Chip
                     key={tag}
@@ -725,8 +786,10 @@ export default function AllPagesView() {
 
           const isPublic = origin === "published";
           const isShared = origin === "shared" || origin === "visited";
-          const badgeLabel = isPublic ? "PUBLIC" : isShared ? "SHARED" : "PRIVATE";
-          const badgeColor = isPublic ? "#10B981" : isShared ? "#8B5CF6" : "#71717A";
+          const isLocal =
+            origin === "personal" &&
+            (localOnlyAddresses.has(address) || !event.sig);
+          const isRelaySynced = !isLocal;
           const itemTags = getDocumentTags(address, docTags, history);
 
           return (
@@ -752,7 +815,7 @@ export default function AllPagesView() {
                 },
               }}
             >
-              {/* Card Top: Icon + Badge */}
+              {/* Card Top: Status Icon */}
               <Box
                 sx={{
                   display: "flex",
@@ -760,41 +823,49 @@ export default function AllPagesView() {
                   justifyContent: "space-between",
                 }}
               >
-                <Box
-                  sx={{
-                    width: 32,
-                    height: 32,
-                    borderRadius: 1,
-                    bgcolor: (t) => alpha(t.palette.text.primary, 0.05),
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    color: "text.secondary",
-                  }}
+                <Tooltip
+                  title={
+                    isPublic
+                      ? "Public"
+                      : isShared
+                      ? "Shared with me"
+                      : isLocal
+                      ? "Device only"
+                      : "Private"
+                  }
                 >
-                  {isPublic ? (
-                    <PublicOutlinedIcon sx={{ fontSize: 18, color: "#10B981" }} />
-                  ) : (
-                    <DescriptionOutlinedIcon sx={{ fontSize: 18 }} />
-                  )}
-                </Box>
-
-                <Box
-                  sx={{
-                    fontSize: "0.62rem",
-                    fontWeight: 700,
-                    letterSpacing: "0.04em",
-                    px: 1,
-                    py: 0.25,
-                    borderRadius: 0.75,
-                    border: `1px solid ${alpha(badgeColor, 0.3)}`,
-                    bgcolor: alpha(badgeColor, 0.08),
-                    color: badgeColor,
-                    textTransform: "uppercase",
-                  }}
-                >
-                  {badgeLabel}
-                </Box>
+                  <Box
+                    sx={{
+                      width: 32,
+                      height: 32,
+                      borderRadius: 1,
+                      bgcolor: (t) =>
+                        isPublic
+                          ? alpha("#10B981", 0.08)
+                          : isShared
+                          ? alpha(t.palette.secondary.main, 0.08)
+                          : alpha(t.palette.text.primary, 0.05),
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      color: isPublic
+                        ? "#10B981"
+                        : isShared
+                        ? "secondary.main"
+                        : "text.secondary",
+                    }}
+                  >
+                    {isPublic ? (
+                      <PublicOutlinedIcon sx={{ fontSize: 18, color: "inherit" }} />
+                    ) : isShared ? (
+                      <GroupOutlinedIcon sx={{ fontSize: 18, color: "inherit" }} />
+                    ) : isLocal ? (
+                      <SmartphoneOutlinedIcon sx={{ fontSize: 18, color: "inherit" }} />
+                    ) : (
+                      <LockOutlinedIcon sx={{ fontSize: 18, color: "inherit" }} />
+                    )}
+                  </Box>
+                </Tooltip>
               </Box>
 
               {/* Card Middle: Title & Tags */}
@@ -819,7 +890,8 @@ export default function AllPagesView() {
                 {itemTags.length > 0 && (
                   <Box sx={{ display: "flex", gap: 0.5, flexWrap: "wrap" }}>
                     {itemTags.slice(0, 3).map((t) => {
-                      const isTagActive = selectedTag?.toLowerCase() === t.toLowerCase();
+                      const normT = t.trim().toLowerCase().replace(/^#/, "");
+                      const isTagActive = selectedTag?.toLowerCase() === normT;
                       return (
                         <Chip
                           key={t}
@@ -864,12 +936,14 @@ export default function AllPagesView() {
                 }}
               >
                 <span>{formatRelativeTime(event.created_at)}</span>
-                <Tooltip title="Synced">
-                  <Box sx={{ display: "inline-flex", alignItems: "center", gap: 0.3 }}>
-                    <Box sx={{ width: 4, height: 4, borderRadius: "50%", bgcolor: "#34D399" }} />
-                    <Box sx={{ width: 4, height: 4, borderRadius: "50%", bgcolor: "#34D399" }} />
-                  </Box>
-                </Tooltip>
+                {isRelaySynced && (
+                  <Tooltip title="Synced to relays">
+                    <Box sx={{ display: "inline-flex", alignItems: "center", gap: 0.3 }}>
+                      <Box sx={{ width: 4, height: 4, borderRadius: "50%", bgcolor: "#34D399" }} />
+                      <Box sx={{ width: 4, height: 4, borderRadius: "50%", bgcolor: "#34D399" }} />
+                    </Box>
+                  </Tooltip>
+                )}
               </Box>
             </Box>
           );
@@ -917,6 +991,302 @@ export default function AllPagesView() {
           </Typography>
         </Box>
       </Box>
+
+      {/* ── Mobile Persistent Bottom Workspace Bar (Tap or swipe up to switch workspace) ── */}
+      <Box
+        onClick={() => setWorkspaceDrawerOpen(true)}
+        sx={{
+          display: { xs: "flex", md: "none" },
+          position: "fixed",
+          bottom: 0,
+          left: 0,
+          right: 0,
+          zIndex: 1000,
+          bgcolor: (t) => alpha(t.palette.background.paper, 0.96),
+          backdropFilter: "blur(16px)",
+          borderTop: "1px solid",
+          borderColor: "divider",
+          px: 2.5,
+          pt: 1.5,
+          pb: "calc(12px + env(safe-area-inset-bottom, 0px))",
+          alignItems: "center",
+          justifyContent: "space-between",
+          cursor: "pointer",
+          userSelect: "none",
+          transition: "background-color 0.15s ease",
+          "&:active": {
+            bgcolor: (t) => alpha(t.palette.background.paper, 0.8),
+          },
+        }}
+      >
+        {/* Grab handle indicator */}
+        <Box
+          sx={{
+            position: "absolute",
+            top: 5,
+            left: "50%",
+            transform: "translateX(-50%)",
+            width: 36,
+            height: 3.5,
+            borderRadius: 2,
+            bgcolor: (t) => alpha(t.palette.text.primary, 0.25),
+          }}
+        />
+
+        <Box sx={{ display: "flex", alignItems: "center", gap: 1.25 }}>
+          <Box
+            sx={{
+              width: 7,
+              height: 7,
+              borderRadius: "50%",
+              bgcolor: "secondary.main",
+            }}
+          />
+          <Typography
+            variant="body2"
+            sx={{
+              fontWeight: 700,
+              fontSize: "0.85rem",
+              color: "text.primary",
+            }}
+          >
+            {headerTitle}
+          </Typography>
+          <Typography
+            variant="caption"
+            sx={{
+              color: "text.secondary",
+              fontWeight: 500,
+              fontSize: "0.78rem",
+            }}
+          >
+            ({totalCount})
+          </Typography>
+        </Box>
+
+        <Box sx={{ display: "flex", alignItems: "center", gap: 0.5, color: "text.secondary" }}>
+          <Typography variant="caption" sx={{ fontSize: "0.78rem", fontWeight: 600 }}>
+            Workspaces
+          </Typography>
+          <KeyboardArrowUpIcon sx={{ fontSize: 18 }} />
+        </Box>
+      </Box>
+
+      {/* ── Mobile Workspace Bottom Sheet ── */}
+      <SwipeableDrawer
+        anchor="bottom"
+        open={workspaceDrawerOpen}
+        onClose={() => setWorkspaceDrawerOpen(false)}
+        onOpen={() => setWorkspaceDrawerOpen(true)}
+        disableSwipeToOpen={false}
+        slotProps={{
+          paper: {
+            sx: {
+              borderRadius: "20px 20px 0 0",
+              borderTopLeftRadius: "20px",
+              borderTopRightRadius: "20px",
+              borderBottomLeftRadius: 0,
+              borderBottomRightRadius: 0,
+              borderTop: "1px solid",
+              borderColor: "divider",
+              backgroundImage: "none",
+              bgcolor: "background.paper",
+              p: 2.5,
+              pb: "calc(20px + env(safe-area-inset-bottom, 0px))",
+              maxHeight: "80vh",
+              boxSizing: "border-box",
+            },
+          },
+        }}
+      >
+        {/* Pull handle indicator */}
+        <Box
+          sx={{
+            width: 36,
+            height: 4,
+            borderRadius: 2,
+            bgcolor: (t) => alpha(t.palette.text.primary, 0.2),
+            mx: "auto",
+            mb: 2,
+          }}
+        />
+
+        {/* Drawer Title */}
+        <Box
+          sx={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            px: 1,
+            mb: 1.5,
+          }}
+        >
+          <Typography
+            variant="caption"
+            sx={{
+              fontWeight: 700,
+              fontSize: "0.75rem",
+              textTransform: "uppercase",
+              letterSpacing: "0.08em",
+              color: "text.disabled",
+            }}
+          >
+            Workspace
+          </Typography>
+          <IconButton
+            size="small"
+            onClick={() => setWorkspaceDrawerOpen(false)}
+            sx={{ color: "text.secondary", p: 0.5 }}
+          >
+            <CloseIcon sx={{ fontSize: 18 }} />
+          </IconButton>
+        </Box>
+
+        {/* Workspace Items */}
+        <Box sx={{ display: "flex", flexDirection: "column", gap: 0.5 }}>
+          {[
+            { id: "all", label: "All pages" },
+            { id: "device", label: "Device" },
+            { id: "personal", label: "Personal" },
+            { id: "shared", label: "Shared with me" },
+            { id: "published", label: "Published" },
+          ].map((item) => {
+            const isSelected = activeCategory === item.id && !selectedTag;
+            return (
+              <ListItemButton
+                key={item.id}
+                onClick={() => {
+                  setActiveCategory(item.id);
+                  setSelectedTag(null);
+                  const params = new URLSearchParams(location.search);
+                  if (item.id === "all") {
+                    params.delete("workspace");
+                  } else {
+                    params.set("workspace", item.id);
+                  }
+                  params.delete("tag");
+                  params.delete("tags");
+                  const searchStr = params.toString();
+                  navigate(searchStr ? `/?${searchStr}` : "/", { replace: true });
+                  setWorkspaceDrawerOpen(false);
+                }}
+                sx={{
+                  borderRadius: 1.5,
+                  py: 1,
+                  px: 1.5,
+                  bgcolor: isSelected
+                    ? (t) => alpha(t.palette.secondary.main, 0.15)
+                    : "transparent",
+                  color: isSelected ? "secondary.main" : "text.primary",
+                  "&:hover": {
+                    bgcolor: (t) => alpha(t.palette.secondary.main, 0.08),
+                  },
+                }}
+              >
+                <Box
+                  sx={{
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "space-between",
+                    width: "100%",
+                  }}
+                >
+                  <Box sx={{ display: "flex", alignItems: "center", gap: 1.5 }}>
+                    <Box
+                      sx={{
+                        width: 8,
+                        height: 8,
+                        borderRadius: "50%",
+                        bgcolor: isSelected
+                          ? "secondary.main"
+                          : (t) => alpha(t.palette.text.primary, 0.3),
+                      }}
+                    />
+                    <Typography
+                      variant="body2"
+                      sx={{ fontWeight: isSelected ? 700 : 500, fontSize: "0.9rem" }}
+                    >
+                      {item.label}
+                    </Typography>
+                  </Box>
+
+                  {isSelected && (
+                    <CheckIcon sx={{ fontSize: 18, color: "secondary.main" }} />
+                  )}
+                </Box>
+              </ListItemButton>
+            );
+          })}
+
+          <Divider sx={{ my: 1, borderColor: "divider" }} />
+
+          {/* Trash option */}
+          <ListItemButton
+            onClick={() => {
+              setWorkspaceDrawerOpen(false);
+              setTrashOpen(true);
+            }}
+            sx={{
+              borderRadius: 1.5,
+              py: 1,
+              px: 1.5,
+              color: "text.secondary",
+              "&:hover": {
+                bgcolor: (t) => alpha(t.palette.secondary.main, 0.08),
+                color: "text.primary",
+              },
+            }}
+          >
+            <Box
+              sx={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                width: "100%",
+              }}
+            >
+              <Box sx={{ display: "flex", alignItems: "center", gap: 1.5 }}>
+                <Box
+                  sx={{
+                    width: 8,
+                    height: 8,
+                    borderRadius: "50%",
+                    bgcolor: (t) => alpha(t.palette.text.primary, 0.3),
+                  }}
+                />
+                <Typography variant="body2" sx={{ fontWeight: 500, fontSize: "0.9rem" }}>
+                  Trash
+                </Typography>
+              </Box>
+
+              {trashCount > 0 && (
+                <Chip
+                  label={trashCount}
+                  size="small"
+                  sx={{
+                    height: 18,
+                    fontSize: "0.68rem",
+                    bgcolor: (t) => alpha(t.palette.text.primary, 0.08),
+                    color: "text.secondary",
+                    fontWeight: 600,
+                  }}
+                />
+              )}
+            </Box>
+          </ListItemButton>
+        </Box>
+      </SwipeableDrawer>
+
+      {/* ── Trash Dialog ── */}
+      <TrashDialog
+        open={trashOpen}
+        onClose={() => {
+          setTrashOpen(false);
+          loadTrashedEvents()
+            .then((items) => setTrashCount(items.length))
+            .catch(() => {});
+        }}
+      />
     </Box>
   );
 }

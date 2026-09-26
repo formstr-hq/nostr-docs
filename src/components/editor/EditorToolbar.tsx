@@ -16,10 +16,12 @@ import VpnKeyIcon from "@mui/icons-material/VpnKey";
 import EditIcon from "@mui/icons-material/Edit";
 import VisibilityIcon from "@mui/icons-material/Visibility";
 import EditNoteIcon from "@mui/icons-material/EditNote";
+import ArrowBackIcon from "@mui/icons-material/ArrowBack";
 import MoreVertIcon from "@mui/icons-material/MoreVert";
-import MenuIcon from "@mui/icons-material/Menu";
 import DeleteIcon from "@mui/icons-material/Delete";
 import ShareIcon from "@mui/icons-material/Share";
+import ChevronRightIcon from "@mui/icons-material/ChevronRight";
+import { useNavigate } from "react-router-dom";
 import CloudOffIcon from "@mui/icons-material/CloudOff";
 import SmartphoneIcon from "@mui/icons-material/Smartphone";
 import ChatBubbleOutlineIcon from "@mui/icons-material/ChatBubbleOutline";
@@ -140,8 +142,8 @@ export function EditorToolbar({
   proofreadStatus = { kind: "idle" },
   onProofread,
   onCancelProofread,
-  onOpenSidebar,
 }: Props) {
+  const navigate = useNavigate();
   const { user, loginModal } = useUser();
   const { relays } = useRelays();
   const [menuAnchor, setMenuAnchor] = useState<null | HTMLElement>(null);
@@ -192,24 +194,23 @@ export function EditorToolbar({
           flexShrink: 0,
         }}
       >
-        {/* Left: Breadcrumbs / Title + Mobile Menu Toggle */}
+        {/* Left: Breadcrumbs / Title + Mobile Back */}
         <Box sx={{ display: "flex", alignItems: "center", gap: 1, flex: 1, minWidth: 0 }}>
-          {onOpenSidebar && (
-            <IconButton
-              size="small"
-              aria-label="Open sidebar menu"
-              onClick={onOpenSidebar}
-              sx={{
-                display: { xs: "inline-flex", md: "none" },
-                p: 0.5,
-                borderRadius: 1,
-                color: "text.primary",
-                flexShrink: 0,
-              }}
-            >
-              <MenuIcon sx={{ fontSize: 20 }} />
-            </IconButton>
-          )}
+          <IconButton
+            size="small"
+            aria-label="Back to pages"
+            onClick={() => navigate("/")}
+            sx={{
+              display: { xs: "inline-flex", md: "none" },
+              p: 0.5,
+              borderRadius: 1,
+              color: "text.secondary",
+              "&:hover": { color: "text.primary" },
+              flexShrink: 0,
+            }}
+          >
+            <ArrowBackIcon sx={{ fontSize: 20 }} />
+          </IconButton>
 
           {documentAddress ? (
             <ToolbarTitle
@@ -260,28 +261,27 @@ export function EditorToolbar({
             {focusMode ? "Exit Focus" : "Focus"}
           </Button>
 
-          {/* Relay Sync Dots & Count */}
+          {/* Relay Sync Dots */}
           <Tooltip title={`Connected to ${relays.length || 3} relays`}>
             <Box
               sx={{
-                display: { xs: "none", md: "flex" },
+                display: { xs: "none", sm: "flex" },
                 alignItems: "center",
-                gap: 0.6,
-                color: "text.secondary",
-                fontSize: "0.78rem",
                 cursor: "default",
                 userSelect: "none",
-                px: 0.5,
+                px: 0.75,
+                py: 0.5,
+                borderRadius: 1,
+                "&:hover": {
+                  bgcolor: (t) => alpha(t.palette.text.primary, 0.04),
+                },
               }}
             >
-              <Box sx={{ display: "inline-flex", alignItems: "center", gap: 0.35 }}>
-                <Box sx={{ width: 5, height: 5, borderRadius: "50%", bgcolor: "#34D399" }} />
-                <Box sx={{ width: 5, height: 5, borderRadius: "50%", bgcolor: "#34D399" }} />
-                <Box sx={{ width: 5, height: 5, borderRadius: "50%", bgcolor: "text.disabled", opacity: 0.5 }} />
+              <Box sx={{ display: "inline-flex", alignItems: "center", gap: 0.4 }}>
+                <Box sx={{ width: 5.5, height: 5.5, borderRadius: "50%", bgcolor: "#34D399" }} />
+                <Box sx={{ width: 5.5, height: 5.5, borderRadius: "50%", bgcolor: "#34D399" }} />
+                <Box sx={{ width: 5.5, height: 5.5, borderRadius: "50%", bgcolor: "text.disabled", opacity: 0.5 }} />
               </Box>
-              <Typography variant="caption" sx={{ color: "text.secondary", fontSize: "0.78rem" }}>
-                {relays.length || 3} relays
-              </Typography>
             </Box>
           </Tooltip>
 
@@ -384,6 +384,14 @@ export function EditorToolbar({
             anchorEl={menuAnchor}
             open={menuOpen}
             onClose={() => setMenuAnchor(null)}
+            slotProps={{
+              paper: {
+                sx: {
+                  minWidth: 200,
+                  p: 0.5,
+                },
+              },
+            }}
           >
             {/* Mode items */}
             {!isViewOnly && (
@@ -398,7 +406,10 @@ export function EditorToolbar({
                   <ListItemIcon>
                     <EditIcon fontSize="small" />
                   </ListItemIcon>
-                  <ListItemText primary="Visual editor" />
+                  <ListItemText
+                    primary="Visual editor"
+                    primaryTypographyProps={{ fontSize: "0.84rem", fontWeight: 500 }}
+                  />
                 </MenuItem>
                 <MenuItem
                   selected={mode === "split"}
@@ -410,7 +421,10 @@ export function EditorToolbar({
                   <ListItemIcon>
                     <EditNoteIcon fontSize="small" />
                   </ListItemIcon>
-                  <ListItemText primary="Markdown source" />
+                  <ListItemText
+                    primary="Markdown source"
+                    primaryTypographyProps={{ fontSize: "0.84rem", fontWeight: 500 }}
+                  />
                 </MenuItem>
                 <MenuItem
                   selected={mode === "preview"}
@@ -422,9 +436,12 @@ export function EditorToolbar({
                   <ListItemIcon>
                     <VisibilityIcon fontSize="small" />
                   </ListItemIcon>
-                  <ListItemText primary="Rendered preview" />
+                  <ListItemText
+                    primary="Rendered preview"
+                    primaryTypographyProps={{ fontSize: "0.84rem", fontWeight: 500 }}
+                  />
                 </MenuItem>
-                <Divider />
+                <Divider sx={{ my: 0.5 }} />
               </>
             )}
 
@@ -441,6 +458,7 @@ export function EditorToolbar({
                 </ListItemIcon>
                 <ListItemText
                   primary={showComments ? "Hide Comments" : "Show Comments"}
+                  primaryTypographyProps={{ fontSize: "0.84rem", fontWeight: 500 }}
                 />
               </MenuItem>
             )}
@@ -454,7 +472,10 @@ export function EditorToolbar({
               <ListItemIcon>
                 <ShareIcon fontSize="small" />
               </ListItemIcon>
-              <ListItemText primary="Share" />
+              <ListItemText
+                primary="Share"
+                primaryTypographyProps={{ fontSize: "0.84rem", fontWeight: 500 }}
+              />
             </MenuItem>
 
             <MenuItem
@@ -465,9 +486,12 @@ export function EditorToolbar({
               }}
             >
               <ListItemIcon>
-                <VisibilityIcon fontSize="small" />
+                <HistoryIcon fontSize="small" />
               </ListItemIcon>
-              <ListItemText primary="History" />
+              <ListItemText
+                primary="History"
+                primaryTypographyProps={{ fontSize: "0.84rem", fontWeight: 500 }}
+              />
             </MenuItem>
 
             <MenuItem
@@ -478,17 +502,21 @@ export function EditorToolbar({
                 // just from the pointer passing over the item.
                 setExportOpen((v) => !v);
               }}
-              sx={{ display: "flex", justifyContent: "space-between" }}
             >
-              <Box sx={{ display: "flex", alignItems: "center" }}>
-                <ListItemIcon>
-                  <FileDownloadIcon fontSize="small" />
-                </ListItemIcon>
-                <ListItemText primary="Export" />
-              </Box>
-              <Typography variant="body2" color="text.secondary" sx={{ ml: 2 }}>
-                ▸
-              </Typography>
+              <ListItemIcon>
+                <FileDownloadIcon fontSize="small" />
+              </ListItemIcon>
+              <ListItemText
+                primary="Export"
+                primaryTypographyProps={{ fontSize: "0.84rem", fontWeight: 500 }}
+              />
+              <ChevronRightIcon
+                sx={{
+                  fontSize: 18,
+                  color: "text.secondary",
+                  ml: "auto",
+                }}
+              />
             </MenuItem>
 
             {showLocalOnlyToggle && (
@@ -503,13 +531,14 @@ export function EditorToolbar({
                 </ListItemIcon>
                 <ListItemText
                   primary="Device only"
+                  primaryTypographyProps={{ fontSize: "0.84rem", fontWeight: 500 }}
                   secondary={isLocalOnly ? "On · won't sync to relays" : "Off · syncs to relays"}
-                  secondaryTypographyProps={{ sx: { fontSize: "0.7rem" } }}
+                  secondaryTypographyProps={{ sx: { fontSize: "0.72rem" } }}
                 />
               </MenuItem>
             )}
 
-            <Divider />
+            <Divider sx={{ my: 0.5 }} />
 
             <MenuItem
               onClick={() => {
@@ -521,7 +550,10 @@ export function EditorToolbar({
               <ListItemIcon sx={{ color: "error.main" }}>
                 <DeleteIcon fontSize="small" />
               </ListItemIcon>
-              <ListItemText primary="Delete" />
+              <ListItemText
+                primary="Delete"
+                primaryTypographyProps={{ fontSize: "0.84rem", fontWeight: 500, color: "inherit" }}
+              />
             </MenuItem>
           </Menu>
 
@@ -535,6 +567,10 @@ export function EditorToolbar({
               paper: {
                 style: {
                   pointerEvents: "auto",
+                },
+                sx: {
+                  minWidth: 200,
+                  p: 0.5,
                 },
               },
             }}
@@ -551,8 +587,9 @@ export function EditorToolbar({
               </ListItemIcon>
               <ListItemText
                 primary="PDF"
+                primaryTypographyProps={{ fontSize: "0.84rem", fontWeight: 500 }}
                 secondary="Print / Save as PDF"
-                secondaryTypographyProps={{ sx: { fontSize: "0.7rem" } }}
+                secondaryTypographyProps={{ sx: { fontSize: "0.72rem" } }}
               />
             </MenuItem>
             <MenuItem
@@ -567,11 +604,12 @@ export function EditorToolbar({
               </ListItemIcon>
               <ListItemText
                 primary="Word (.docx)"
+                primaryTypographyProps={{ fontSize: "0.84rem", fontWeight: 500 }}
                 secondary="Microsoft Word / Google Docs"
-                secondaryTypographyProps={{ sx: { fontSize: "0.7rem" } }}
+                secondaryTypographyProps={{ sx: { fontSize: "0.72rem" } }}
               />
             </MenuItem>
-            <Divider />
+            <Divider sx={{ my: 0.5 }} />
             <MenuItem
               onClick={() => {
                 onExportMarkdown?.();
@@ -584,8 +622,9 @@ export function EditorToolbar({
               </ListItemIcon>
               <ListItemText
                 primary="Markdown (.md)"
+                primaryTypographyProps={{ fontSize: "0.84rem", fontWeight: 500 }}
                 secondary="Raw markdown source"
-                secondaryTypographyProps={{ sx: { fontSize: "0.7rem" } }}
+                secondaryTypographyProps={{ sx: { fontSize: "0.72rem" } }}
               />
             </MenuItem>
             <MenuItem
@@ -600,8 +639,9 @@ export function EditorToolbar({
               </ListItemIcon>
               <ListItemText
                 primary="HTML (.html)"
+                primaryTypographyProps={{ fontSize: "0.84rem", fontWeight: 500 }}
                 secondary="Styled web page"
-                secondaryTypographyProps={{ sx: { fontSize: "0.7rem" } }}
+                secondaryTypographyProps={{ sx: { fontSize: "0.72rem" } }}
               />
             </MenuItem>
             <MenuItem
@@ -616,8 +656,9 @@ export function EditorToolbar({
               </ListItemIcon>
               <ListItemText
                 primary="Plain Text (.txt)"
+                primaryTypographyProps={{ fontSize: "0.84rem", fontWeight: 500 }}
                 secondary="No formatting"
-                secondaryTypographyProps={{ sx: { fontSize: "0.7rem" } }}
+                secondaryTypographyProps={{ sx: { fontSize: "0.72rem" } }}
               />
             </MenuItem>
           </Menu>
@@ -626,10 +667,22 @@ export function EditorToolbar({
             anchorEl={historyAnchor}
             open={historyOpen}
             onClose={() => setHistoryAnchor(null)}
+            slotProps={{
+              paper: {
+                sx: {
+                  minWidth: 220,
+                  maxHeight: 320,
+                  p: 0.5,
+                },
+              },
+            }}
           >
             {versions.length === 0 && (
               <MenuItem disabled>
-                <ListItemText primary="No history yet" />
+                <ListItemText
+                  primary="No history yet"
+                  primaryTypographyProps={{ fontSize: "0.84rem", fontWeight: 500 }}
+                />
               </MenuItem>
             )}
             {versions
@@ -645,6 +698,7 @@ export function EditorToolbar({
                 >
                   <ListItemText
                     primary={new Date(v.created_at * 1000).toLocaleString()}
+                    primaryTypographyProps={{ fontSize: "0.84rem", fontWeight: 500 }}
                   />
                 </MenuItem>
               ))}
@@ -922,6 +976,14 @@ export function EditorToolbar({
                   anchorEl={tableMenuAnchor}
                   open={tableMenuOpen}
                   onClose={() => setTableMenuAnchor(null)}
+                  slotProps={{
+                    paper: {
+                      sx: {
+                        minWidth: 180,
+                        p: 0.5,
+                      },
+                    },
+                  }}
                 >
                   <MenuItem
                     onClick={() => {
@@ -929,7 +991,10 @@ export function EditorToolbar({
                       setTableMenuAnchor(null);
                     }}
                   >
-                    <ListItemText primary="Add row above" />
+                    <ListItemText
+                      primary="Add row above"
+                      primaryTypographyProps={{ fontSize: "0.84rem", fontWeight: 500 }}
+                    />
                   </MenuItem>
                   <MenuItem
                     onClick={() => {
@@ -937,7 +1002,10 @@ export function EditorToolbar({
                       setTableMenuAnchor(null);
                     }}
                   >
-                    <ListItemText primary="Add row below" />
+                    <ListItemText
+                      primary="Add row below"
+                      primaryTypographyProps={{ fontSize: "0.84rem", fontWeight: 500 }}
+                    />
                   </MenuItem>
                   <MenuItem
                     onClick={() => {
@@ -945,16 +1013,22 @@ export function EditorToolbar({
                       setTableMenuAnchor(null);
                     }}
                   >
-                    <ListItemText primary="Delete row" />
+                    <ListItemText
+                      primary="Delete row"
+                      primaryTypographyProps={{ fontSize: "0.84rem", fontWeight: 500 }}
+                    />
                   </MenuItem>
-                  <Divider />
+                  <Divider sx={{ my: 0.5 }} />
                   <MenuItem
                     onClick={() => {
                       editor.chain().focus().addColumnBefore().run();
                       setTableMenuAnchor(null);
                     }}
                   >
-                    <ListItemText primary="Add column before" />
+                    <ListItemText
+                      primary="Add column before"
+                      primaryTypographyProps={{ fontSize: "0.84rem", fontWeight: 500 }}
+                    />
                   </MenuItem>
                   <MenuItem
                     onClick={() => {
@@ -962,7 +1036,10 @@ export function EditorToolbar({
                       setTableMenuAnchor(null);
                     }}
                   >
-                    <ListItemText primary="Add column after" />
+                    <ListItemText
+                      primary="Add column after"
+                      primaryTypographyProps={{ fontSize: "0.84rem", fontWeight: 500 }}
+                    />
                   </MenuItem>
                   <MenuItem
                     onClick={() => {
@@ -970,18 +1047,24 @@ export function EditorToolbar({
                       setTableMenuAnchor(null);
                     }}
                   >
-                    <ListItemText primary="Delete column" />
+                    <ListItemText
+                      primary="Delete column"
+                      primaryTypographyProps={{ fontSize: "0.84rem", fontWeight: 500 }}
+                    />
                   </MenuItem>
-                  <Divider />
+                  <Divider sx={{ my: 0.5 }} />
                   <MenuItem
                     onClick={() => {
                       editor.chain().focus().toggleHeaderRow().run();
                       setTableMenuAnchor(null);
                     }}
                   >
-                    <ListItemText primary="Toggle header row" />
+                    <ListItemText
+                      primary="Toggle header row"
+                      primaryTypographyProps={{ fontSize: "0.84rem", fontWeight: 500 }}
+                    />
                   </MenuItem>
-                  <Divider />
+                  <Divider sx={{ my: 0.5 }} />
                   <MenuItem
                     onClick={() => {
                       editor.chain().focus().deleteTable().run();
@@ -992,7 +1075,10 @@ export function EditorToolbar({
                     <ListItemIcon sx={{ color: "error.main" }}>
                       <DeleteIcon fontSize="small" />
                     </ListItemIcon>
-                    <ListItemText primary="Delete table" />
+                    <ListItemText
+                      primary="Delete table"
+                      primaryTypographyProps={{ fontSize: "0.84rem", fontWeight: 500, color: "inherit" }}
+                    />
                   </MenuItem>
                 </Menu>
               </>
