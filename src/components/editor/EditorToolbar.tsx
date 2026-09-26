@@ -103,7 +103,6 @@ type Props = {
   proofreadStatus?: ProofreadStatus;
   onProofread?: (instruction: string) => Promise<void>;
   onCancelProofread?: () => void;
-  onOpenSidebar?: () => void;
 };
 
 export function EditorToolbar({

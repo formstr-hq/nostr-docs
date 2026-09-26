@@ -3,7 +3,7 @@ import React, { createContext, useContext, useEffect, useMemo, useState } from "
 import { signerManager } from "../signer";
 import { getConversationKey } from "nostr-tools/nip44";
 import { hexToBytes } from "nostr-tools/utils";
-import { useUser, type UserProfile } from "./UserContext";
+import { useUser } from "./UserContext";
 import { useRelays } from "./RelayContext";
 import { getEventAddress } from "../utils/helpers";
 import { loadAllLocalEvents } from "../lib/localStore";
@@ -57,8 +57,6 @@ const DocumentContext = createContext<DocumentContextValue | undefined>(
 const getDecryptedContent = async (
   event: Event,
   viewKey?: string,
-  user?: UserProfile | null,
-  loginCallback?: () => Promise<void>,
 ): Promise<string | null> => {
   try {
     if (viewKey) {
@@ -70,12 +68,7 @@ const getDecryptedContent = async (
       return Promise.resolve(decryptedContent);
     }
 
-    // If no user, trigger login and then decrypt using the freshly-acquired signer
-    if (!user) {
-      await loginCallback?.();
-    }
-
-    // After login (or if user was already set), get signer and decrypt
+    // The signer manager waits for restore and opens the correct login/unlock flow.
     const signer = await signerManager.getSigner();
     const pubkey = await signer.getPublicKey();
     if (event.pubkey !== pubkey) return null;
@@ -89,7 +82,7 @@ const getDecryptedContent = async (
 export const DocumentProvider: React.FC<{ children: React.ReactNode }> = ({
   children,
 }) => {
-  const { user, loginModal } = useUser();
+  const { user } = useUser();
   const { relays } = useRelays();
   const [documents, setDocuments] = useState<Map<string, DocumentHistory>>(
     new Map(),
@@ -208,12 +201,7 @@ export const DocumentProvider: React.FC<{ children: React.ReactNode }> = ({
   ) => {
     const address = getEventAddress(document);
     if (!address) return;
-    const decryptedContent = await getDecryptedContent(
-      document,
-      keys?.viewKey,
-      user,
-      loginModal,
-    );
+    const decryptedContent = await getDecryptedContent(document, keys?.viewKey);
     if (!decryptedContent) return;
 
     setDocuments((prev) => {
