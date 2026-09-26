@@ -29,7 +29,7 @@ import QRCode from "qrcode";
 import { signerManager } from "../signer";
 import type { AndroidSignerAppInfo } from "@formstr/signer";
 import { isNativePlatform, isCapacitor } from "../signer/secureStorage";
-import FormstrLogo from "../assets/formstr-pages-logo.svg";
+import FormstrLogo from "../assets/formstr-pages-logo.png";
 
 // Default relays for NIP-46 nostrconnect (QR) pairing. Several, because the
 // pairing fails outright if *every* listed relay is unreachable — and

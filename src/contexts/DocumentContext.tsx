@@ -258,6 +258,7 @@ export const DocumentProvider: React.FC<{ children: React.ReactNode }> = ({
         const entries = await loadAllLocalEvents();
         if (entries.length === 0) return;
         const visitedAddrs: string[] = [];
+        const localOnlyAddrs: string[] = [];
         for (const entry of entries) {
           try {
             const keys: Record<string, string> = {};
@@ -265,12 +266,18 @@ export const DocumentProvider: React.FC<{ children: React.ReactNode }> = ({
             if (entry.editKey) keys.editKey = entry.editKey;
             await addDocument(entry.event, keys);
             if (entry.visited) visitedAddrs.push(entry.address);
+            if (entry.localOnly || entry.pendingBroadcast || !entry.event.sig) {
+              localOnlyAddrs.push(entry.address);
+            }
           } catch {
             // Skip entries that can't be decrypted
           }
         }
         if (visitedAddrs.length > 0) {
           setSessionVisited((prev) => new Set([...prev, ...visitedAddrs]));
+        }
+        if (localOnlyAddrs.length > 0) {
+          setLocalOnlyAddresses((prev) => new Set([...prev, ...localOnlyAddrs]));
         }
       } catch (err) {
         console.warn("Failed to hydrate local pages:", err);
@@ -290,6 +297,15 @@ export const DocumentProvider: React.FC<{ children: React.ReactNode }> = ({
       { kinds: [KIND_FILE], authors: [user.pubkey] },
       {
         onevent: async (event: Event) => {
+          const addr = getEventAddress(event);
+          if (addr) {
+            setLocalOnlyAddresses((prev) => {
+              if (!prev.has(addr)) return prev;
+              const next = new Set(prev);
+              next.delete(addr);
+              return next;
+            });
+          }
           await addDocument(event);
         },
       },

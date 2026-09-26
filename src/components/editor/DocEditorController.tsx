@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Box,
   Button,
@@ -13,6 +13,7 @@ import {
   IconButton,
   Tooltip,
   useTheme,
+  alpha,
 } from "@mui/material";
 import InsertDriveFileIcon from "@mui/icons-material/InsertDriveFile";
 import LabelOutlinedIcon from "@mui/icons-material/LabelOutlined";
@@ -20,6 +21,7 @@ import VisibilityOutlinedIcon from "@mui/icons-material/VisibilityOutlined";
 import EditOutlinedIcon from "@mui/icons-material/EditOutlined";
 import SmartphoneIcon from "@mui/icons-material/Smartphone";
 import ChatBubbleOutlineIcon from "@mui/icons-material/ChatBubbleOutline";
+import CropFreeIcon from "@mui/icons-material/CropFree";
 import { useDocMetadata } from "../../contexts/DocMetadataContext";
 import { getDocumentTags } from "../AllPagesView";
 import { useNavigate, useBlocker } from "react-router-dom";
@@ -199,12 +201,10 @@ export function DocumentEditorController({
   viewKey,
   editKey,
   textSuggest,
-  onOpenSidebar,
 }: {
   viewKey?: string;
   editKey?: string;
   textSuggest: TextSuggestHook;
-  onOpenSidebar?: () => void;
 }) {
   const {
     documents,
@@ -273,6 +273,47 @@ export function DocumentEditorController({
   // Whether the last save was an auto-save (vs a manual save)
   const [wasAutoSaved, setWasAutoSaved] = useState(false);
   const [focusMode, setFocusMode] = useState(false);
+  const [focusAnimation, setFocusAnimation] = useState<"enter" | "exit" | null>(null);
+  const [showFocusHint, setShowFocusHint] = useState(false);
+  const focusTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const focusHintTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const handleToggleFocusMode = useCallback(() => {
+    if (focusTimeoutRef.current) clearTimeout(focusTimeoutRef.current);
+    if (focusHintTimeoutRef.current) clearTimeout(focusHintTimeoutRef.current);
+
+    if (!focusMode) {
+      // ENTER FOCUS MODE: slight 100ms deliberate delay & smooth ease-in animation
+      setFocusAnimation("enter");
+      setShowFocusHint(true);
+
+      focusTimeoutRef.current = setTimeout(() => {
+        setFocusMode(true);
+      }, 100);
+
+      // Auto-hide floating hint after 2.6s
+      focusHintTimeoutRef.current = setTimeout(() => {
+        setShowFocusHint(false);
+      }, 2600);
+    } else {
+      // EXIT FOCUS MODE: smooth 240ms exit animation before unmounting fixed overlay
+      setFocusAnimation("exit");
+      setShowFocusHint(false);
+
+      focusTimeoutRef.current = setTimeout(() => {
+        setFocusMode(false);
+        setFocusAnimation(null);
+      }, 240);
+    }
+  }, [focusMode]);
+
+  useEffect(() => {
+    return () => {
+      if (focusTimeoutRef.current) clearTimeout(focusTimeoutRef.current);
+      if (focusHintTimeoutRef.current) clearTimeout(focusHintTimeoutRef.current);
+    };
+  }, []);
+
   const [wordCount, setWordCount] = useState(0);
   const [charCount, setCharCount] = useState(0);
   const [confirmOpen, setConfirmOpen] = useState(false);
@@ -785,7 +826,9 @@ export function DocumentEditorController({
 
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key === "Escape" && focusMode) setFocusMode(false);
+      if (e.key === "Escape" && focusMode && focusAnimation !== "exit") {
+        handleToggleFocusMode();
+      }
       if ((e.ctrlKey || e.metaKey) && e.key === "s") {
         e.preventDefault();
         handleSaveRef.current();
@@ -793,7 +836,7 @@ export function DocumentEditorController({
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [focusMode]);
+  }, [focusMode, focusAnimation, handleToggleFocusMode]);
 
   /* ── Warn on browser close / refresh ───────────────────── */
   const hasUnsavedChanges = md !== lastSavedMdRef.current;
@@ -1015,6 +1058,7 @@ export function DocumentEditorController({
       try {
         await publishEvent(stored, relays);
         await markBroadcast(address);
+        markLocalOnly(address, false);
       } catch (err) {
         console.warn("Relay broadcast failed (saved locally):", err);
       }
@@ -1225,9 +1269,48 @@ export function DocumentEditorController({
           inset: 0,
           zIndex: 1300,
           bgcolor: "background.default",
+          animation:
+            focusAnimation === "exit"
+              ? "focusExit 0.24s cubic-bezier(0.4, 0, 0.2, 1) forwards"
+              : "focusEnter 0.36s cubic-bezier(0.16, 1, 0.3, 1) forwards",
         }),
       }}
     >
+      {showFocusHint && focusMode && (
+        <Box
+          sx={{
+            position: "fixed",
+            top: 24,
+            left: "50%",
+            transform: "translateX(-50%)",
+            zIndex: 1400,
+            pointerEvents: "none",
+            animation: "focusHintFade 2.4s ease forwards",
+            display: "flex",
+            alignItems: "center",
+            gap: 1,
+            px: 2,
+            py: 0.75,
+            borderRadius: 10,
+            bgcolor: (t) => alpha(t.palette.background.paper, 0.94),
+            backdropFilter: "blur(12px)",
+            border: "1px solid",
+            borderColor: "divider",
+            boxShadow: (t) =>
+              t.palette.mode === "dark"
+                ? "0 8px 32px rgba(0, 0, 0, 0.45)"
+                : "0 8px 24px rgba(0, 0, 0, 0.12)",
+          }}
+        >
+          <CropFreeIcon sx={{ fontSize: 16, color: "secondary.main" }} />
+          <Typography
+            variant="caption"
+            sx={{ fontWeight: 600, fontSize: "0.78rem", color: "text.primary" }}
+          >
+            Focus mode · Press Esc to exit
+          </Typography>
+        </Box>
+      )}
       {sharedAsUrl && (
         <Box
           sx={{
@@ -1323,7 +1406,7 @@ export function DocumentEditorController({
             onSelectVersion={handleSelectVersion}
             editor={editor}
             focusMode={focusMode}
-            onToggleFocusMode={() => setFocusMode((f) => !f)}
+            onToggleFocusMode={handleToggleFocusMode}
             isViewOnly={isViewOnly}
             onAttachFile={(files) => Array.from(files).forEach(handleFileUpload)}
             uploading={uploading}
@@ -1350,7 +1433,6 @@ export function DocumentEditorController({
               void textSuggest.updatePrefs({ ...textSuggest.prefs, enabled: next });
             }}
             onTextSuggestSettingsSaved={() => void textSuggest.reload()}
-            onOpenSidebar={onOpenSidebar}
           />
         )}
         {isViewOnly && commentsEnabled && (

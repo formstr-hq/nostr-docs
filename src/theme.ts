@@ -1,6 +1,17 @@
-import { createTheme } from "@mui/material/styles";
+import { alpha, createTheme, type Theme } from "@mui/material/styles";
+
+const defaultTypography = {
+  fontFamily: '"Roboto", "Helvetica", "Arial", sans-serif',
+};
 
 const sharedComponents = {
+  MuiCssBaseline: {
+    styleOverrides: {
+      body: {
+        fontFamily: '"Roboto", "Helvetica", "Arial", sans-serif',
+      },
+    },
+  },
   MuiButton: {
     styleOverrides: {
       root: {
@@ -47,6 +58,72 @@ const sharedComponents = {
       },
     },
   },
+  MuiMenu: {
+    defaultProps: {
+      elevation: 4,
+    },
+    styleOverrides: {
+      paper: ({ theme }: { theme: Theme }) => ({
+        borderRadius: "10px",
+        border: `1px solid ${theme.palette.divider}`,
+        backdropFilter: "blur(16px)",
+        backgroundColor:
+          theme.palette.mode === "dark"
+            ? alpha(theme.palette.background.paper, 0.96)
+            : theme.palette.background.paper,
+        boxShadow:
+          theme.palette.mode === "dark"
+            ? "0 8px 32px rgba(0, 0, 0, 0.45)"
+            : "0 8px 24px rgba(0, 0, 0, 0.12)",
+      }),
+      list: {
+        padding: "4px",
+      },
+    },
+  },
+  MuiMenuItem: {
+    styleOverrides: {
+      root: {
+        fontSize: "0.84rem",
+        fontWeight: 500,
+        borderRadius: "6px",
+        minHeight: "34px",
+        paddingTop: "6px",
+        paddingBottom: "6px",
+        paddingLeft: "10px",
+        paddingRight: "10px",
+        gap: "6px",
+        "&.Mui-selected": {
+          fontWeight: 600,
+        },
+      },
+    },
+  },
+  MuiListItemText: {
+    styleOverrides: {
+      root: {
+        marginTop: 0,
+        marginBottom: 0,
+      },
+      primary: {
+        fontSize: "0.84rem",
+        fontWeight: 500,
+        lineHeight: 1.4,
+      },
+      secondary: {
+        fontSize: "0.72rem",
+        lineHeight: 1.3,
+      },
+    },
+  },
+  MuiListItemIcon: {
+    styleOverrides: {
+      root: {
+        minWidth: "28px",
+        color: "inherit",
+      },
+    },
+  },
 };
 
 export type ThemeId =
@@ -80,7 +157,7 @@ export const themes: Record<ThemeId, ThemeDefinition> = {
         background: { default: "#F5F2EE", paper: "#FDFCFA" },
         text: { primary: "#2C2520", secondary: "#7A7068" },
       },
-      typography: { fontFamily: `"Inter", sans-serif` },
+      typography: defaultTypography,
       shape: { borderRadius: 8 },
       components: sharedComponents,
     }),
@@ -98,7 +175,7 @@ export const themes: Record<ThemeId, ThemeDefinition> = {
         background: { default: "#1A1714", paper: "#242019" },
         text: { primary: "#F0EDE8", secondary: "#A89C90" },
       },
-      typography: { fontFamily: `"Inter", sans-serif` },
+      typography: defaultTypography,
       shape: { borderRadius: 8 },
       components: sharedComponents,
     }),
@@ -116,7 +193,7 @@ export const themes: Record<ThemeId, ThemeDefinition> = {
         background: { default: "#F0E6CC", paper: "#F8F0DC" },
         text: { primary: "#3A2010", secondary: "#8B5A30" },
       },
-      typography: { fontFamily: `"Inter", sans-serif` },
+      typography: defaultTypography,
       shape: { borderRadius: 8 },
       components: sharedComponents,
     }),
@@ -134,7 +211,7 @@ export const themes: Record<ThemeId, ThemeDefinition> = {
         background: { default: "#0E1612", paper: "#162018" },
         text: { primary: "#D8EDD4", secondary: "#8FBB87" },
       },
-      typography: { fontFamily: `"Inter", sans-serif` },
+      typography: defaultTypography,
       shape: { borderRadius: 8 },
       components: sharedComponents,
     }),
@@ -152,7 +229,7 @@ export const themes: Record<ThemeId, ThemeDefinition> = {
         background: { default: "#0B1623", paper: "#102035" },
         text: { primary: "#D0E8F5", secondary: "#7EB8D4" },
       },
-      typography: { fontFamily: `"Inter", sans-serif` },
+      typography: defaultTypography,
       shape: { borderRadius: 8 },
       components: sharedComponents,
     }),
@@ -170,7 +247,7 @@ export const themes: Record<ThemeId, ThemeDefinition> = {
         background: { default: "#050D05", paper: "#0A160A" },
         text: { primary: "#00FF41", secondary: "#00AA22" },
       },
-      typography: { fontFamily: `"Fira Code", "Cascadia Code", monospace` },
+      typography: { fontFamily: `"Roboto Mono", "Fira Code", "Cascadia Code", monospace` },
       shape: { borderRadius: 6 },
       components: sharedComponents,
     }),
@@ -188,7 +265,7 @@ export const themes: Record<ThemeId, ThemeDefinition> = {
         background: { default: "#1E1F29", paper: "#282A36" },
         text: { primary: "#F8F8F2", secondary: "#A0A8C3" },
       },
-      typography: { fontFamily: `"Inter", sans-serif` },
+      typography: defaultTypography,
       shape: { borderRadius: 8 },
       components: sharedComponents,
     }),
@@ -206,7 +283,7 @@ export const themes: Record<ThemeId, ThemeDefinition> = {
         background: { default: "#242933", paper: "#2E3440" },
         text: { primary: "#ECEFF4", secondary: "#D8DEE9" },
       },
-      typography: { fontFamily: `"Inter", sans-serif` },
+      typography: defaultTypography,
       shape: { borderRadius: 8 },
       components: sharedComponents,
     }),
@@ -225,7 +302,7 @@ export const themes: Record<ThemeId, ThemeDefinition> = {
         text: { primary: "#202124", secondary: "#5F6368" },
         divider: "#E0E0E0",
       },
-      typography: { fontFamily: `"Inter", "Arial", sans-serif` },
+      typography: defaultTypography,
       shape: { borderRadius: 8 },
       components: sharedComponents,
     }),

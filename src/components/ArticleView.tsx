@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { useParams, useOutletContext } from "react-router-dom";
+import { useParams, useNavigate } from "react-router-dom";
 import { nip19, type Event } from "nostr-tools";
 import {
   Box,
@@ -10,7 +10,7 @@ import {
   Tooltip,
   alpha,
 } from "@mui/material";
-import MenuIcon from "@mui/icons-material/Menu";
+import ArrowBackIcon from "@mui/icons-material/ArrowBack";
 import ShareIcon from "@mui/icons-material/Share";
 import CheckIcon from "@mui/icons-material/Check";
 import OpenInNewIcon from "@mui/icons-material/OpenInNew";
@@ -30,9 +30,8 @@ type Parsed = { kind: number; pubkey: string; identifier: string; relays?: strin
  */
 export default function ArticleView() {
   const { naddr } = useParams<{ naddr: string }>();
+  const navigate = useNavigate();
   const { relays } = useRelays();
-  const outletCtx = useOutletContext<{ onOpenSidebar?: () => void }>() || {};
-  const onOpenSidebar = outletCtx?.onOpenSidebar;
   const [copied, setCopied] = useState(false);
 
   // Parse + validate the naddr synchronously — no effect/state needed.
@@ -120,24 +119,23 @@ export default function ArticleView() {
           flexShrink: 0,
         }}
       >
-        {/* Left: Hamburger (mobile) + Breadcrumbs / Title + Badge */}
+        {/* Left: Back (mobile) + Breadcrumbs / Title + Badge */}
         <Box sx={{ display: "flex", alignItems: "center", gap: 1.25, minWidth: 0, flex: 1 }}>
-          {onOpenSidebar && (
-            <IconButton
-              size="small"
-              aria-label="Open sidebar menu"
-              onClick={onOpenSidebar}
-              sx={{
-                display: { xs: "inline-flex", md: "none" },
-                p: 0.5,
-                borderRadius: 1,
-                color: "text.primary",
-                flexShrink: 0,
-              }}
-            >
-              <MenuIcon sx={{ fontSize: 20 }} />
-            </IconButton>
-          )}
+          <IconButton
+            size="small"
+            aria-label="Back to pages"
+            onClick={() => navigate("/")}
+            sx={{
+              display: { xs: "inline-flex", md: "none" },
+              p: 0.5,
+              borderRadius: 1,
+              color: "text.secondary",
+              "&:hover": { color: "text.primary" },
+              flexShrink: 0,
+            }}
+          >
+            <ArrowBackIcon sx={{ fontSize: 20 }} />
+          </IconButton>
 
           <Typography
             variant="body2"

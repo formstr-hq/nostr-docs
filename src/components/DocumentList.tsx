@@ -1,7 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { alpha } from "@mui/material/styles";
-import { Box, Typography, ListItemButton, Chip, Tooltip, IconButton } from "@mui/material";
-import DeleteForeverIcon from "@mui/icons-material/DeleteForever";
+import { Box, Typography, ListItemButton, Chip, alpha } from "@mui/material";
 import { useDocumentContext } from "../contexts/DocumentContext.tsx";
 import { useSharedPages } from "../contexts/SharedDocsContext.tsx";
 import { usePublished } from "../contexts/PublishedContext.tsx";
@@ -12,14 +10,14 @@ import { getDocumentTags } from "./AllPagesView.tsx";
 import type { DocumentHistory } from "../lib/docSearch";
 import TrashDialog from "./TrashDialog.tsx";
 import UserMenu from "./UserMenu";
-import FormstrLogo from "../assets/formstr-pages-logo.svg";
+import FormstrLogo from "../assets/formstr-pages-logo.png";
 
 export default function DocumentList({
   onEdit,
 }: {
   onEdit: (docId: string | null) => void;
 }) {
-  const { visibleDocuments, visitedDocuments, setSelectedDocumentId } = useDocumentContext();
+  const { visibleDocuments, visitedDocuments, setSelectedDocumentId, localOnlyAddresses } = useDocumentContext();
   const { sharedDocuments } = useSharedPages();
   const { publishedDocuments } = usePublished();
   const { docTags, selectedTag, setSelectedTag } = useDocMetadata();
@@ -42,8 +40,16 @@ export default function DocumentList({
         if (!sharedDocuments.has(address)) list.push({ address, history });
       });
       publishedDocuments.forEach((history, address) => list.push({ address, history }));
+    } else if (workspaceFilter === "device") {
+      visibleDocuments.forEach((history, address) => {
+        const isLocal = localOnlyAddresses.has(address) || !history.versions.at(-1)?.event.sig;
+        if (isLocal) list.push({ address, history });
+      });
     } else if (workspaceFilter === "personal") {
-      visibleDocuments.forEach((history, address) => list.push({ address, history }));
+      visibleDocuments.forEach((history, address) => {
+        const isLocal = localOnlyAddresses.has(address) || !history.versions.at(-1)?.event.sig;
+        if (!isLocal) list.push({ address, history });
+      });
     } else if (workspaceFilter === "shared") {
       sharedDocuments.forEach((history, address) => list.push({ address, history }));
       visitedDocuments.forEach((history, address) => {
@@ -59,9 +65,9 @@ export default function DocumentList({
     }
 
     return Array.from(tagSet).filter(Boolean).sort();
-  }, [workspaceFilter, visibleDocuments, sharedDocuments, visitedDocuments, publishedDocuments, docTags]);
+  }, [workspaceFilter, visibleDocuments, sharedDocuments, visitedDocuments, publishedDocuments, docTags, localOnlyAddresses]);
 
-  const selectWorkspace = (filter: "all" | "personal" | "shared" | "published") => {
+  const selectWorkspace = (filter: "all" | "device" | "personal" | "shared" | "published") => {
     setSelectedDocumentId(null);
     setSelectedTag(null);
     onEdit(null);
@@ -73,12 +79,20 @@ export default function DocumentList({
     setSelectedDocumentId(null);
     onEdit(null);
     const norm = tag.trim().toLowerCase().replace(/^#/, "");
-    const currentNorm = selectedTag?.trim().toLowerCase().replace(/^#/, "");
-    const nextTag = currentNorm === norm ? null : norm;
+    const nextTag = selectedTag?.toLowerCase() === norm ? null : norm;
     setSelectedTag(nextTag);
-    const params = new URLSearchParams();
-    if (workspaceFilter !== "all") params.set("workspace", workspaceFilter);
-    if (nextTag) params.set("tag", nextTag);
+    const params = new URLSearchParams(location.search);
+    if (workspaceFilter !== "all") {
+      params.set("workspace", workspaceFilter);
+    } else {
+      params.delete("workspace");
+    }
+    if (nextTag) {
+      params.set("tag", nextTag);
+    } else {
+      params.delete("tag");
+    }
+    params.delete("tags");
     const searchStr = params.toString();
     navigate(searchStr ? `/?${searchStr}` : "/");
   };
@@ -189,6 +203,37 @@ export default function DocumentList({
         </ListItemButton>
 
         <ListItemButton
+          onClick={() => selectWorkspace("device")}
+          sx={{
+            borderRadius: 1,
+            py: 0.55,
+            px: 1.25,
+            mb: 0.3,
+            bgcolor: workspaceFilter === "device" && !selectedTag ? (t) => alpha(t.palette.secondary.main, 0.18) : "transparent",
+            color: workspaceFilter === "device" && !selectedTag ? "secondary.main" : "text.secondary",
+            "&:hover": {
+              bgcolor: (t) => alpha(t.palette.secondary.main, 0.08),
+              color: "text.primary",
+            },
+            transition: "all 0.15s ease",
+          }}
+        >
+          <Box sx={{ display: "flex", alignItems: "center", gap: 1.25 }}>
+            <Box
+              sx={{
+                width: 6,
+                height: 6,
+                borderRadius: "50%",
+                bgcolor: workspaceFilter === "device" && !selectedTag ? "secondary.main" : (t) => alpha(t.palette.text.primary, 0.35),
+              }}
+            />
+            <Typography variant="body2" sx={{ fontWeight: workspaceFilter === "device" && !selectedTag ? 700 : 500, fontSize: "0.82rem" }}>
+              Device
+            </Typography>
+          </Box>
+        </ListItemButton>
+
+        <ListItemButton
           onClick={() => selectWorkspace("personal")}
           sx={{
             borderRadius: 1,
@@ -280,30 +325,97 @@ export default function DocumentList({
             </Typography>
           </Box>
         </ListItemButton>
+
+        <ListItemButton
+          onClick={() => setTrashOpen(true)}
+          sx={{
+            borderRadius: 1,
+            py: 0.55,
+            px: 1.25,
+            mb: 0.3,
+            color: "text.secondary",
+            "&:hover": {
+              bgcolor: (t) => alpha(t.palette.secondary.main, 0.08),
+              color: "text.primary",
+            },
+            transition: "all 0.15s ease",
+          }}
+        >
+          <Box sx={{ display: "flex", alignItems: "center", justifyContent: "space-between", width: "100%" }}>
+            <Box sx={{ display: "flex", alignItems: "center", gap: 1.25 }}>
+              <Box
+                sx={{
+                  width: 6,
+                  height: 6,
+                  borderRadius: "50%",
+                  bgcolor: (t) => alpha(t.palette.text.primary, 0.35),
+                }}
+              />
+              <Typography variant="body2" sx={{ fontWeight: 500, fontSize: "0.82rem" }}>
+                Trash
+              </Typography>
+            </Box>
+            {trashCount > 0 && (
+              <Chip
+                label={trashCount}
+                size="small"
+                sx={{
+                  height: 16,
+                  fontSize: "0.62rem",
+                  bgcolor: (t) => alpha(t.palette.text.primary, 0.08),
+                  color: "text.secondary",
+                  fontWeight: 600,
+                  "& .MuiChip-label": { px: 0.5 },
+                }}
+              />
+            )}
+          </Box>
+        </ListItemButton>
       </Box>
 
       {/* ── Workspace Tags in Sidebar ── */}
       {currentWorkspaceTags.length > 0 && (
         <Box sx={{ px: 1.5, pt: 1, pb: 0.5, flexShrink: 0 }}>
-          <Typography
-            variant="caption"
-            sx={{
-              display: "block",
-              px: 1,
-              pt: 0.5,
-              pb: 0.5,
-              fontSize: "0.68rem",
-              fontWeight: 700,
-              letterSpacing: "0.08em",
-              color: "text.disabled",
-              textTransform: "uppercase",
-            }}
-          >
-            Tags ({currentWorkspaceTags.length})
-          </Typography>
+          <Box sx={{ display: "flex", alignItems: "center", justifyContent: "space-between", px: 1, pt: 0.5, pb: 0.5 }}>
+            <Typography
+              variant="caption"
+              sx={{
+                fontSize: "0.68rem",
+                fontWeight: 700,
+                letterSpacing: "0.08em",
+                color: "text.disabled",
+                textTransform: "uppercase",
+              }}
+            >
+              Tags ({currentWorkspaceTags.length})
+            </Typography>
+            {selectedTag && (
+              <Typography
+                variant="caption"
+                onClick={() => {
+                  setSelectedTag(null);
+                  const params = new URLSearchParams(location.search);
+                  params.delete("tag");
+                  params.delete("tags");
+                  const searchStr = params.toString();
+                  navigate(searchStr ? `/?${searchStr}` : "/");
+                }}
+                sx={{
+                  fontSize: "0.68rem",
+                  fontWeight: 600,
+                  color: "secondary.main",
+                  cursor: "pointer",
+                  "&:hover": { textDecoration: "underline" },
+                }}
+              >
+                Clear
+              </Typography>
+            )}
+          </Box>
           <Box sx={{ display: "flex", flexDirection: "column", gap: 0.25, maxHeight: 180, overflowY: "auto" }}>
             {currentWorkspaceTags.map((tag) => {
-              const isTagActive = selectedTag?.toLowerCase() === tag.toLowerCase();
+              const normTag = tag.trim().toLowerCase().replace(/^#/, "");
+              const isTagActive = selectedTag?.toLowerCase() === normTag;
               return (
                 <ListItemButton
                   key={tag}
@@ -342,36 +454,9 @@ export default function DocumentList({
           borderTop: "1px solid",
           borderColor: "divider",
           flexShrink: 0,
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
-          gap: 1,
         }}
       >
-        <Box sx={{ flex: 1, minWidth: 0 }}>
-          <UserMenu triggerMode="pill" />
-        </Box>
-
-        <Tooltip title="Trash">
-          <IconButton
-            size="small"
-            onClick={() => setTrashOpen(true)}
-            sx={{
-              p: 0.5,
-              color: "text.disabled",
-              "&:hover": { color: "text.secondary" },
-            }}
-          >
-            <DeleteForeverIcon sx={{ fontSize: 16 }} />
-            {trashCount > 0 && (
-              <Chip
-                label={trashCount}
-                size="small"
-                sx={{ ml: 0.5, height: 14, fontSize: "0.55rem", "& .MuiChip-label": { px: 0.4 } }}
-              />
-            )}
-          </IconButton>
-        </Tooltip>
+        <UserMenu triggerMode="pill" />
       </Box>
 
       <TrashDialog
