@@ -78,24 +78,20 @@ export function publishToLocalRelay(event: Event): Promise<void> {
 export const TEST_PASSPHRASE = "e2e-test-passphrase";
 
 /**
- * Log in as a fresh user through the real login modal. The home page's draft
- * editor shows a "Login to Save" button when no one is signed in; clicking it
- * opens the modal. The signer flow creates a passphrase-protected account
- * ("Create a new account", NIP-49) and then surfaces the recovery key in a
- * separate dialog that must be acknowledged before the app is usable. Uses no
- * signer internals or storage seeding, so it stays valid as the signer layer
- * changes.
+ * Create a fresh account through the real login modal from the draft editor.
+ * Playwright provides isolated browser storage for each test; no signer
+ * internals or storage seeding are needed.
  */
 export async function loginAsGuest(page: Page) {
-  await page.goto("/");
-  await page.getByRole("button", { name: "Login to Save" }).click();
+  await page.goto("/new");
+  await page.getByRole("button", { name: "Login", exact: true }).click();
   // The login modal and the recovery-key dialog can overlap in the DOM while
   // the former is fading out, so scope each by its own text.
   const loginDialog = page
     .getByRole("dialog")
     .filter({ hasText: "Choose how you'd like to access your documents" });
   await loginDialog
-    .getByRole("button", { name: /Create a new account/ })
+    .getByRole("button", { name: /Create new account/ })
     .click();
   await loginDialog
     .getByLabel("Passphrase", { exact: true })
@@ -118,10 +114,8 @@ export async function loginAsGuest(page: Page) {
 }
 
 /**
- * Unlock the account after a reload. The key is persisted NIP-49 encrypted, so
- * a restored session comes back locked and the app prompts for the passphrase;
- * decryption-dependent UI (document titles, bodies) can't render until it's
- * entered. No-op assumption: the prompt opens on its own shortly after load.
+ * Complete the unlock prompt when loading private document content from a
+ * restored NIP-49 account.
  */
 export async function unlockAfterReload(page: Page) {
   const dialog = page

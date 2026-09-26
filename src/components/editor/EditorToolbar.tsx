@@ -1,5 +1,5 @@
+import { alpha } from "@mui/material/styles";
 import {
-  Paper,
   Box,
   Button,
   ButtonBase,
@@ -9,8 +9,6 @@ import {
   ListItemIcon,
   ListItemText,
   Divider,
-  ToggleButtonGroup,
-  ToggleButton,
   Tooltip,
   Typography,
 } from "@mui/material";
@@ -18,14 +16,19 @@ import VpnKeyIcon from "@mui/icons-material/VpnKey";
 import EditIcon from "@mui/icons-material/Edit";
 import VisibilityIcon from "@mui/icons-material/Visibility";
 import EditNoteIcon from "@mui/icons-material/EditNote";
+import ArrowBackIcon from "@mui/icons-material/ArrowBack";
 import MoreVertIcon from "@mui/icons-material/MoreVert";
 import DeleteIcon from "@mui/icons-material/Delete";
 import ShareIcon from "@mui/icons-material/Share";
+import ChevronRightIcon from "@mui/icons-material/ChevronRight";
+import { useNavigate } from "react-router-dom";
 import CloudOffIcon from "@mui/icons-material/CloudOff";
 import SmartphoneIcon from "@mui/icons-material/Smartphone";
 import ChatBubbleOutlineIcon from "@mui/icons-material/ChatBubbleOutline";
-import FullscreenIcon from "@mui/icons-material/Fullscreen";
 import FullscreenExitIcon from "@mui/icons-material/FullscreenExit";
+import CropFreeIcon from "@mui/icons-material/CropFree";
+import HistoryIcon from "@mui/icons-material/History";
+import SensorsIcon from "@mui/icons-material/Sensors";
 import FormatBoldIcon from "@mui/icons-material/FormatBold";
 import FormatItalicIcon from "@mui/icons-material/FormatItalic";
 import FormatListBulletedIcon from "@mui/icons-material/FormatListBulleted";
@@ -49,6 +52,7 @@ import { useState, useRef, useEffect } from "react";
 import { InputBase } from "@mui/material";
 import { useUser } from "../../contexts/UserContext";
 import { useDocMetadata } from "../../contexts/DocMetadataContext";
+import { useRelays } from "../../contexts/RelayContext";
 import { useEditorState } from "@tiptap/react";
 import type { Editor } from "@tiptap/react";
 import DictationButton from "../dictation/DictationButton";
@@ -129,7 +133,9 @@ export function EditorToolbar({
   onToggleTextSuggest,
   onTextSuggestSettingsSaved,
 }: Props) {
+  const navigate = useNavigate();
   const { user, loginModal } = useUser();
+  const { relays } = useRelays();
   const [menuAnchor, setMenuAnchor] = useState<null | HTMLElement>(null);
   const [historyAnchor, setHistoryAnchor] = useState<null | HTMLElement>(null);
   const [tableMenuAnchor, setTableMenuAnchor] = useState<null | HTMLElement>(null);
@@ -158,56 +164,160 @@ export function EditorToolbar({
   };
 
   return (
-    <Paper
-      elevation={2}
-      sx={{
-        borderRadius: 2,
-        border: "1px solid rgba(0,0,0,0.08)",
-        overflow: "hidden",
-        flexShrink: 0,
-      }}
-    >
-      {/* ── Row 1: mode toggles + actions ─────────────────── */}
+    <>
+      {/* ── Top Navigation & Action Header (Attached to Editor Box) ── */}
       <Box
         sx={{
-          p: 1,
-          px: 1.5,
+          py: 1,
+          px: { xs: 1.5, sm: 2 },
           display: "flex",
           alignItems: "center",
           justifyContent: "space-between",
-          gap: 1,
+          gap: 1.5,
+          minHeight: 56,
+          bgcolor: (t) =>
+            t.palette.mode === "dark"
+              ? alpha(t.palette.common.black, 0.45)
+              : alpha(t.palette.common.black, 0.04),
+          borderBottom: "1px solid",
+          borderColor: "divider",
+          flexShrink: 0,
         }}
       >
-        <Box sx={{ display: "flex", alignItems: "center", gap: 2, flex: 1, minWidth: 0 }}>
-          {/* Left: mode toggle — hidden for view-only shared links */}
-          {!isViewOnly && (
-            <ToggleButtonGroup
-              value={mode}
-              exclusive
-              size="small"
-              onChange={(_, val) => val && onSetMode(val as EditorMode)}
-              sx={{ "& .MuiToggleButton-root": { px: 1.5 } }}
+        {/* Left: Breadcrumbs / Title + Mobile Back */}
+        <Box sx={{ display: "flex", alignItems: "center", gap: 1, flex: 1, minWidth: 0 }}>
+          <IconButton
+            size="small"
+            aria-label="Back to pages"
+            onClick={() => navigate("/")}
+            sx={{
+              display: { xs: "inline-flex", md: "none" },
+              p: 0.5,
+              borderRadius: 1,
+              color: "text.secondary",
+              "&:hover": { color: "text.primary" },
+              flexShrink: 0,
+            }}
+          >
+            <ArrowBackIcon sx={{ fontSize: 20 }} />
+          </IconButton>
+
+          {documentAddress ? (
+            <ToolbarTitle
+              address={documentAddress}
+              heuristicTitle={heuristicTitle || "Untitled"}
+              canEdit={!isViewOnly}
+            />
+          ) : (
+            <Typography
+              variant="body2"
+              sx={{ fontWeight: 700, fontSize: "0.92rem", color: "text.primary" }}
             >
-              <ToggleButton value="edit" title="WYSIWYG editor">
-                <EditIcon fontSize="small" />
-              </ToggleButton>
-              <ToggleButton value="split" title="Markdown source">
-                <EditNoteIcon fontSize="small" />
-              </ToggleButton>
-              <ToggleButton value="preview" title="Rendered preview">
-                <VisibilityIcon fontSize="small" />
-              </ToggleButton>
-            </ToggleButtonGroup>
-          )}
-          
-          {/* Title right next to toggles */}
-          {documentAddress && heuristicTitle && (
-            <ToolbarTitle address={documentAddress} heuristicTitle={heuristicTitle} canEdit={!isViewOnly} />
+              {heuristicTitle || "Untitled"}
+            </Typography>
           )}
         </Box>
 
-        {/* Right: save + focus + overflow menu */}
-        <Box sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
+        {/* Right: Exit Focus + Avatars + 3 relays + Broadcast + History + Share */}
+        <Box sx={{ display: "flex", alignItems: "center", gap: 1.25, flexShrink: 0 }}>
+          {/* Focus Toggle Button */}
+          <Button
+            size="small"
+            onClick={onToggleFocusMode}
+            startIcon={
+              focusMode ? (
+                <FullscreenExitIcon sx={{ fontSize: 17 }} />
+              ) : (
+                <CropFreeIcon sx={{ fontSize: 16 }} />
+              )
+            }
+            sx={{
+              display: { xs: "none", sm: "inline-flex" },
+              bgcolor: (t) => alpha(t.palette.secondary.main, 0.18),
+              color: "secondary.main",
+              fontWeight: 600,
+              fontSize: "0.8rem",
+              borderRadius: 1,
+              px: 1.5,
+              py: 0.5,
+              textTransform: "none",
+              boxShadow: "none",
+              "&:hover": {
+                bgcolor: (t) => alpha(t.palette.secondary.main, 0.28),
+                boxShadow: "none",
+              },
+            }}
+          >
+            {focusMode ? "Exit Focus" : "Focus"}
+          </Button>
+
+          {/* Relay Sync Dots */}
+          <Tooltip title={`Connected to ${relays.length || 3} relays`}>
+            <Box
+              sx={{
+                display: { xs: "none", sm: "flex" },
+                alignItems: "center",
+                cursor: "default",
+                userSelect: "none",
+                px: 0.75,
+                py: 0.5,
+                borderRadius: 1,
+                "&:hover": {
+                  bgcolor: (t) => alpha(t.palette.text.primary, 0.04),
+                },
+              }}
+            >
+              <Box sx={{ display: "inline-flex", alignItems: "center", gap: 0.4 }}>
+                <Box sx={{ width: 5.5, height: 5.5, borderRadius: "50%", bgcolor: "#34D399" }} />
+                <Box sx={{ width: 5.5, height: 5.5, borderRadius: "50%", bgcolor: "#34D399" }} />
+                <Box sx={{ width: 5.5, height: 5.5, borderRadius: "50%", bgcolor: "text.disabled", opacity: 0.5 }} />
+              </Box>
+            </Box>
+          </Tooltip>
+
+          {/* Live broadcast status icon */}
+          <Tooltip title="Live Relay Broadcast">
+            <IconButton size="small" sx={{ color: "text.secondary", p: 0.6, display: { xs: "none", sm: "inline-flex" } }}>
+              <SensorsIcon sx={{ fontSize: 18 }} />
+            </IconButton>
+          </Tooltip>
+
+          {/* History Button */}
+          <Tooltip title="Version History">
+            <IconButton
+              size="small"
+              onClick={(e) => setHistoryAnchor(e.currentTarget)}
+              sx={{ color: "text.secondary", p: 0.6 }}
+            >
+              <HistoryIcon sx={{ fontSize: 19 }} />
+            </IconButton>
+          </Tooltip>
+
+          {/* Share Button */}
+          <Button
+            variant="outlined"
+            size="small"
+            onClick={onShare}
+            sx={{
+              color: "text.primary",
+              borderColor: (t) => alpha(t.palette.text.primary, 0.15),
+              bgcolor: (t) => alpha(t.palette.text.primary, 0.03),
+              borderRadius: 1,
+              px: 1.75,
+              py: 0.5,
+              fontSize: "0.82rem",
+              fontWeight: 600,
+              textTransform: "none",
+              "&:hover": {
+                borderColor: (t) => alpha(t.palette.text.primary, 0.3),
+                bgcolor: (t) => alpha(t.palette.text.primary, 0.06),
+              },
+            }}
+          >
+            Share
+          </Button>
+
+          {/* Save Action (if logged in / has edit key) */}
           {!isViewOnly && (user || hasEditKey ? (
             <Tooltip title={hasEditKey ? "Saving with shared key" : isLocalOnly ? "Saving to device only" : ""}>
               <Button
@@ -215,8 +325,16 @@ export function EditorToolbar({
                 color="secondary"
                 size="small"
                 onClick={onSave}
-                startIcon={hasEditKey ? <VpnKeyIcon fontSize="small" /> : isLocalOnly ? <SmartphoneIcon fontSize="small" /> : undefined}
-                sx={{ fontWeight: 700, px: 2 }}
+                startIcon={hasEditKey ? <VpnKeyIcon sx={{ fontSize: 14 }} /> : isLocalOnly ? <SmartphoneIcon sx={{ fontSize: 14 }} /> : undefined}
+                sx={{
+                  fontWeight: 600,
+                  px: 1.5,
+                  py: 0.5,
+                  fontSize: "0.8rem",
+                  borderRadius: 1,
+                  boxShadow: "none",
+                  "&:hover": { boxShadow: "none" },
+                }}
               >
                 {saving ? "Saving…" : "Save"}
               </Button>
@@ -227,47 +345,114 @@ export function EditorToolbar({
               color="secondary"
               size="small"
               onClick={() => loginModal()}
-              sx={{ fontWeight: 700, px: 2 }}
+              sx={{
+                fontWeight: 600,
+                px: 1.5,
+                py: 0.5,
+                fontSize: "0.8rem",
+                borderRadius: 1,
+                boxShadow: "none",
+              }}
             >
-              Login to Save
+              Login
             </Button>
           ))}
 
-          {onToggleComments && (
-            <Tooltip title={showComments ? "Hide comments" : "Show comments"}>
-              <IconButton
-                size="small"
-                onClick={onToggleComments}
-                color={showComments ? "secondary" : "default"}
-              >
-                <ChatBubbleOutlineIcon fontSize="small" />
-              </IconButton>
-            </Tooltip>
-          )}
-
-          <Tooltip title={focusMode ? "Exit focus mode" : "Focus mode"}>
-            <IconButton size="small" onClick={onToggleFocusMode}>
-              {focusMode ? (
-                <FullscreenExitIcon fontSize="small" />
-              ) : (
-                <FullscreenIcon fontSize="small" />
-              )}
-            </IconButton>
-          </Tooltip>
-
+          {/* Overflow Menu */}
           <IconButton
             size="small"
             aria-label="More actions"
             onClick={(e) => setMenuAnchor(e.currentTarget)}
+            sx={{ color: "text.secondary", p: 0.5 }}
           >
-            <MoreVertIcon fontSize="small" />
+            <MoreVertIcon sx={{ fontSize: 18 }} />
           </IconButton>
+        </Box>
+      </Box>
 
           <Menu
             anchorEl={menuAnchor}
             open={menuOpen}
             onClose={() => setMenuAnchor(null)}
+            slotProps={{
+              paper: {
+                sx: {
+                  minWidth: 200,
+                  p: 0.5,
+                },
+              },
+            }}
           >
+            {/* Mode items */}
+            {!isViewOnly && (
+              <>
+                <MenuItem
+                  selected={mode === "edit"}
+                  onClick={() => {
+                    onSetMode("edit");
+                    setMenuAnchor(null);
+                  }}
+                >
+                  <ListItemIcon>
+                    <EditIcon fontSize="small" />
+                  </ListItemIcon>
+                  <ListItemText
+                    primary="Visual editor"
+                    primaryTypographyProps={{ fontSize: "0.84rem", fontWeight: 500 }}
+                  />
+                </MenuItem>
+                <MenuItem
+                  selected={mode === "split"}
+                  onClick={() => {
+                    onSetMode("split");
+                    setMenuAnchor(null);
+                  }}
+                >
+                  <ListItemIcon>
+                    <EditNoteIcon fontSize="small" />
+                  </ListItemIcon>
+                  <ListItemText
+                    primary="Markdown source"
+                    primaryTypographyProps={{ fontSize: "0.84rem", fontWeight: 500 }}
+                  />
+                </MenuItem>
+                <MenuItem
+                  selected={mode === "preview"}
+                  onClick={() => {
+                    onSetMode("preview");
+                    setMenuAnchor(null);
+                  }}
+                >
+                  <ListItemIcon>
+                    <VisibilityIcon fontSize="small" />
+                  </ListItemIcon>
+                  <ListItemText
+                    primary="Rendered preview"
+                    primaryTypographyProps={{ fontSize: "0.84rem", fontWeight: 500 }}
+                  />
+                </MenuItem>
+                <Divider sx={{ my: 0.5 }} />
+              </>
+            )}
+
+            {/* Comments Toggle */}
+            {onToggleComments && (
+              <MenuItem
+                onClick={() => {
+                  onToggleComments();
+                  setMenuAnchor(null);
+                }}
+              >
+                <ListItemIcon>
+                  <ChatBubbleOutlineIcon fontSize="small" color={showComments ? "secondary" : "inherit"} />
+                </ListItemIcon>
+                <ListItemText
+                  primary={showComments ? "Hide Comments" : "Show Comments"}
+                  primaryTypographyProps={{ fontSize: "0.84rem", fontWeight: 500 }}
+                />
+              </MenuItem>
+            )}
+
             <MenuItem
               onClick={() => {
                 onShare();
@@ -277,7 +462,10 @@ export function EditorToolbar({
               <ListItemIcon>
                 <ShareIcon fontSize="small" />
               </ListItemIcon>
-              <ListItemText primary="Share" />
+              <ListItemText
+                primary="Share"
+                primaryTypographyProps={{ fontSize: "0.84rem", fontWeight: 500 }}
+              />
             </MenuItem>
 
             <MenuItem
@@ -288,9 +476,12 @@ export function EditorToolbar({
               }}
             >
               <ListItemIcon>
-                <VisibilityIcon fontSize="small" />
+                <HistoryIcon fontSize="small" />
               </ListItemIcon>
-              <ListItemText primary="History" />
+              <ListItemText
+                primary="History"
+                primaryTypographyProps={{ fontSize: "0.84rem", fontWeight: 500 }}
+              />
             </MenuItem>
 
             <MenuItem
@@ -301,17 +492,21 @@ export function EditorToolbar({
                 // just from the pointer passing over the item.
                 setExportOpen((v) => !v);
               }}
-              sx={{ display: "flex", justifyContent: "space-between" }}
             >
-              <Box sx={{ display: "flex", alignItems: "center" }}>
-                <ListItemIcon>
-                  <FileDownloadIcon fontSize="small" />
-                </ListItemIcon>
-                <ListItemText primary="Export" />
-              </Box>
-              <Typography variant="body2" color="text.secondary" sx={{ ml: 2 }}>
-                ▸
-              </Typography>
+              <ListItemIcon>
+                <FileDownloadIcon fontSize="small" />
+              </ListItemIcon>
+              <ListItemText
+                primary="Export"
+                primaryTypographyProps={{ fontSize: "0.84rem", fontWeight: 500 }}
+              />
+              <ChevronRightIcon
+                sx={{
+                  fontSize: 18,
+                  color: "text.secondary",
+                  ml: "auto",
+                }}
+              />
             </MenuItem>
 
             {showLocalOnlyToggle && (
@@ -326,13 +521,14 @@ export function EditorToolbar({
                 </ListItemIcon>
                 <ListItemText
                   primary="Device only"
+                  primaryTypographyProps={{ fontSize: "0.84rem", fontWeight: 500 }}
                   secondary={isLocalOnly ? "On · won't sync to relays" : "Off · syncs to relays"}
-                  secondaryTypographyProps={{ sx: { fontSize: "0.7rem" } }}
+                  secondaryTypographyProps={{ sx: { fontSize: "0.72rem" } }}
                 />
               </MenuItem>
             )}
 
-            <Divider />
+            <Divider sx={{ my: 0.5 }} />
 
             <MenuItem
               onClick={() => {
@@ -344,7 +540,10 @@ export function EditorToolbar({
               <ListItemIcon sx={{ color: "error.main" }}>
                 <DeleteIcon fontSize="small" />
               </ListItemIcon>
-              <ListItemText primary="Delete" />
+              <ListItemText
+                primary="Delete"
+                primaryTypographyProps={{ fontSize: "0.84rem", fontWeight: 500, color: "inherit" }}
+              />
             </MenuItem>
           </Menu>
 
@@ -358,6 +557,10 @@ export function EditorToolbar({
               paper: {
                 style: {
                   pointerEvents: "auto",
+                },
+                sx: {
+                  minWidth: 200,
+                  p: 0.5,
                 },
               },
             }}
@@ -374,8 +577,9 @@ export function EditorToolbar({
               </ListItemIcon>
               <ListItemText
                 primary="PDF"
+                primaryTypographyProps={{ fontSize: "0.84rem", fontWeight: 500 }}
                 secondary="Print / Save as PDF"
-                secondaryTypographyProps={{ sx: { fontSize: "0.7rem" } }}
+                secondaryTypographyProps={{ sx: { fontSize: "0.72rem" } }}
               />
             </MenuItem>
             <MenuItem
@@ -390,11 +594,12 @@ export function EditorToolbar({
               </ListItemIcon>
               <ListItemText
                 primary="Word (.docx)"
+                primaryTypographyProps={{ fontSize: "0.84rem", fontWeight: 500 }}
                 secondary="Microsoft Word / Google Docs"
-                secondaryTypographyProps={{ sx: { fontSize: "0.7rem" } }}
+                secondaryTypographyProps={{ sx: { fontSize: "0.72rem" } }}
               />
             </MenuItem>
-            <Divider />
+            <Divider sx={{ my: 0.5 }} />
             <MenuItem
               onClick={() => {
                 onExportMarkdown?.();
@@ -407,8 +612,9 @@ export function EditorToolbar({
               </ListItemIcon>
               <ListItemText
                 primary="Markdown (.md)"
+                primaryTypographyProps={{ fontSize: "0.84rem", fontWeight: 500 }}
                 secondary="Raw markdown source"
-                secondaryTypographyProps={{ sx: { fontSize: "0.7rem" } }}
+                secondaryTypographyProps={{ sx: { fontSize: "0.72rem" } }}
               />
             </MenuItem>
             <MenuItem
@@ -423,8 +629,9 @@ export function EditorToolbar({
               </ListItemIcon>
               <ListItemText
                 primary="HTML (.html)"
+                primaryTypographyProps={{ fontSize: "0.84rem", fontWeight: 500 }}
                 secondary="Styled web page"
-                secondaryTypographyProps={{ sx: { fontSize: "0.7rem" } }}
+                secondaryTypographyProps={{ sx: { fontSize: "0.72rem" } }}
               />
             </MenuItem>
             <MenuItem
@@ -439,8 +646,9 @@ export function EditorToolbar({
               </ListItemIcon>
               <ListItemText
                 primary="Plain Text (.txt)"
+                primaryTypographyProps={{ fontSize: "0.84rem", fontWeight: 500 }}
                 secondary="No formatting"
-                secondaryTypographyProps={{ sx: { fontSize: "0.7rem" } }}
+                secondaryTypographyProps={{ sx: { fontSize: "0.72rem" } }}
               />
             </MenuItem>
           </Menu>
@@ -449,10 +657,22 @@ export function EditorToolbar({
             anchorEl={historyAnchor}
             open={historyOpen}
             onClose={() => setHistoryAnchor(null)}
+            slotProps={{
+              paper: {
+                sx: {
+                  minWidth: 220,
+                  maxHeight: 320,
+                  p: 0.5,
+                },
+              },
+            }}
           >
             {versions.length === 0 && (
               <MenuItem disabled>
-                <ListItemText primary="No history yet" />
+                <ListItemText
+                  primary="No history yet"
+                  primaryTypographyProps={{ fontSize: "0.84rem", fontWeight: 500 }}
+                />
               </MenuItem>
             )}
             {versions
@@ -468,12 +688,11 @@ export function EditorToolbar({
                 >
                   <ListItemText
                     primary={new Date(v.created_at * 1000).toLocaleString()}
+                    primaryTypographyProps={{ fontSize: "0.84rem", fontWeight: 500 }}
                   />
                 </MenuItem>
               ))}
           </Menu>
-        </Box>
-      </Box>
 
       {/* ── Row 2: formatting buttons (edit/split only) ───── */}
       {showFormatting && (
@@ -481,12 +700,38 @@ export function EditorToolbar({
           <Divider />
           <Box
             sx={{
-              px: 1,
-              py: 0.5,
+              position: "fixed",
+              bottom: { xs: 0, sm: 16 },
+              left: { xs: 0, sm: "50%" },
+              transform: { xs: "none", sm: "translateX(-50%)" },
+              width: { xs: "100%", sm: "auto" },
+              maxWidth: { xs: "100vw", sm: "calc(100vw - 32px)" },
+              zIndex: 1300,
               display: "flex",
               alignItems: "center",
               gap: 0.25,
-              flexWrap: "wrap",
+              flexWrap: "nowrap",
+              overflowX: "auto",
+              overflowY: "hidden",
+              WebkitOverflowScrolling: "touch",
+              scrollbarWidth: "none",
+              "&::-webkit-scrollbar": { display: "none" },
+              px: { xs: 1.25, sm: 1.5 },
+              py: { xs: 0.75, sm: 0.5 },
+              borderRadius: { xs: 0, sm: 1.5 },
+              bgcolor: (t) => alpha(t.palette.background.paper, 0.95),
+              border: "1px solid",
+              borderColor: (t) => alpha(t.palette.text.primary, 0.08),
+              borderBottom: { xs: "none", sm: "1px solid" },
+              borderLeft: { xs: "none", sm: "1px solid" },
+              borderRight: { xs: "none", sm: "1px solid" },
+              borderTop: "1px solid",
+              backdropFilter: "blur(16px)",
+              boxShadow: (t) => `0 8px 32px ${alpha(t.palette.common.black, 0.35)}`,
+              boxSizing: "border-box",
+              "& > *": {
+                flexShrink: 0,
+              },
             }}
           >
             {/* Undo / Redo */}
@@ -496,8 +741,9 @@ export function EditorToolbar({
                   size="small"
                   onClick={() => editor.chain().focus().undo().run()}
                   disabled={!editor.can().undo()}
+                  sx={{ p: 0.75 }}
                 >
-                  <UndoIcon fontSize="small" />
+                  <UndoIcon sx={{ fontSize: 18 }} />
                 </IconButton>
               </span>
             </Tooltip>
@@ -507,13 +753,14 @@ export function EditorToolbar({
                   size="small"
                   onClick={() => editor.chain().focus().redo().run()}
                   disabled={!editor.can().redo()}
+                  sx={{ p: 0.75 }}
                 >
-                  <RedoIcon fontSize="small" />
+                  <RedoIcon sx={{ fontSize: 18 }} />
                 </IconButton>
               </span>
             </Tooltip>
 
-            <Divider orientation="vertical" flexItem sx={{ mx: 0.5 }} />
+            <Divider orientation="vertical" flexItem sx={{ mx: 0.25, borderColor: (t) => alpha(t.palette.text.primary, 0.08) }} />
 
             {/* Text style */}
             <Tooltip title="Bold (Ctrl+B)">
@@ -521,9 +768,9 @@ export function EditorToolbar({
                 size="small"
                 onClick={() => editor.chain().focus().toggleBold().run()}
                 color={editor.isActive("bold") ? "secondary" : "default"}
-                sx={{ fontWeight: 900 }}
+                sx={{ p: 0.75 }}
               >
-                <FormatBoldIcon fontSize="small" />
+                <FormatBoldIcon sx={{ fontSize: 18 }} />
               </IconButton>
             </Tooltip>
             <Tooltip title="Italic (Ctrl+I)">
@@ -531,8 +778,9 @@ export function EditorToolbar({
                 size="small"
                 onClick={() => editor.chain().focus().toggleItalic().run()}
                 color={editor.isActive("italic") ? "secondary" : "default"}
+                sx={{ p: 0.75 }}
               >
-                <FormatItalicIcon fontSize="small" />
+                <FormatItalicIcon sx={{ fontSize: 18 }} />
               </IconButton>
             </Tooltip>
             <Tooltip title="Inline code">
@@ -540,8 +788,9 @@ export function EditorToolbar({
                 size="small"
                 onClick={() => editor.chain().focus().toggleCode().run()}
                 color={editor.isActive("code") ? "secondary" : "default"}
+                sx={{ p: 0.75 }}
               >
-                <CodeIcon fontSize="small" />
+                <CodeIcon sx={{ fontSize: 18 }} />
               </IconButton>
             </Tooltip>
             <Tooltip title="Link">
@@ -549,12 +798,13 @@ export function EditorToolbar({
                 size="small"
                 onClick={handleLink}
                 color={editor.isActive("link") ? "secondary" : "default"}
+                sx={{ p: 0.75 }}
               >
-                <LinkIcon fontSize="small" />
+                <LinkIcon sx={{ fontSize: 18 }} />
               </IconButton>
             </Tooltip>
 
-            <Divider orientation="vertical" flexItem sx={{ mx: 0.5 }} />
+            <Divider orientation="vertical" flexItem sx={{ mx: 0.25, borderColor: (t) => alpha(t.palette.text.primary, 0.08) }} />
 
             {/* Headings */}
             {([1, 2, 3] as const).map((level) => (
@@ -564,10 +814,10 @@ export function EditorToolbar({
                     editor.chain().focus().toggleHeading({ level }).run()
                   }
                   sx={{
-                    width: 28,
-                    height: 28,
+                    width: 26,
+                    height: 26,
                     borderRadius: 1,
-                    fontSize: "0.7rem",
+                    fontSize: "0.65rem",
                     fontWeight: 800,
                     fontFamily: "inherit",
                     color: editor.isActive("heading", { level })
@@ -582,7 +832,7 @@ export function EditorToolbar({
               </Tooltip>
             ))}
 
-            <Divider orientation="vertical" flexItem sx={{ mx: 0.5 }} />
+            <Divider orientation="vertical" flexItem sx={{ mx: 0.25, borderColor: (t) => alpha(t.palette.text.primary, 0.08) }} />
 
             {/* Lists */}
             <Tooltip title="Bullet list">
@@ -590,8 +840,9 @@ export function EditorToolbar({
                 size="small"
                 onClick={() => editor.chain().focus().toggleBulletList().run()}
                 color={editor.isActive("bulletList") ? "secondary" : "default"}
+                sx={{ p: 0.75 }}
               >
-                <FormatListBulletedIcon fontSize="small" />
+                <FormatListBulletedIcon sx={{ fontSize: 18 }} />
               </IconButton>
             </Tooltip>
             <Tooltip title="Numbered list">
@@ -601,8 +852,9 @@ export function EditorToolbar({
                 color={
                   editor.isActive("orderedList") ? "secondary" : "default"
                 }
+                sx={{ p: 0.75 }}
               >
-                <FormatListNumberedIcon fontSize="small" />
+                <FormatListNumberedIcon sx={{ fontSize: 18 }} />
               </IconButton>
             </Tooltip>
             <Tooltip title="Indent (Tab)">
@@ -615,8 +867,9 @@ export function EditorToolbar({
                     editor.chain().focus().indent().run();
                   }
                 }}
+                sx={{ p: 0.75 }}
               >
-                <FormatIndentIncreaseIcon fontSize="small" />
+                <FormatIndentIncreaseIcon sx={{ fontSize: 18 }} />
               </IconButton>
             </Tooltip>
             <Tooltip title="Outdent (Shift+Tab)">
@@ -629,8 +882,9 @@ export function EditorToolbar({
                     editor.chain().focus().outdent().run();
                   }
                 }}
+                sx={{ p: 0.75 }}
               >
-                <FormatIndentDecreaseIcon fontSize="small" />
+                <FormatIndentDecreaseIcon sx={{ fontSize: 18 }} />
               </IconButton>
             </Tooltip>
             <Tooltip title="Blockquote">
@@ -640,22 +894,23 @@ export function EditorToolbar({
                 color={
                   editor.isActive("blockquote") ? "secondary" : "default"
                 }
+                sx={{ p: 0.75 }}
               >
-                <FormatQuoteIcon fontSize="small" />
+                <FormatQuoteIcon sx={{ fontSize: 18 }} />
               </IconButton>
             </Tooltip>
 
-            <Divider orientation="vertical" flexItem sx={{ mx: 0.5 }} />
+            <Divider orientation="vertical" flexItem sx={{ mx: 0.25, borderColor: (t) => alpha(t.palette.text.primary, 0.08) }} />
 
             {/* Code block */}
             <Tooltip title="Code block">
               <ButtonBase
                 onClick={() => editor.chain().focus().toggleCodeBlock().run()}
                 sx={{
-                  width: 32,
-                  height: 28,
+                  width: 30,
+                  height: 26,
                   borderRadius: 1,
-                  fontSize: "0.62rem",
+                  fontSize: "0.6rem",
                   fontWeight: 700,
                   fontFamily: "monospace",
                   color: editor.isActive("codeBlock")
@@ -670,7 +925,6 @@ export function EditorToolbar({
             </Tooltip>
 
             {/* Table */}
-            <Divider orientation="vertical" flexItem sx={{ mx: 0.5 }} />
             <Tooltip title="Insert table">
               <IconButton
                 size="small"
@@ -682,8 +936,9 @@ export function EditorToolbar({
                     .run()
                 }
                 color={isInTable ? "secondary" : "default"}
+                sx={{ p: 0.75 }}
               >
-                <TableChartIcon fontSize="small" />
+                <TableChartIcon sx={{ fontSize: 18 }} />
               </IconButton>
             </Tooltip>
             {isInTable && (
@@ -692,10 +947,10 @@ export function EditorToolbar({
                   <ButtonBase
                     onClick={(e) => setTableMenuAnchor(e.currentTarget)}
                     sx={{
-                      height: 28,
-                      px: 0.75,
+                      height: 26,
+                      px: 0.5,
                       borderRadius: 1,
-                      fontSize: "0.7rem",
+                      fontSize: "0.65rem",
                       fontWeight: 700,
                       fontFamily: "inherit",
                       color: "secondary.main",
@@ -711,6 +966,14 @@ export function EditorToolbar({
                   anchorEl={tableMenuAnchor}
                   open={tableMenuOpen}
                   onClose={() => setTableMenuAnchor(null)}
+                  slotProps={{
+                    paper: {
+                      sx: {
+                        minWidth: 180,
+                        p: 0.5,
+                      },
+                    },
+                  }}
                 >
                   <MenuItem
                     onClick={() => {
@@ -718,7 +981,10 @@ export function EditorToolbar({
                       setTableMenuAnchor(null);
                     }}
                   >
-                    <ListItemText primary="Add row above" />
+                    <ListItemText
+                      primary="Add row above"
+                      primaryTypographyProps={{ fontSize: "0.84rem", fontWeight: 500 }}
+                    />
                   </MenuItem>
                   <MenuItem
                     onClick={() => {
@@ -726,7 +992,10 @@ export function EditorToolbar({
                       setTableMenuAnchor(null);
                     }}
                   >
-                    <ListItemText primary="Add row below" />
+                    <ListItemText
+                      primary="Add row below"
+                      primaryTypographyProps={{ fontSize: "0.84rem", fontWeight: 500 }}
+                    />
                   </MenuItem>
                   <MenuItem
                     onClick={() => {
@@ -734,16 +1003,22 @@ export function EditorToolbar({
                       setTableMenuAnchor(null);
                     }}
                   >
-                    <ListItemText primary="Delete row" />
+                    <ListItemText
+                      primary="Delete row"
+                      primaryTypographyProps={{ fontSize: "0.84rem", fontWeight: 500 }}
+                    />
                   </MenuItem>
-                  <Divider />
+                  <Divider sx={{ my: 0.5 }} />
                   <MenuItem
                     onClick={() => {
                       editor.chain().focus().addColumnBefore().run();
                       setTableMenuAnchor(null);
                     }}
                   >
-                    <ListItemText primary="Add column before" />
+                    <ListItemText
+                      primary="Add column before"
+                      primaryTypographyProps={{ fontSize: "0.84rem", fontWeight: 500 }}
+                    />
                   </MenuItem>
                   <MenuItem
                     onClick={() => {
@@ -751,7 +1026,10 @@ export function EditorToolbar({
                       setTableMenuAnchor(null);
                     }}
                   >
-                    <ListItemText primary="Add column after" />
+                    <ListItemText
+                      primary="Add column after"
+                      primaryTypographyProps={{ fontSize: "0.84rem", fontWeight: 500 }}
+                    />
                   </MenuItem>
                   <MenuItem
                     onClick={() => {
@@ -759,18 +1037,24 @@ export function EditorToolbar({
                       setTableMenuAnchor(null);
                     }}
                   >
-                    <ListItemText primary="Delete column" />
+                    <ListItemText
+                      primary="Delete column"
+                      primaryTypographyProps={{ fontSize: "0.84rem", fontWeight: 500 }}
+                    />
                   </MenuItem>
-                  <Divider />
+                  <Divider sx={{ my: 0.5 }} />
                   <MenuItem
                     onClick={() => {
                       editor.chain().focus().toggleHeaderRow().run();
                       setTableMenuAnchor(null);
                     }}
                   >
-                    <ListItemText primary="Toggle header row" />
+                    <ListItemText
+                      primary="Toggle header row"
+                      primaryTypographyProps={{ fontSize: "0.84rem", fontWeight: 500 }}
+                    />
                   </MenuItem>
-                  <Divider />
+                  <Divider sx={{ my: 0.5 }} />
                   <MenuItem
                     onClick={() => {
                       editor.chain().focus().deleteTable().run();
@@ -781,14 +1065,18 @@ export function EditorToolbar({
                     <ListItemIcon sx={{ color: "error.main" }}>
                       <DeleteIcon fontSize="small" />
                     </ListItemIcon>
-                    <ListItemText primary="Delete table" />
+                    <ListItemText
+                      primary="Delete table"
+                      primaryTypographyProps={{ fontSize: "0.84rem", fontWeight: 500, color: "inherit" }}
+                    />
                   </MenuItem>
                 </Menu>
               </>
             )}
 
+            <Divider orientation="vertical" flexItem sx={{ mx: 0.25, borderColor: (t) => alpha(t.palette.text.primary, 0.08) }} />
+
             {/* Dictation */}
-            <Divider orientation="vertical" flexItem sx={{ mx: 0.5 }} />
             <DictationButton
               size="small"
               tooltip="Dictate"
@@ -810,7 +1098,6 @@ export function EditorToolbar({
             {/* Attach file */}
             {onAttachFile && (
               <>
-                <Divider orientation="vertical" flexItem sx={{ mx: 0.5 }} />
                 <input
                   ref={fileInputRef}
                   type="file"
@@ -831,8 +1118,9 @@ export function EditorToolbar({
                       onClick={() => fileInputRef.current?.click()}
                       disabled={uploading}
                       color="default"
+                      sx={{ p: 0.75 }}
                     >
-                      <AttachFileIcon fontSize="small" />
+                      <AttachFileIcon sx={{ fontSize: 18 }} />
                     </IconButton>
                   </span>
                 </Tooltip>
@@ -841,14 +1129,23 @@ export function EditorToolbar({
           </Box>
         </>
       )}
-    </Paper>
+    </>
   );
 }
 
-function ToolbarTitle({ address, heuristicTitle, canEdit }: { address: string; heuristicTitle: string; canEdit: boolean }) {
-  const { docTitles, setDocTitle } = useDocMetadata();
+function ToolbarTitle({
+  address,
+  heuristicTitle,
+  canEdit,
+}: {
+  address: string;
+  heuristicTitle: string;
+  canEdit: boolean;
+}) {
+  const { docTitles, setDocTitle, docTags } = useDocMetadata();
   const customTitle = docTitles.get(address) || "";
   const displayTitle = customTitle || heuristicTitle;
+  const primaryCategory = (address ? docTags.get(address)?.[0] : null) || "Workspace";
 
   const [input, setInput] = useState(displayTitle);
   const [saving, setSaving] = useState(false);
@@ -884,12 +1181,35 @@ function ToolbarTitle({ address, heuristicTitle, canEdit }: { address: string; h
         display: "flex",
         alignItems: "center",
         flex: 1,
-        justifyContent: "flex-start",
         minWidth: 0,
-        "&:hover .edit-icon": { opacity: 1 }
+        gap: 0.75,
+        "&:hover .edit-icon": { opacity: 1 },
       }}
       onDoubleClick={() => canEdit && setEditing(true)}
     >
+      <Typography
+        variant="body2"
+        sx={{
+          color: "text.secondary",
+          fontSize: "0.86rem",
+          fontWeight: 500,
+          whiteSpace: "nowrap",
+          letterSpacing: "-0.01em",
+        }}
+      >
+        {primaryCategory}
+      </Typography>
+      <Typography
+        variant="body2"
+        sx={{
+          color: "text.disabled",
+          fontSize: "0.86rem",
+          userSelect: "none",
+        }}
+      >
+        /
+      </Typography>
+
       {editing ? (
         <InputBase
           autoFocus
@@ -906,24 +1226,26 @@ function ToolbarTitle({ address, heuristicTitle, canEdit }: { address: string; h
           disabled={saving}
           placeholder="Enter document title..."
           sx={{
-            fontSize: "0.9rem",
+            fontSize: "0.92rem",
             fontWeight: 700,
             width: "100%",
-            maxWidth: 400,
+            maxWidth: 360,
           }}
-          inputProps={{ style: { textAlign: 'left' } }}
+          inputProps={{ style: { textAlign: "left" } }}
         />
       ) : (
-        <>
+        <Box sx={{ display: "flex", alignItems: "center", minWidth: 0 }}>
           <Typography
             variant="body2"
             sx={{
               fontWeight: 700,
+              fontSize: "0.92rem",
+              color: "text.primary",
               cursor: canEdit ? "text" : "default",
               whiteSpace: "nowrap",
               overflow: "hidden",
               textOverflow: "ellipsis",
-              maxWidth: 400,
+              maxWidth: { xs: 140, sm: 240, md: 380 },
             }}
             title={displayTitle}
           >
@@ -931,17 +1253,22 @@ function ToolbarTitle({ address, heuristicTitle, canEdit }: { address: string; h
           </Typography>
           {canEdit && (
             <Tooltip title="Rename Document">
-              <IconButton 
+              <IconButton
                 className="edit-icon"
-                size="small" 
-                onClick={() => setEditing(true)} 
-                sx={{ opacity: 0, transition: "opacity 0.2s", p: 0.25, ml: 0.5 }}
+                size="small"
+                onClick={() => setEditing(true)}
+                sx={{
+                  opacity: 0,
+                  transition: "opacity 0.2s",
+                  p: 0.25,
+                  ml: 0.5,
+                }}
               >
-                <EditIcon sx={{ fontSize: 14 }} />
+                <EditIcon sx={{ fontSize: 13 }} />
               </IconButton>
             </Tooltip>
           )}
-        </>
+        </Box>
       )}
     </Box>
   );

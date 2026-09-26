@@ -51,7 +51,11 @@ export default function MyFormsPickerDialog({ open, onClose, onPick }: Props) {
       fullWidth
       PaperProps={{
         sx: {
-          borderRadius: 3,
+          borderRadius: 1.5,
+          border: '1px solid',
+          borderColor: 'divider',
+          backgroundImage: 'none',
+          bgcolor: 'background.paper',
           boxShadow: "0 20px 60px rgba(0,0,0,0.18)",
           overflow: "hidden",
         },
@@ -75,8 +79,8 @@ export default function MyFormsPickerDialog({ open, onClose, onPick }: Props) {
                 </InputAdornment>
               ),
               sx: {
-                borderRadius: 2,
-                bgcolor: "action.hover",
+                borderRadius: 0.75,
+                bgcolor: (t) => `${t.palette.primary.main}08`, border: '1px solid rgba(255,255,255,0.06)',
                 "& fieldset": { border: "none" },
               },
             }}
@@ -118,7 +122,7 @@ export default function MyFormsPickerDialog({ open, onClose, onPick }: Props) {
                   textAlign: "left",
                   borderRadius: 1,
                   mx: 0.5,
-                  "&:hover": { bgcolor: "action.hover" },
+                  "&:hover": { bgcolor: (t) => `${t.palette.primary.main}08`, border: '1px solid rgba(255,255,255,0.06)' },
                   transition: "background-color 0.1s",
                 }}
               >

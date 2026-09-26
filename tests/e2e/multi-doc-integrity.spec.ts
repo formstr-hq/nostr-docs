@@ -29,18 +29,21 @@ test("creating a new page does not overwrite an existing one", async ({ page }) 
   const urlA = page.url();
 
   // Page B (fresh draft)
-  await page.getByRole("button", { name: "New Document" }).click();
+  await page.getByRole("button", { name: "All pages" }).click();
+  await page.getByRole("button", { name: "New page" }).click();
   await typeIntoEditor(page, `# ${b}\n\nBBB body ${b}`);
   await save(page);
   await expect(page).toHaveURL(/\/doc\/naddr1/, { timeout: 20_000 });
   expect(page.url()).not.toBe(urlA);
 
-  // Reopen A from the sidebar and confirm it kept its own content.
-  await page.getByRole("button", { name: new RegExp(a) }).click();
+  // Reopen A from the workspace page list and confirm it kept its own content.
+  await page.getByRole("button", { name: "All pages" }).click();
+  await page.getByText(a, { exact: true }).click();
   await expect(page.getByText(`AAA body ${a}`, { exact: false })).toBeVisible({ timeout: 20_000 });
   await expect(page.getByText(`BBB body ${b}`, { exact: false })).toHaveCount(0);
 
   // And B still holds B's content.
-  await page.getByRole("button", { name: new RegExp(b) }).click();
+  await page.getByRole("button", { name: "All pages" }).click();
+  await page.getByText(b, { exact: true }).click();
   await expect(page.getByText(`BBB body ${b}`, { exact: false })).toBeVisible({ timeout: 20_000 });
 });

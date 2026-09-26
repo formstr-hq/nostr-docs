@@ -63,7 +63,7 @@ export default function MigrationModal({
       onClose={onDismiss}
       maxWidth="xs"
       fullWidth
-      PaperProps={{ sx: { borderRadius: 3, bgcolor: "background.paper" } }}
+      PaperProps={{ sx: { borderRadius: 1.5, border: '1px solid', borderColor: 'divider', backgroundImage: 'none', bgcolor: "background.paper" } }}
     >
         <Box sx={{ p: 3, display: "flex", flexDirection: "column", gap: 2 }}>
           <Box sx={{ display: "flex", alignItems: "center", gap: 1.5 }}>
@@ -71,7 +71,7 @@ export default function MigrationModal({
               sx={{
                 width: 40,
                 height: 40,
-                borderRadius: 2,
+                borderRadius: 0.75,
                 bgcolor: `${theme.palette.primary.main}22`,
                 color: "primary.main",
                 display: "flex",

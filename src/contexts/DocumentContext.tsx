@@ -3,9 +3,12 @@ import React, { createContext, useContext, useEffect, useMemo, useState } from "
 import { signerManager } from "../signer";
 import { getConversationKey } from "nostr-tools/nip44";
 import { hexToBytes } from "nostr-tools/utils";
-import { useUser, type UserProfile } from "./UserContext";
+import { useUser } from "./UserContext";
+import { useRelays } from "./RelayContext";
 import { getEventAddress } from "../utils/helpers";
-import { loadVisitedEvents } from "../lib/localStore";
+import { loadAllLocalEvents } from "../lib/localStore";
+import { pool } from "../nostr/relayPool";
+import { KIND_FILE } from "../nostr/kinds";
 
 type DocumentVersion = {
   event: Event;
@@ -54,8 +57,6 @@ const DocumentContext = createContext<DocumentContextValue | undefined>(
 const getDecryptedContent = async (
   event: Event,
   viewKey?: string,
-  user?: UserProfile | null,
-  loginCallback?: () => Promise<void>,
 ): Promise<string | null> => {
   try {
     if (viewKey) {
@@ -67,12 +68,7 @@ const getDecryptedContent = async (
       return Promise.resolve(decryptedContent);
     }
 
-    // If no user, trigger login and then decrypt using the freshly-acquired signer
-    if (!user) {
-      await loginCallback?.();
-    }
-
-    // After login (or if user was already set), get signer and decrypt
+    // The signer manager waits for restore and opens the correct login/unlock flow.
     const signer = await signerManager.getSigner();
     const pubkey = await signer.getPublicKey();
     if (event.pubkey !== pubkey) return null;
@@ -86,7 +82,8 @@ const getDecryptedContent = async (
 export const DocumentProvider: React.FC<{ children: React.ReactNode }> = ({
   children,
 }) => {
-  const { user, loginModal } = useUser();
+  const { user } = useUser();
+  const { relays } = useRelays();
   const [documents, setDocuments] = useState<Map<string, DocumentHistory>>(
     new Map(),
   );
@@ -204,12 +201,7 @@ export const DocumentProvider: React.FC<{ children: React.ReactNode }> = ({
   ) => {
     const address = getEventAddress(document);
     if (!address) return;
-    const decryptedContent = await getDecryptedContent(
-      document,
-      keys?.viewKey,
-      user,
-      loginModal,
-    );
+    const decryptedContent = await getDecryptedContent(document, keys?.viewKey);
     if (!decryptedContent) return;
 
     setDocuments((prev) => {
@@ -244,37 +236,76 @@ export const DocumentProvider: React.FC<{ children: React.ReactNode }> = ({
     });
   };
 
-  // Hydrate visited pages from IndexedDB on mount so they survive a reload.
-  // Runs independently of login — visited docs decrypt with their stored
-  // viewKey, so no signer is required. Repopulates both the document cache and
-  // sessionVisited (which the Visited tab is derived from).
+  // Hydrate all local pages from IndexedDB on mount so they survive a reload.
+  // addDocument is intentionally omitted — it's a one-shot hydration that only
+  // needs to run at mount. Including it would cause infinite loops since
+  // addDocument is not wrapped in useCallback.
   useEffect(() => {
     (async () => {
       try {
-        const entries = await loadVisitedEvents();
+        const entries = await loadAllLocalEvents();
         if (entries.length === 0) return;
-        const addresses: string[] = [];
+        const visitedAddrs: string[] = [];
+        const localOnlyAddrs: string[] = [];
         for (const entry of entries) {
           try {
             const keys: Record<string, string> = {};
             if (entry.viewKey) keys.viewKey = entry.viewKey;
             if (entry.editKey) keys.editKey = entry.editKey;
             await addDocument(entry.event, keys);
-            addresses.push(entry.address);
+            if (entry.visited) visitedAddrs.push(entry.address);
+            if (entry.localOnly || entry.pendingBroadcast || !entry.event.sig) {
+              localOnlyAddrs.push(entry.address);
+            }
           } catch {
-            // Skip entries that can't be decrypted with the stored key.
+            // Skip entries that can't be decrypted
           }
         }
-        if (addresses.length > 0) {
-          setSessionVisited((prev) => new Set([...prev, ...addresses]));
+        if (visitedAddrs.length > 0) {
+          setSessionVisited((prev) => new Set([...prev, ...visitedAddrs]));
+        }
+        if (localOnlyAddrs.length > 0) {
+          setLocalOnlyAddresses((prev) => new Set([...prev, ...localOnlyAddrs]));
         }
       } catch (err) {
-        console.warn("Failed to hydrate visited pages:", err);
+        console.warn("Failed to hydrate local pages:", err);
       }
     })();
-    // Mount-only: addDocument is stable enough for a one-shot hydration.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Fetch user's documents from relays when user is logged in.
+  // addDocument is intentionally omitted — the subscription should only
+  // reset when the user or relays change, not on every render.
+  useEffect(() => {
+    if (!user?.pubkey || relays.length === 0) return;
+
+    const sub = pool.subscribeMany(
+      relays,
+      { kinds: [KIND_FILE], authors: [user.pubkey] },
+      {
+        onevent: async (event: Event) => {
+          const addr = getEventAddress(event);
+          if (addr) {
+            setLocalOnlyAddresses((prev) => {
+              if (!prev.has(addr)) return prev;
+              const next = new Set(prev);
+              next.delete(addr);
+              return next;
+            });
+          }
+          await addDocument(event);
+        },
+      },
+    );
+
+    return () => {
+      try {
+        sub.close();
+      } catch {} // eslint-disable-line no-empty
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user?.pubkey, relays]);
 
   return (
     <DocumentContext.Provider

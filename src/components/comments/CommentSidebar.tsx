@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Box, Button, Typography, Divider, IconButton, Tooltip, Snackbar, Alert } from "@mui/material";
+import { Box, Button, Typography, Divider, IconButton, Tooltip, Snackbar, Alert, alpha } from "@mui/material";
 import CloseIcon from "@mui/icons-material/Close";
 import { useComments } from "../../contexts/CommentContext";
 import { scrollToComment } from "../../utils/scrollToComment";
@@ -60,7 +60,8 @@ export function CommentSidebar({ onClose, activeCommentId, isMobile }: Props) {
         width: 300,
         flexShrink: 0,
         borderLeft: "1px solid",
-        borderColor: "divider",
+        borderColor: (t) => alpha(t.palette.text.primary, 0.06),
+        bgcolor: "background.default",
         display: "flex",
         flexDirection: "column",
         overflow: "hidden",
@@ -76,8 +77,13 @@ export function CommentSidebar({ onClose, activeCommentId, isMobile }: Props) {
           flexShrink: 0,
         }}
       >
-        <Typography variant="subtitle2" sx={{ fontWeight: 700 }}>
-          Comments {active.length > 0 && `(${active.length})`}
+        <Typography variant="subtitle2" sx={{ fontWeight: 600 }}>
+          Comments{" "}
+          {active.length > 0 && (
+            <Box component="span" sx={{ color: "primary.main" }}>
+              ({active.length})
+            </Box>
+          )}
         </Typography>
         <Box sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
           <Button

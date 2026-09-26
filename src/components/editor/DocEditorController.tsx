@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Box,
   Button,
@@ -13,6 +13,7 @@ import {
   IconButton,
   Tooltip,
   useTheme,
+  alpha,
 } from "@mui/material";
 import InsertDriveFileIcon from "@mui/icons-material/InsertDriveFile";
 import LabelOutlinedIcon from "@mui/icons-material/LabelOutlined";
@@ -20,7 +21,9 @@ import VisibilityOutlinedIcon from "@mui/icons-material/VisibilityOutlined";
 import EditOutlinedIcon from "@mui/icons-material/EditOutlined";
 import SmartphoneIcon from "@mui/icons-material/Smartphone";
 import ChatBubbleOutlineIcon from "@mui/icons-material/ChatBubbleOutline";
+import CropFreeIcon from "@mui/icons-material/CropFree";
 import { useDocMetadata } from "../../contexts/DocMetadataContext";
+import { getDocumentTags } from "../AllPagesView";
 import { useNavigate, useBlocker } from "react-router-dom";
 import { finalizeEvent, getPublicKey, getEventHash, nip19, type Event } from "nostr-tools";
 import { hexToBytes } from "nostr-tools/utils";
@@ -115,12 +118,12 @@ function getEditorMarkdown(editor: Editor): string {
 
 function TagRow({ address }: { address: string }) {
   const { docTags, setDocTags } = useDocMetadata();
-  const tags = docTags.get(address) ?? [];
+  const tags = getDocumentTags(address, docTags);
   const [input, setInput] = useState("");
   const [saving, setSaving] = useState(false);
 
   const handleAdd = async () => {
-    const tag = input.trim().toLowerCase();
+    const tag = input.trim().toLowerCase().replace(/^#/, "");
     if (!tag || tags.includes(tag)) { setInput(""); return; }
     setSaving(true);
     try { await setDocTags(address, [...tags, tag]); }
@@ -270,6 +273,47 @@ export function DocumentEditorController({
   // Whether the last save was an auto-save (vs a manual save)
   const [wasAutoSaved, setWasAutoSaved] = useState(false);
   const [focusMode, setFocusMode] = useState(false);
+  const [focusAnimation, setFocusAnimation] = useState<"enter" | "exit" | null>(null);
+  const [showFocusHint, setShowFocusHint] = useState(false);
+  const focusTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const focusHintTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const handleToggleFocusMode = useCallback(() => {
+    if (focusTimeoutRef.current) clearTimeout(focusTimeoutRef.current);
+    if (focusHintTimeoutRef.current) clearTimeout(focusHintTimeoutRef.current);
+
+    if (!focusMode) {
+      // ENTER FOCUS MODE: slight 100ms deliberate delay & smooth ease-in animation
+      setFocusAnimation("enter");
+      setShowFocusHint(true);
+
+      focusTimeoutRef.current = setTimeout(() => {
+        setFocusMode(true);
+      }, 100);
+
+      // Auto-hide floating hint after 2.6s
+      focusHintTimeoutRef.current = setTimeout(() => {
+        setShowFocusHint(false);
+      }, 2600);
+    } else {
+      // EXIT FOCUS MODE: smooth 240ms exit animation before unmounting fixed overlay
+      setFocusAnimation("exit");
+      setShowFocusHint(false);
+
+      focusTimeoutRef.current = setTimeout(() => {
+        setFocusMode(false);
+        setFocusAnimation(null);
+      }, 240);
+    }
+  }, [focusMode]);
+
+  useEffect(() => {
+    return () => {
+      if (focusTimeoutRef.current) clearTimeout(focusTimeoutRef.current);
+      if (focusHintTimeoutRef.current) clearTimeout(focusHintTimeoutRef.current);
+    };
+  }, []);
+
   const [wordCount, setWordCount] = useState(0);
   const [charCount, setCharCount] = useState(0);
   const [confirmOpen, setConfirmOpen] = useState(false);
@@ -782,7 +826,9 @@ export function DocumentEditorController({
 
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key === "Escape" && focusMode) setFocusMode(false);
+      if (e.key === "Escape" && focusMode && focusAnimation !== "exit") {
+        handleToggleFocusMode();
+      }
       if ((e.ctrlKey || e.metaKey) && e.key === "s") {
         e.preventDefault();
         handleSaveRef.current();
@@ -790,7 +836,7 @@ export function DocumentEditorController({
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [focusMode]);
+  }, [focusMode, focusAnimation, handleToggleFocusMode]);
 
   /* ── Warn on browser close / refresh ───────────────────── */
   const hasUnsavedChanges = md !== lastSavedMdRef.current;
@@ -1012,6 +1058,7 @@ export function DocumentEditorController({
       try {
         await publishEvent(stored, relays);
         await markBroadcast(address);
+        markLocalOnly(address, false);
       } catch (err) {
         console.warn("Relay broadcast failed (saved locally):", err);
       }
@@ -1216,16 +1263,54 @@ export function DocumentEditorController({
         display: "flex",
         flexDirection: "column",
         overflow: "hidden",
-        gap: 1,
+        bgcolor: "background.default",
         ...(focusMode && {
           position: "fixed",
           inset: 0,
           zIndex: 1300,
           bgcolor: "background.default",
-          p: 3,
+          animation:
+            focusAnimation === "exit"
+              ? "focusExit 0.24s cubic-bezier(0.4, 0, 0.2, 1) forwards"
+              : "focusEnter 0.36s cubic-bezier(0.16, 1, 0.3, 1) forwards",
         }),
       }}
     >
+      {showFocusHint && focusMode && (
+        <Box
+          sx={{
+            position: "fixed",
+            top: 24,
+            left: "50%",
+            transform: "translateX(-50%)",
+            zIndex: 1400,
+            pointerEvents: "none",
+            animation: "focusHintFade 2.4s ease forwards",
+            display: "flex",
+            alignItems: "center",
+            gap: 1,
+            px: 2,
+            py: 0.75,
+            borderRadius: 10,
+            bgcolor: (t) => alpha(t.palette.background.paper, 0.94),
+            backdropFilter: "blur(12px)",
+            border: "1px solid",
+            borderColor: "divider",
+            boxShadow: (t) =>
+              t.palette.mode === "dark"
+                ? "0 8px 32px rgba(0, 0, 0, 0.45)"
+                : "0 8px 24px rgba(0, 0, 0, 0.12)",
+          }}
+        >
+          <CropFreeIcon sx={{ fontSize: 16, color: "secondary.main" }} />
+          <Typography
+            variant="caption"
+            sx={{ fontWeight: 600, fontSize: "0.78rem", color: "text.primary" }}
+          >
+            Focus mode · Press Esc to exit
+          </Typography>
+        </Box>
+      )}
       {sharedAsUrl && (
         <Box
           sx={{
@@ -1234,11 +1319,10 @@ export function DocumentEditorController({
             justifyContent: "space-between",
             px: 2,
             py: 0.75,
-            borderRadius: 2,
             bgcolor: (t) => t.palette.mode === "dark"
               ? "rgba(255,255,255,0.05)"
               : "rgba(0,0,0,0.04)",
-            border: "1px solid",
+            borderBottom: "1px solid",
             borderColor: "divider",
             flexShrink: 0,
           }}
@@ -1266,11 +1350,10 @@ export function DocumentEditorController({
             justifyContent: "space-between",
             px: 2,
             py: 0.75,
-            borderRadius: 2,
             bgcolor: (t) => t.palette.mode === "dark"
               ? "rgba(255,255,255,0.05)"
               : "rgba(0,0,0,0.04)",
-            border: "1px solid",
+            borderBottom: "1px solid",
             borderColor: "divider",
             flexShrink: 0,
           }}
@@ -1291,78 +1374,81 @@ export function DocumentEditorController({
         </Box>
       )}
 
-      {!isViewOnly && (
-        <EditorToolbar
-          saving={saving}
-          mode={mode}
-          onSetMode={(newMode) => {
-            // Pre-sync TipTap before the re-render so that if onUpdate fires
-            // during EditorContent remount it fires with the correct content.
-            if (newMode === "edit" && editor) {
-              editor.commands.setContent(mdRef.current, { emitUpdate: false });
-            }
-            setMode(newMode);
-          }}
-          onSave={() => handleSave(false)}
-          handleDelete={handleDelete}
-          onShare={() => setShareOpen(true)}
-          versions={versions}
-          onSelectVersion={handleSelectVersion}
-          editor={editor}
-          focusMode={focusMode}
-          onToggleFocusMode={() => setFocusMode((f) => !f)}
-          isViewOnly={isViewOnly}
-          onAttachFile={(files) => Array.from(files).forEach(handleFileUpload)}
-          uploading={uploading}
-          isLocalOnly={isLocalOnly}
-          onToggleLocalOnly={handleToggleLocalOnly}
-          showLocalOnlyToggle={!viewKey && !editKey}
-          onExportMarkdown={handleExportMarkdown}
-          onExportHtml={handleExportHtml}
-          onExportPlainText={handleExportPlainText}
-          onExportPdf={handleExportPdf}
-          onExportDoc={handleExportDoc}
-          showComments={commentsEnabled ? showComments : undefined}
-          onToggleComments={commentsEnabled ? () => setShowComments((s) => !s) : undefined}
-          documentAddress={selectedDocumentId ?? undefined}
-          heuristicTitle={getDocTitle()}
-          hasEditKey={!!editKey}
-          textSuggestState={textSuggest.state}
-          textSuggestEnabled={
-            (textSuggest.prefs?.enabled ?? false) ||
-            (textSuggest.prefs?.autoCorrectEnabled ?? false)
-          }
-          onToggleTextSuggest={(next) => {
-            if (!textSuggest.prefs) return;
-            void textSuggest.updatePrefs({ ...textSuggest.prefs, enabled: next });
-          }}
-          onTextSuggestSettingsSaved={() => void textSuggest.reload()}
-        />
-      )}
-      {isViewOnly && commentsEnabled && (
-        <Box sx={{ display: "flex", justifyContent: "flex-end", p: 1 }}>
-          <Tooltip title={showComments ? "Hide comments" : "Show comments"}>
-            <IconButton
-              size="small"
-              onClick={() => setShowComments((s) => !s)}
-              color={showComments ? "secondary" : "default"}
-            >
-              <ChatBubbleOutlineIcon fontSize="small" />
-            </IconButton>
-          </Tooltip>
-        </Box>
-      )}
-
       <Paper
+        elevation={0}
         sx={{
           flex: 1,
-          borderRadius: 3,
+          borderRadius: 0,
           overflow: "hidden",
-          bgcolor: "background.paper",
+          bgcolor: "background.default",
           display: "flex",
           flexDirection: "column",
+          border: "none",
+          backgroundImage: "none",
         }}
       >
+        {!isViewOnly && (
+          <EditorToolbar
+            saving={saving}
+            mode={mode}
+            onSetMode={(newMode) => {
+              // Pre-sync TipTap before the re-render so that if onUpdate fires
+              // during EditorContent remount it fires with the correct content.
+              if (newMode === "edit" && editor) {
+                editor.commands.setContent(mdRef.current, { emitUpdate: false });
+              }
+              setMode(newMode);
+            }}
+            onSave={() => handleSave(false)}
+            handleDelete={handleDelete}
+            onShare={() => setShareOpen(true)}
+            versions={versions}
+            onSelectVersion={handleSelectVersion}
+            editor={editor}
+            focusMode={focusMode}
+            onToggleFocusMode={handleToggleFocusMode}
+            isViewOnly={isViewOnly}
+            onAttachFile={(files) => Array.from(files).forEach(handleFileUpload)}
+            uploading={uploading}
+            isLocalOnly={isLocalOnly}
+            onToggleLocalOnly={handleToggleLocalOnly}
+            showLocalOnlyToggle={!viewKey && !editKey}
+            onExportMarkdown={handleExportMarkdown}
+            onExportHtml={handleExportHtml}
+            onExportPlainText={handleExportPlainText}
+            onExportPdf={handleExportPdf}
+            onExportDoc={handleExportDoc}
+            showComments={commentsEnabled ? showComments : undefined}
+            onToggleComments={commentsEnabled ? () => setShowComments((s) => !s) : undefined}
+            documentAddress={selectedDocumentId ?? undefined}
+            heuristicTitle={getDocTitle()}
+            hasEditKey={!!editKey}
+            textSuggestState={textSuggest.state}
+            textSuggestEnabled={
+              (textSuggest.prefs?.enabled ?? false) ||
+              (textSuggest.prefs?.autoCorrectEnabled ?? false)
+            }
+            onToggleTextSuggest={(next) => {
+              if (!textSuggest.prefs) return;
+              void textSuggest.updatePrefs({ ...textSuggest.prefs, enabled: next });
+            }}
+            onTextSuggestSettingsSaved={() => void textSuggest.reload()}
+          />
+        )}
+        {isViewOnly && commentsEnabled && (
+          <Box sx={{ display: "flex", justifyContent: "flex-end", p: 1, borderBottom: "1px solid", borderColor: "divider" }}>
+            <Tooltip title={showComments ? "Hide comments" : "Show comments"}>
+              <IconButton
+                size="small"
+                onClick={() => setShowComments((s) => !s)}
+                color={showComments ? "secondary" : "default"}
+              >
+                <ChatBubbleOutlineIcon fontSize="small" />
+              </IconButton>
+            </Tooltip>
+          </Box>
+        )}
+
         {!isViewOnly && selectedDocumentId && (
           <TagRow address={selectedDocumentId} />
         )}
@@ -1394,8 +1480,12 @@ export function DocumentEditorController({
           justifyContent: "flex-end",
           alignItems: "center",
           gap: 2,
-          px: 1,
+          px: 2,
+          py: 0.5,
           flexShrink: 0,
+          bgcolor: "background.default",
+          borderTop: "1px solid",
+          borderColor: "divider",
         }}
       >
         {!isDraft && !isOwner && !!user && (

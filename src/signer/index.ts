@@ -99,6 +99,7 @@ class Signer {
   private loginModalCallback: (() => Promise<void>) | null = null;
   private unlockModalCallback: (() => Promise<void>) | null = null;
   private restorePromise: Promise<void> | null = null;
+  private signerPromise: Promise<NostrSigner> | null = null;
 
   registerLoginModal(callback: () => Promise<void>) {
     this.loginModalCallback = callback;
@@ -345,6 +346,15 @@ class Signer {
     if (this.restorePromise) await this.restorePromise;
     if (this.activeSigner) return this.activeSigner;
 
+    if (!this.signerPromise) this.signerPromise = this.resolveSigner();
+    try {
+      return await this.signerPromise;
+    } finally {
+      this.signerPromise = null;
+    }
+  }
+
+  private async resolveSigner(): Promise<NostrSigner> {
     const pkg = await getPkg();
     const account = pkg.getActiveAccount();
 

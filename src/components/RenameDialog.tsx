@@ -35,7 +35,7 @@ export default function RenameDialog({
   };
 
   return (
-    <Dialog open={open} onClose={onClose} maxWidth="sm" fullWidth>
+    <Dialog open={open} onClose={onClose} maxWidth="sm" fullWidth PaperProps={{ sx: { borderRadius: 1.5, border: '1px solid', borderColor: 'divider', backgroundImage: 'none', bgcolor: 'background.paper' } }}>
       <DialogTitle>Rename Document</DialogTitle>
       <DialogContent>
         <TextField
@@ -44,7 +44,7 @@ export default function RenameDialog({
           label="Document Name"
           type="text"
           fullWidth
-          variant="outlined"
+          variant="outlined" sx={{ '& .MuiOutlinedInput-root': { bgcolor: (t) => `${t.palette.primary.main}08` } }}
           value={title}
           onChange={(e) => setTitle(e.target.value)}
           onKeyDown={(e) => {

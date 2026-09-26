@@ -75,7 +75,7 @@ export class Wllama {
 test("AI writing settings expose and persist both writing tools", async ({
   page,
 }) => {
-  await page.goto("/");
+  await page.goto("/new");
 
   const settingsButton = page.getByRole("button", {
     name: "AI writing settings",
@@ -137,7 +137,7 @@ test("disabling both tools keeps the loaded GGUF ready for re-enabling", async (
       body: MOCK_WLLAMA_MODULE,
     });
   });
-  await page.goto("/");
+  await page.goto("/new");
 
   await page.getByRole("button", { name: "AI writing settings" }).click();
   const dialog = page
@@ -199,7 +199,7 @@ test("Wllama adapter loads GGUF and serializes correction with autocomplete", as
       body: MOCK_WLLAMA_MODULE,
     });
   });
-  await page.goto("/");
+  await page.goto("/new");
 
   const result = await page.evaluate(async () => {
     const modulePath = "/src/lib/textSuggest/wllamaService.ts";

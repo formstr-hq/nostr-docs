@@ -10,6 +10,7 @@ import React, {
 import { signerManager } from "../signer";
 import type { AccountSummary } from "../signer";
 import { fetchProfile } from "../nostr/fetchProfile"; // function to fetch kind-0 metadata
+import { nip05 } from "nostr-tools";
 import { withTimeout } from "../utils/timeout";
 import { useRelays } from "./RelayContext";
 import LoginModal from "../components/LoginModal";
@@ -22,6 +23,7 @@ export type UserProfile = {
   avatar?: string; // url
   picture?: string; // nostr kind-0 metadata field; normalized into `avatar`
   about?: string;
+  nip05?: string;
 };
 
 /** An account in the switcher, enriched with its profile for display. */
@@ -92,18 +94,66 @@ export const UserProvider: React.FC<{ children: React.ReactNode }> = ({
   // Fetch kind-0 metadata for one account, update cache + any UI showing it.
   const fetchProfileFor = useCallback(async (pubkey: string) => {
     try {
-      const profile = (await withTimeout(
+      const rawProfile = (await withTimeout(
         fetchProfile(pubkey, relaysRef.current.relays),
-        3000,
-      )) as UserProfile | null;
-      // A freshly created account (NIP-49) has no kind-0 metadata yet, so
-      // fetchProfile resolves null. Keep the pubkey-only entry and let a later
-      // sync pick up the profile once the user publishes one.
-      if (!profile) return;
-      // Nostr kind-0 metadata stores the avatar URL under `picture`; normalize
-      // it to `avatar` so every consumer (cache, accounts, user, localStorage)
-      // sees it (preserves the "fix avatar (#47)" behavior from main).
-      profile.avatar = profile.picture || profile.avatar;
+        8000,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any -- kind-0 metadata is schemaless JSON
+      )) as Record<string, any> | null;
+      if (!rawProfile) return;
+
+      const avatarUrl = (
+        rawProfile.picture ||
+        rawProfile.avatar ||
+        rawProfile.image ||
+        rawProfile.icon ||
+        rawProfile.profile_image ||
+        ""
+      ).trim() || undefined;
+
+      const profileName = (
+        rawProfile.name ||
+        rawProfile.display_name ||
+        rawProfile.displayName ||
+        rawProfile.username ||
+        ""
+      ).trim() || undefined;
+
+      const profile: UserProfile = {
+        pubkey,
+        ...rawProfile,
+        name: profileName,
+        avatar: avatarUrl,
+        picture: avatarUrl,
+        nip05: rawProfile.nip05,
+      };
+
+      // If avatar is not on default relays, resolve via user's NIP-05 relays
+      if (rawProfile.nip05 && typeof rawProfile.nip05 === "string") {
+        try {
+          const ptr = await nip05.queryProfile(rawProfile.nip05);
+          if (ptr?.pubkey === pubkey && ptr.relays && ptr.relays.length > 0 && !profile.avatar) {
+            const nip05Profile = (await withTimeout(
+              fetchProfile(pubkey, ptr.relays),
+              4000,
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any -- kind-0 metadata is schemaless JSON
+            )) as Record<string, any> | null;
+            const nip05Avatar = (
+              nip05Profile?.picture ||
+              nip05Profile?.avatar ||
+              nip05Profile?.image ||
+              nip05Profile?.icon ||
+              ""
+            ).trim() || undefined;
+            if (nip05Avatar) {
+              profile.avatar = nip05Avatar;
+              profile.picture = nip05Avatar;
+            }
+          }
+        } catch {
+          // NIP-05 query fallback
+        }
+      }
+
       profileCache.current.set(pubkey, profile);
       setAccounts((prev) =>
         prev.map((a) =>
@@ -112,10 +162,14 @@ export const UserProvider: React.FC<{ children: React.ReactNode }> = ({
             : a,
         ),
       );
-      setUser((prev) =>
-        prev?.pubkey === pubkey ? { pubkey, ...profile } : prev,
-      );
-      if (signerManager.getActiveAccount()?.pubkey === pubkey) {
+
+      const activePub = signerManager.getActiveAccount()?.pubkey;
+      if (activePub === pubkey || !activePub) {
+        setUser((prev) => ({
+          ...(prev || {}),
+          pubkey,
+          ...profile,
+        }));
         localStorage.setItem(
           LOCAL_STORAGE_KEY,
           JSON.stringify({ pubkey, ...profile }),
@@ -150,7 +204,8 @@ export const UserProvider: React.FC<{ children: React.ReactNode }> = ({
       }
       const cached = profileCache.current.get(active.pubkey);
       const profile = { pubkey: active.pubkey, ...cached };
-      setUser(profile);
+      if (profile.picture && !profile.avatar) profile.avatar = profile.picture;
+      setUser((prev) => ({ ...(prev || {}), ...profile }));
       localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(profile));
     } else {
       setUser(null);
@@ -158,7 +213,8 @@ export const UserProvider: React.FC<{ children: React.ReactNode }> = ({
     }
 
     list.forEach((a) => {
-      if (!profileCache.current.has(a.pubkey)) fetchProfileFor(a.pubkey);
+      const cached = profileCache.current.get(a.pubkey);
+      if (!cached || !cached.avatar) fetchProfileFor(a.pubkey);
     });
   }, [fetchProfileFor]);
 
