@@ -7,15 +7,14 @@ import {
 } from "./helpers";
 
 /**
- * Health check for the document-list path: a saved document is synced back from
- * the relay into the sidebar after a reload, and can be reopened from there.
+ * Health check for the workspace page-list path: a saved document is synced
+ * back from the relay after a reload and can be reopened from the home view.
  *
- * This complements the round-trip spec by covering the *list* read (the app
- * queries the relay for the user's own documents on load) and the open-from-list
- * navigation, rather than opening a known /doc/<naddr> URL directly.
+ * This complements the round-trip spec by covering the list read and
+ * open-from-list navigation, rather than opening a known /doc/<naddr> URL.
  */
 
-test("a saved document appears in the sidebar and reopens from it", async ({
+test("a saved document appears in the workspace and reopens from it", async ({
   page,
 }) => {
   const unique = `e2e-list-${Date.now()}`;
@@ -31,19 +30,19 @@ test("a saved document appears in the sidebar and reopens from it", async ({
   // answer the passphrase prompt before titles/bodies can be decrypted.
   await unlockAfterReload(page);
 
-  // The new document shows up in the list (its title is the heuristic first line).
-  const listItem = page.getByRole("button", { name: new RegExp(unique) });
-  await expect(listItem).toBeVisible({ timeout: 20_000 });
+  // The new document shows up in the All pages workspace.
+  await page.getByRole("button", { name: "All pages" }).click();
+  const pageTitle = page.getByText(unique, { exact: true }).first();
+  await expect(pageTitle).toBeVisible({ timeout: 20_000 });
 
-  // Open it from the list and confirm the body is fetched + decrypted for display.
-  await listItem.click();
+  // Open it from the workspace and confirm the body is fetched + decrypted.
+  await pageTitle.click();
   await expect(page.getByText("listed document body", { exact: false })).toBeVisible({
     timeout: 20_000,
   });
 });
 
 test("workspace sidebar options update the home filter state", async ({ page }) => {
-  await page.addInitScript(() => localStorage.clear());
   await page.goto("/");
 
   const workspaceButtons = [

@@ -38,10 +38,8 @@ Browsers are installed once with `npx playwright install chromium`.
 
 - Interactions are driven the way a **user** would: accessible roles, visible
   text, placeholders, labels — never CSS structure or test-only hooks.
-- Tests never touch `localStorage` or signer internals, so they stay valid as
-  the signer layer evolves.
-- Sign-in uses the real login modal's **Temporary Account** (anonymous) option —
-  no key seeding.
+- Each test uses Playwright's isolated browser context and creates an account
+  through the real login modal; tests do not seed storage or signer internals.
 
 ## Notes
 
