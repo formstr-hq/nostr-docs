@@ -4,11 +4,16 @@ import AutoFixHighIcon from "@mui/icons-material/AutoFixHigh";
 import AutoFixOffIcon from "@mui/icons-material/AutoFixOff";
 import type { TextSuggestState } from "../../lib/textSuggest/types";
 import TextSuggestSettingsDialog from "./TextSuggestSettingsDialog";
+import type { ProofreadStatus } from "../../hooks/textSuggest/useProofreadRequest";
 
 interface Props {
   state: TextSuggestState;
   enabled: boolean;
-  onSettingsSaved: () => void;
+  onSettingsSaved: () => void | Promise<void>;
+  documentLength: number;
+  proofreadStatus: ProofreadStatus;
+  onProofread: (instruction: string) => Promise<void>;
+  onCancelProofread: () => void;
   size?: "small" | "medium";
 }
 
@@ -16,6 +21,10 @@ export default function TextSuggestButton({
   state,
   enabled,
   onSettingsSaved,
+  documentLength,
+  proofreadStatus,
+  onProofread,
+  onCancelProofread,
   size = "small",
 }: Props) {
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -70,6 +79,13 @@ export default function TextSuggestButton({
         open={settingsOpen}
         onClose={() => setSettingsOpen(false)}
         onSaved={onSettingsSaved}
+        documentLength={documentLength}
+        proofreadStatus={proofreadStatus}
+        onProofread={async (instruction) => {
+          await onProofread(instruction);
+          setSettingsOpen(false);
+        }}
+        onCancelProofread={onCancelProofread}
       />
     </>
   );

@@ -25,6 +25,11 @@ import { useNavigate, useBlocker } from "react-router-dom";
 import { finalizeEvent, getPublicKey, getEventHash, nip19, type Event } from "nostr-tools";
 import { hexToBytes } from "nostr-tools/utils";
 import { useEditor, type Editor } from "@tiptap/react";
+import {
+  DOMParser as ProseMirrorDOMParser,
+  type Node as ProseMirrorNode,
+} from "@tiptap/pm/model";
+import { closeHistory } from "@tiptap/pm/history";
 import StarterKit from "@tiptap/starter-kit";
 import { Markdown } from "tiptap-markdown";
 import Link from "@tiptap/extension-link";
@@ -43,16 +48,14 @@ import { TableHandles } from "./extensions/TableHandles";
 import {
   GhostTextSuggestion,
   setGhostSuggestion,
+  setGhostLoading,
   clearGhostSuggestion,
   ghostSuggestionPluginKey,
 } from "./extensions/GhostTextSuggestion";
-import {
-  AutoCorrection,
-  addAutoCorrection,
-  clearAutoCorrections,
-  findCompletedWord,
-} from "./extensions/AutoCorrection";
 import type { TextSuggestHook } from "../../hooks/useTextSuggest";
+import { ProofreadDiffView } from "../textSuggest/ProofreadDiffView";
+import { hasSameProtectedEmbeds } from "../../lib/textSuggest/textDiff";
+import { assertProofreadFormattingPreserved } from "../../lib/textSuggest/wllama/markdownPreservation";
 import { SlashCommandMenu } from "./SlashCommandMenu";
 import type { SlashCommandItem } from "./extensions/SlashCommand";
 import type { SlashCommandMenuHandle } from "./SlashCommandMenu";
@@ -106,11 +109,21 @@ const AUTO_SAVE_DELAY_MS = 30_000;
 type EditorMode = "edit" | "preview" | "split";
 
 type MarkdownStorage = {
-  markdown: { getMarkdown(): string };
+  markdown: {
+    getMarkdown(): string;
+    parser: { parse(content: string): string };
+  };
 };
 
 function getEditorMarkdown(editor: Editor): string {
   return (editor.storage as unknown as MarkdownStorage).markdown.getMarkdown();
+}
+
+function parseMarkdownDocument(editor: Editor, markdown: string): ProseMirrorNode {
+  const storage = (editor.storage as unknown as MarkdownStorage).markdown;
+  const element = document.createElement("div");
+  element.innerHTML = storage.parser.parse(markdown);
+  return ProseMirrorDOMParser.fromSchema(editor.schema).parse(element);
 }
 
 function TagRow({ address }: { address: string }) {
@@ -297,6 +310,12 @@ export function DocumentEditorController({
   const pendingDeleteLocalOnlyRef = useRef<boolean>(false);
   const [showComments, setShowComments] = useState(false);
   const [activeCommentId, setActiveCommentId] = useState<string | null>(null);
+  const [proofreadReview, setProofreadReview] = useState<{
+    before: string;
+    after: string;
+    instruction: string;
+    documentId: string | null;
+  } | null>(null);
 
   // Promote a visited page into the user's Shared list. Writes the metadata
   // (once) so it syncs across devices, clears the local visited flag, and drops
@@ -341,6 +360,9 @@ export function DocumentEditorController({
   const mdRef = useRef<string>(initialContent);
   // Always-current mode — used in onUpdate to guard against split-mode clobber
   const modeRef = useRef<EditorMode>(mode);
+  // Accepting a review from split mode already replaces TipTap with the final
+  // candidate. Skip the normal split→edit sync once so Undo stays atomic.
+  const skipNextEditModeSyncRef = useRef(false);
   // Track whether first-mount effect has run (skip re-setting content on init)
   const isFirstMount = useRef(true);
   // Always-current flags read by the auto-save timer at fire time
@@ -365,27 +387,18 @@ export function DocumentEditorController({
   const requestSuggestionRef = useRef(textSuggest.requestSuggestion);
   const clearSuggestionRef = useRef(textSuggest.clearSuggestion);
   const notifyCursorPosRef = useRef(textSuggest.notifyCursorPos);
-  const requestCorrectionRef = useRef(textSuggest.requestCorrection);
-  const clearCorrectionRef = useRef(textSuggest.clearCorrection);
   // Mirrors prefs.enabled for the onUpdate handler (the hook's state value
   // can lag a render behind a just-toggled setting).
   const textSuggestEnabledRef = useRef(false);
-  const autoCorrectEnabledRef = useRef(false);
   useEffect(() => {
     requestSuggestionRef.current = textSuggest.requestSuggestion;
     clearSuggestionRef.current = textSuggest.clearSuggestion;
     notifyCursorPosRef.current = textSuggest.notifyCursorPos;
-    requestCorrectionRef.current = textSuggest.requestCorrection;
-    clearCorrectionRef.current = textSuggest.clearCorrection;
     textSuggestEnabledRef.current = textSuggest.prefs?.enabled ?? false;
-    autoCorrectEnabledRef.current =
-      textSuggest.prefs?.autoCorrectEnabled ?? false;
   }, [
     textSuggest.requestSuggestion,
     textSuggest.clearSuggestion,
     textSuggest.notifyCursorPos,
-    textSuggest.requestCorrection,
-    textSuggest.clearCorrection,
     textSuggest.prefs,
   ]);
 
@@ -406,7 +419,6 @@ export function DocumentEditorController({
       TableCell,
       Indent,
       GhostTextSuggestion,
-      AutoCorrection,
       TableHandles,
       EncryptedFileNode,
       CommentHighlight,
@@ -605,16 +617,10 @@ export function DocumentEditorController({
       // the whole doc on every keystroke just to get plain text would be
       // wasteful, and the model only needs to read prose, not markdown
       // syntax). Skipped entirely when the user hasn't turned this on.
-      if (
-        !textSuggestEnabledRef.current &&
-        !autoCorrectEnabledRef.current
-      ) {
-        return;
-      }
+      if (!textSuggestEnabledRef.current) return;
       const { selection } = editor.state;
       if (!selection.empty) {
         clearSuggestionRef.current();
-        clearCorrectionRef.current();
         return;
       }
       // Cap how much context we ship to the model per request — keeps
@@ -626,37 +632,10 @@ export function DocumentEditorController({
         "\n",
       );
 
-      if (autoCorrectEnabledRef.current) {
-        const textInCurrentBlock = selection.$from.parent.textBetween(
-          0,
-          selection.$from.parentOffset,
-          "",
-        );
-        const completedWord = findCompletedWord(
-          textInCurrentBlock,
-          selection.from,
-        );
-        if (completedWord) {
-          requestCorrectionRef.current({
-            word: completedWord.original,
-            context: prefix,
-            from: completedWord.from,
-            to: completedWord.to,
-          });
-        }
-      }
-
-      if (textSuggestEnabledRef.current) {
-        requestSuggestionRef.current(prefix, selection.from);
-      }
+      requestSuggestionRef.current(prefix, selection.from);
     },
     onSelectionUpdate: ({ editor }) => {
-      if (
-        !textSuggestEnabledRef.current &&
-        !autoCorrectEnabledRef.current
-      ) {
-        return;
-      }
+      if (!textSuggestEnabledRef.current) return;
       const { selection } = editor.state;
       if (!selection.empty) {
         clearSuggestionRef.current();
@@ -676,10 +655,9 @@ export function DocumentEditorController({
   }, [editor]);
 
   const activeTextSuggestion = textSuggest.suggestion;
-  const activeTextCorrection = textSuggest.correction;
   const localAIPrefs = textSuggest.prefs;
   const clearTextSuggestion = textSuggest.clearSuggestion;
-  const clearTextCorrection = textSuggest.clearCorrection;
+  const cancelProofread = textSuggest.cancelProofread;
 
   /* ── Push local-AI suggestions into the ghost-text decoration ──── */
   // The useTextSuggest hook owns *when* to suggest (debounce, model
@@ -692,7 +670,11 @@ export function DocumentEditorController({
       const { text, pos } = activeTextSuggestion;
       const { selection } = editor.state;
       if (selection.empty && selection.from === pos) {
-        setGhostSuggestion(editor.view, text, pos);
+        if (activeTextSuggestion.loading) {
+          setGhostLoading(editor.view, pos);
+        } else {
+          setGhostSuggestion(editor.view, text, pos);
+        }
       } else {
         // Cursor moved while the model was thinking — ignore.
         clearTextSuggestion();
@@ -702,28 +684,16 @@ export function DocumentEditorController({
     }
   }, [editor, activeTextSuggestion, clearTextSuggestion]);
 
-  /* ── Add GGUF typo results as persistent tappable squiggles ─────── */
-  useEffect(() => {
-    if (!editor || !activeTextCorrection) return;
-    addAutoCorrection(editor.view, activeTextCorrection);
-  }, [editor, activeTextCorrection]);
-
   useEffect(() => {
     if (!editor) return;
     if (!localAIPrefs?.enabled) {
       clearGhostSuggestion(editor.view);
       clearTextSuggestion();
     }
-    if (!localAIPrefs?.autoCorrectEnabled) {
-      clearAutoCorrections(editor.view);
-      clearTextCorrection();
-    }
   }, [
     editor,
     localAIPrefs?.enabled,
-    localAIPrefs?.autoCorrectEnabled,
     clearTextSuggestion,
-    clearTextCorrection,
   ]);
 
   /* ── Accept/dismiss feedback for the ghost-text extension ───────── */
@@ -746,19 +716,176 @@ export function DocumentEditorController({
     };
   }, [editor, activeTextSuggestion, clearTextSuggestion]);
 
-  /* ── Update editor editable state when mode changes ───── */
+  /* ── Lock the editor during preview/review ────────────── */
   useEffect(() => {
     if (!editor) return;
-    editor.setEditable(mode !== "preview");
+    editor.setEditable(mode !== "preview" && !proofreadReview, false);
+  }, [mode, editor, proofreadReview]);
+
+  /* ── Sync split-mode Markdown when returning to edit ──── */
+  useEffect(() => {
+    if (!editor || mode !== "edit") return;
+    if (skipNextEditModeSyncRef.current) {
+      skipNextEditModeSyncRef.current = false;
+      setWordCount(editor.storage.characterCount.words());
+      setCharCount(editor.storage.characterCount.characters());
+      return;
+    }
     // Switching back to WYSIWYG: sync TipTap with whatever was typed in the
     // split textarea. Pass `false` (not a truthy object) so onUpdate doesn't
     // fire and clobber mdRef with a re-serialized version.
-    if (mode === "edit") {
-      editor.commands.setContent(mdRef.current, { emitUpdate: false });
-      setWordCount(editor.storage.characterCount.words());
-      setCharCount(editor.storage.characterCount.characters());
-    }
+    editor.commands.setContent(mdRef.current, { emitUpdate: false });
+    setWordCount(editor.storage.characterCount.words());
+    setCharCount(editor.storage.characterCount.characters());
   }, [mode, editor]);
+
+  const handleProofread = async (instruction: string) => {
+    const before = mdRef.current;
+    if (!before.trim()) throw new Error("Start writing before proofreading.");
+    const documentId = selectedDocIdRef.current;
+    const result = await textSuggest.requestProofread(before, instruction);
+
+    if (
+      mdRef.current !== before ||
+      selectedDocIdRef.current !== documentId
+    ) {
+      throw new Error(
+        "The document changed while proofreading. Run the review again on the current text.",
+      );
+    }
+
+    if (result.text === before) {
+      setToast({
+        open: true,
+        message: "No changes suggested.",
+        severity: "success",
+      });
+      return;
+    }
+
+    setProofreadReview({
+      before,
+      after: result.text,
+      instruction,
+      documentId,
+    });
+  };
+
+  const rejectProofread = () => {
+    setProofreadReview(null);
+    setToast({
+      open: true,
+      message: "Proofreading changes rejected. Your document was not changed.",
+      severity: "success",
+    });
+  };
+
+  const acceptProofread = (acceptedDocument: string) => {
+    if (!editor || !proofreadReview) return;
+    if (
+      mdRef.current !== proofreadReview.before ||
+      selectedDocIdRef.current !== proofreadReview.documentId
+    ) {
+      setProofreadReview(null);
+      setToast({
+        open: true,
+        message: "The document changed. Run proofreading again before accepting.",
+        severity: "error",
+      });
+      return;
+    }
+
+    if (acceptedDocument === proofreadReview.before) {
+      setProofreadReview(null);
+      setToast({
+        open: true,
+        message: "No proofreading changes accepted. Your document was not changed.",
+        severity: "success",
+      });
+      return;
+    }
+
+    if (!hasSameProtectedEmbeds(proofreadReview.before, acceptedDocument)) {
+      setToast({
+        open: true,
+        message:
+          "Those selections would alter a protected file or form embed. Restore the related change or reject all.",
+        severity: "error",
+      });
+      return;
+    }
+
+    try {
+      assertProofreadFormattingPreserved(
+        proofreadReview.before,
+        acceptedDocument,
+        proofreadReview.instruction,
+      );
+    } catch (error) {
+      setToast({
+        open: true,
+        message:
+          error instanceof Error
+            ? error.message
+            : "Those selections would change Markdown formatting. Restore the related change or reject all.",
+        severity: "error",
+      });
+      return;
+    }
+
+    try {
+      const currentEditorMarkdown = getEditorMarkdown(editor);
+
+      // Split-mode edits live in mdRef until TipTap is shown again. Sync that
+      // exact reviewed base without adding a separate undo step.
+      if (currentEditorMarkdown !== proofreadReview.before) {
+        const baseDoc = parseMarkdownDocument(editor, proofreadReview.before);
+        editor.view.dispatch(
+          editor.state.tr
+            .replaceWith(0, editor.state.doc.content.size, baseDoc.content)
+            .setMeta("addToHistory", false)
+            .setMeta("preventUpdate", true),
+        );
+      }
+
+      const candidateDoc = parseMarkdownDocument(editor, acceptedDocument);
+      if (modeRef.current !== "edit") skipNextEditModeSyncRef.current = true;
+      modeRef.current = "edit";
+      setMode("edit");
+      editor.setEditable(true, false);
+      editor.view.dispatch(
+        closeHistory(editor.state.tr).replaceWith(
+          0,
+          editor.state.doc.content.size,
+          candidateDoc.content,
+        ),
+      );
+      // Close the accepted rewrite on both sides so the next keystroke is a
+      // separate undo event even if it happens immediately.
+      editor.view.dispatch(closeHistory(editor.state.tr));
+      textSuggest.clearSuggestion();
+      setProofreadReview(null);
+      setToast({
+        open: true,
+        message: "Proofreading changes accepted.",
+        severity: "success",
+      });
+    } catch (error) {
+      setToast({
+        open: true,
+        message:
+          error instanceof Error
+            ? `Could not apply proofreading: ${error.message}`
+            : "Could not apply proofreading.",
+        severity: "error",
+      });
+    }
+  };
+
+  useEffect(() => {
+    cancelProofread();
+    setProofreadReview(null);
+  }, [selectedDocumentId, cancelProofread]);
 
   /* ── Plain-text view of the doc for the comment layer ──── */
   // Comments anchor to plain rendered text, but `md` is the markdown source
@@ -1291,7 +1418,7 @@ export function DocumentEditorController({
         </Box>
       )}
 
-      {!isViewOnly && (
+      {!isViewOnly && !proofreadReview && (
         <EditorToolbar
           saving={saving}
           mode={mode}
@@ -1328,15 +1455,16 @@ export function DocumentEditorController({
           heuristicTitle={getDocTitle()}
           hasEditKey={!!editKey}
           textSuggestState={textSuggest.state}
-          textSuggestEnabled={
-            (textSuggest.prefs?.enabled ?? false) ||
-            (textSuggest.prefs?.autoCorrectEnabled ?? false)
-          }
+          textSuggestEnabled={textSuggest.prefs?.enabled ?? false}
           onToggleTextSuggest={(next) => {
             if (!textSuggest.prefs) return;
             void textSuggest.updatePrefs({ ...textSuggest.prefs, enabled: next });
           }}
-          onTextSuggestSettingsSaved={() => void textSuggest.reload()}
+          onTextSuggestSettingsSaved={textSuggest.reload}
+          proofreadDocumentLength={md.length}
+          proofreadStatus={textSuggest.proofreadStatus}
+          onProofread={handleProofread}
+          onCancelProofread={cancelProofread}
         />
       )}
       {isViewOnly && commentsEnabled && (
@@ -1366,25 +1494,35 @@ export function DocumentEditorController({
         {!isViewOnly && selectedDocumentId && (
           <TagRow address={selectedDocumentId} />
         )}
-        <DocEditorSurface
-          value={md}
-          editor={editor}
-          mode={mode}
-          onChange={(value) => {
-            // Used by the split-mode markdown textarea
-            mdRef.current = value;
-            setMd(value);
-          }}
-          onToggleMode={() => setMode("edit")}
-          isMobile={isMobile}
-          canEdit={!isViewOnly}
-          commentsEnabled={commentsEnabled}
-          showComments={commentsEnabled && showComments}
-          onCloseComments={() => setShowComments(false)}
-          docEventId={activeVersion?.event.id ?? ""}
-          onCommentClick={(id) => { setActiveCommentId(id); setShowComments(true); }}
-          activeCommentId={activeCommentId}
-        />
+        {proofreadReview ? (
+          <ProofreadDiffView
+            before={proofreadReview.before}
+            after={proofreadReview.after}
+            instruction={proofreadReview.instruction}
+            onAccept={acceptProofread}
+            onReject={rejectProofread}
+          />
+        ) : (
+          <DocEditorSurface
+            value={md}
+            editor={editor}
+            mode={mode}
+            onChange={(value) => {
+              // Used by the split-mode markdown textarea
+              mdRef.current = value;
+              setMd(value);
+            }}
+            onToggleMode={() => setMode("edit")}
+            isMobile={isMobile}
+            canEdit={!isViewOnly}
+            commentsEnabled={commentsEnabled}
+            showComments={commentsEnabled && showComments}
+            onCloseComments={() => setShowComments(false)}
+            docEventId={activeVersion?.event.id ?? ""}
+            onCommentClick={(id) => { setActiveCommentId(id); setShowComments(true); }}
+            activeCommentId={activeCommentId}
+          />
+        )}
       </Paper>
 
       {/* ── Status bar ───────────────────────────────────── */}

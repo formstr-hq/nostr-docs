@@ -38,7 +38,7 @@ export function RecommendedModelList() {
               target="_blank"
               rel="noopener noreferrer"
               size="small"
-              variant={model.badge === "Recommended" ? "contained" : "outlined"}
+              variant="outlined"
             >
               Download GGUF
             </Button>
