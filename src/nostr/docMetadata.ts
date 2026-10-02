@@ -16,6 +16,10 @@ export async function fetchAllDocMetadata(
   relays: string[],
   pubkey: string,
 ): Promise<Map<string, DocMetadata>> {
+  if (relays.length === 0 || !pubkey) {
+    return new Map();
+  }
+
   return new Promise((resolve) => {
     const events: Event[] = [];
     const seenIds = new Set<string>();
@@ -24,27 +28,38 @@ export async function fetchAllDocMetadata(
     const finish = async () => {
       if (settled) return;
       settled = true;
-      sub.close();
+      try {
+        sub.close();
+      } catch {} // eslint-disable-line no-empty
 
       const result = new Map<string, DocMetadata>();
       events.sort((a, b) => b.created_at - a.created_at);
       const seenAddresses = new Set<string>();
 
-      const signer = await signerManager.getSigner();
-      if (!signer) {
+      let signer;
+      try {
+        signer = await signerManager.getSigner();
+      } catch {
+        resolve(result);
+        return;
+      }
+      if (!signer || !signer.nip44Decrypt) {
         resolve(result);
         return;
       }
 
       for (const event of events) {
         const dTag = event.tags.find((t: string[]) => t[0] === "d")?.[1];
-        if (!dTag || seenAddresses.has(dTag)) continue;
-        seenAddresses.add(dTag);
+        if (!dTag) continue;
+
+        const address = dTag;
+        if (seenAddresses.has(address)) continue;
+        seenAddresses.add(address);
 
         try {
-          const decrypted = await signer.nip44Decrypt!(pubkey, event.content);
+          const decrypted = await signer.nip44Decrypt(pubkey, event.content);
           const metadata: DocMetadata = JSON.parse(decrypted);
-          result.set(dTag, metadata);
+          result.set(address, metadata);
         } catch {
           // skip undecryptable events
         }

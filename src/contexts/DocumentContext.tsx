@@ -1,11 +1,32 @@
 import { getPublicKey, nip44, type Event } from "nostr-tools";
-import React, { createContext, useContext, useEffect, useMemo, useState } from "react";
+import React, {
+  createContext,
+  useContext,
+  useEffect,
+  useMemo,
+  useState,
+  useCallback,
+  useRef,
+} from "react";
 import { signerManager } from "../signer";
 import { getConversationKey } from "nostr-tools/nip44";
 import { hexToBytes } from "nostr-tools/utils";
-import { useUser, type UserProfile } from "./UserContext";
+import { useUser } from "./UserContext";
+import { useRelays } from "./RelayContext";
 import { getEventAddress } from "../utils/helpers";
-import { loadVisitedEvents } from "../lib/localStore";
+import {
+  loadAllLocalEvents,
+  loadVisitedEvents,
+  storeLocalEvent,
+  markBroadcast,
+  type LocalStoredEvent,
+} from "../lib/localStore";
+import { pool } from "../nostr/relayPool";
+import { KIND_FILE } from "../nostr/kinds";
+import { fetchAllDocuments } from "../nostr/fetchFile";
+import { fetchDeleteRequests } from "../nostr/fetchDelete";
+import { publishEvent } from "../nostr/publish";
+import type { SubCloser } from "nostr-tools/abstract-pool";
 
 type DocumentVersion = {
   event: Event;
@@ -54,8 +75,6 @@ const DocumentContext = createContext<DocumentContextValue | undefined>(
 const getDecryptedContent = async (
   event: Event,
   viewKey?: string,
-  user?: UserProfile | null,
-  loginCallback?: () => Promise<void>,
 ): Promise<string | null> => {
   try {
     if (viewKey) {
@@ -64,19 +83,20 @@ const getDecryptedContent = async (
         getPublicKey(hexToBytes(viewKey)),
       );
       const decryptedContent = nip44.decrypt(event.content, conversationKey);
-      return Promise.resolve(decryptedContent);
+      return decryptedContent;
     }
 
-    // If no user, trigger login and then decrypt using the freshly-acquired signer
-    if (!user) {
-      await loginCallback?.();
+    // The signer manager waits for restore and opens the correct login/unlock flow.
+    let signer;
+    try {
+      signer = await signerManager.getSigner();
+    } catch {
+      return null;
     }
-
-    // After login (or if user was already set), get signer and decrypt
-    const signer = await signerManager.getSigner();
+    if (!signer || !signer.nip44Decrypt) return null;
     const pubkey = await signer.getPublicKey();
     if (event.pubkey !== pubkey) return null;
-    return await signer.nip44Decrypt!(pubkey, event.content);
+    return await signer.nip44Decrypt(pubkey, event.content);
   } catch (err) {
     console.error("Failed to decrypt content:", err);
     return null;
@@ -86,7 +106,8 @@ const getDecryptedContent = async (
 export const DocumentProvider: React.FC<{ children: React.ReactNode }> = ({
   children,
 }) => {
-  const { user, loginModal } = useUser();
+  const { user } = useUser();
+  const { relays } = useRelays();
   const [documents, setDocuments] = useState<Map<string, DocumentHistory>>(
     new Map(),
   );
@@ -100,6 +121,8 @@ export const DocumentProvider: React.FC<{ children: React.ReactNode }> = ({
   const [localOnlyAddresses, setLocalOnlyAddresses] = useState<Set<string>>(
     new Set(),
   );
+
+  const localEntriesRef = useRef<Map<string, LocalStoredEvent>>(new Map());
 
   const selectedDocumentId = _selectedDocumentId;
   const setSelectedDocumentId = (id: string | null) => {
@@ -131,6 +154,7 @@ export const DocumentProvider: React.FC<{ children: React.ReactNode }> = ({
       return next;
     });
   };
+
   const addDeletionRequest = (delEvent: Event) => {
     const eTags = delEvent.tags.filter((t) => t[0] === "e").map((t) => t[1]);
     const aTags = delEvent.tags.filter((t) => t[0] === "a").map((t) => t[1]);
@@ -157,13 +181,18 @@ export const DocumentProvider: React.FC<{ children: React.ReactNode }> = ({
     _setSelectedDocumentId((current) => (current === id ? null : current));
   };
 
+  const userPubkey = user?.pubkey;
+
   const visibleDocuments = useMemo(() => {
     return new Map(
       [...documents.entries()]
         .filter(([address, history]) => {
           if (deletedEventIds.has(address)) return false;
           const pubkey = history.versions[0]?.event.pubkey;
-          return pubkey === user?.pubkey;
+          if (userPubkey) {
+            return pubkey === userPubkey;
+          }
+          return localOnlyAddresses.has(address) || !history.versions[0]?.event.sig;
         })
         .map(([address, history]): [string, DocumentHistory] => [
           address,
@@ -175,7 +204,7 @@ export const DocumentProvider: React.FC<{ children: React.ReactNode }> = ({
         ])
         .filter(([, h]) => h.versions.length > 0),
     );
-  }, [documents, deletedEventIds, user?.pubkey]);
+  }, [documents, deletedEventIds, userPubkey, localOnlyAddresses]);
 
   const visitedDocuments = useMemo(() => {
     return new Map(
@@ -184,7 +213,7 @@ export const DocumentProvider: React.FC<{ children: React.ReactNode }> = ({
           if (!sessionVisited.has(address)) return false;
           if (deletedEventIds.has(address)) return false;
           const pubkey = history.versions[0]?.event.pubkey;
-          return pubkey !== user?.pubkey;
+          return !userPubkey || pubkey !== userPubkey;
         })
         .map(([address, history]): [string, DocumentHistory] => [
           address,
@@ -196,53 +225,53 @@ export const DocumentProvider: React.FC<{ children: React.ReactNode }> = ({
         ])
         .filter(([, h]) => h.versions.length > 0),
     );
-  }, [documents, deletedEventIds, user?.pubkey, sessionVisited]);
+  }, [documents, deletedEventIds, userPubkey, sessionVisited]);
 
-  const addDocument = async (
-    document: Event,
-    keys?: Record<string, string>,
-  ) => {
-    const address = getEventAddress(document);
-    if (!address) return;
-    const decryptedContent = await getDecryptedContent(
-      document,
-      keys?.viewKey,
-      user,
-      loginModal,
-    );
-    if (!decryptedContent) return;
+  const addDocument = useCallback(
+    async (
+      document: Event,
+      keys?: { viewKey?: string; editKey?: string },
+    ) => {
+      const address = getEventAddress(document);
+      if (!address) return;
 
-    setDocuments((prev) => {
-      const next = new Map(prev);
-      const history = next.get(address) ?? {
-        address,
-        versions: [],
-      };
+      const cachedEntry = address ? localEntriesRef.current.get(address) : undefined;
+      const viewKey = keys?.viewKey ?? cachedEntry?.viewKey;
 
-      const alreadyPresent = history.versions.some(
-        (v) => v.event.id === document.id,
-      );
-      if (alreadyPresent) {
-        // If we now have a viewKey we didn't have before, re-decrypt to correct
-        // content that may have been stored via a failed signer attempt.
-        if (!keys?.viewKey) return prev;
-        history.versions = history.versions.filter(
-          (v) => v.event.id !== document.id,
+      const decryptedContent = await getDecryptedContent(document, viewKey);
+      if (!decryptedContent) return;
+
+      setDocuments((prev) => {
+        const next = new Map(prev);
+        const history = next.get(address) ?? {
+          address,
+          versions: [],
+        };
+
+        const alreadyPresent = history.versions.some(
+          (v) => v.event.id === document.id,
         );
-      }
+        if (alreadyPresent) {
+          if (!viewKey) return prev;
+          history.versions = history.versions.filter(
+            (v) => v.event.id !== document.id,
+          );
+        }
 
-      history.versions = [
-        ...history.versions,
-        {
-          event: document,
-          decryptedContent,
-        },
-      ].sort((a, b) => a.event.created_at - b.event.created_at);
+        history.versions = [
+          ...history.versions,
+          {
+            event: document,
+            decryptedContent,
+          },
+        ].sort((a, b) => a.event.created_at - b.event.created_at);
 
-      next.set(address, history);
-      return next;
-    });
-  };
+        next.set(address, history);
+        return next;
+      });
+    },
+    [],
+  );
 
   // Hydrate visited pages from IndexedDB on mount so they survive a reload.
   // Runs independently of login — visited docs decrypt with their stored
@@ -251,15 +280,20 @@ export const DocumentProvider: React.FC<{ children: React.ReactNode }> = ({
   useEffect(() => {
     (async () => {
       try {
-        const entries = await loadVisitedEvents();
-        if (entries.length === 0) return;
+        const allEntries = await loadAllLocalEvents();
+        for (const entry of allEntries) {
+          localEntriesRef.current.set(entry.address, entry);
+        }
+
+        const visitedEntries = await loadVisitedEvents();
+        if (visitedEntries.length === 0) return;
         const addresses: string[] = [];
-        for (const entry of entries) {
+        for (const entry of visitedEntries) {
           try {
-            const keys: Record<string, string> = {};
-            if (entry.viewKey) keys.viewKey = entry.viewKey;
-            if (entry.editKey) keys.editKey = entry.editKey;
-            await addDocument(entry.event, keys);
+            await addDocument(entry.event, {
+              viewKey: entry.viewKey,
+              editKey: entry.editKey,
+            });
             addresses.push(entry.address);
           } catch {
             // Skip entries that can't be decrypted with the stored key.
@@ -272,9 +306,172 @@ export const DocumentProvider: React.FC<{ children: React.ReactNode }> = ({
         console.warn("Failed to hydrate visited pages:", err);
       }
     })();
-    // Mount-only: addDocument is stable enough for a one-shot hydration.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [addDocument]);
+
+  // Reset user's personal documents when logged out
+  useEffect(() => {
+    if (!user) {
+      setDocuments(new Map());
+      setDeletedEventIds(new Set());
+      setLocalOnlyAddresses(new Set());
+      (async () => {
+        try {
+          const visitedEntries = await loadVisitedEvents();
+          for (const entry of visitedEntries) {
+            await addDocument(entry.event, {
+              viewKey: entry.viewKey,
+              editKey: entry.editKey,
+            });
+          }
+        } catch {} // eslint-disable-line no-empty
+      })();
+    }
+  }, [user, addDocument]);
+
+  // Fetch and sync user's documents when logged in
+  useEffect(() => {
+    if (!user?.pubkey) return;
+
+    let isCancelled = false;
+    let liveSub: SubCloser | null = null;
+
+    (async () => {
+      let signer;
+      try {
+        signer = await signerManager.getSigner();
+      } catch {
+        return;
+      }
+      if (!signer || isCancelled) return;
+      const pubkey = await signer.getPublicKey();
+      if (isCancelled) return;
+
+      // ── Phase 1: Local-first hydration ─────────────────
+      let localEntries: LocalStoredEvent[] = [];
+      try {
+        localEntries = await loadAllLocalEvents();
+        if (isCancelled) return;
+
+        for (const entry of localEntries) {
+          localEntriesRef.current.set(entry.address, entry);
+          try {
+            await addDocument(entry.event, {
+              viewKey: entry.viewKey,
+              editKey: entry.editKey,
+            });
+            if (entry.visited) {
+              setSessionVisited((prev) => new Set([...prev, entry.address]));
+            }
+            if (entry.localOnly || entry.pendingBroadcast || !entry.event.sig) {
+              markLocalOnly(entry.address, true);
+            }
+          } catch {
+            // Skip events that can't be decrypted
+          }
+        }
+      } catch (err) {
+        console.warn("Failed to load local events:", err);
+      }
+
+      if (relays.length === 0 || isCancelled) return;
+
+      // ── Phase 2: Relay sync ─────────────────────────────
+      try {
+        await fetchAllDocuments(
+          relays,
+          async (doc: Event) => {
+            if (isCancelled) return;
+            const address = getEventAddress(doc);
+            const localEntry = address
+              ? (localEntriesRef.current.get(address) ?? localEntries.find((e) => e.address === address))
+              : undefined;
+            const viewKey = localEntry?.viewKey;
+            const editKey = localEntry?.editKey;
+
+            await addDocument(doc, { viewKey, editKey });
+
+            if (address) {
+              setLocalOnlyAddresses((prev) => {
+                if (!prev.has(address)) return prev;
+                const next = new Set(prev);
+                next.delete(address);
+                return next;
+              });
+
+              storeLocalEvent({
+                address,
+                event: doc,
+                viewKey,
+                editKey,
+                pendingBroadcast: false,
+                savedAt: Date.now(),
+              }).catch(() => {});
+            }
+          },
+          pubkey,
+        );
+
+        if (isCancelled) return;
+        await fetchDeleteRequests(relays, addDeletionRequest, pubkey);
+
+        // ── Phase 3: Re-broadcast offline saves ─────────────
+        for (const entry of localEntries) {
+          if (entry.pendingBroadcast && !entry.localOnly) {
+            publishEvent(entry.event, relays)
+              .then(() => markBroadcast(entry.address))
+              .catch(() => {});
+          }
+        }
+      } catch (err) {
+        console.error("Failed to fetch documents from relays:", err);
+      }
+
+      // ── Phase 4: Live relay subscription ─────────────────
+      if (isCancelled) return;
+      liveSub = pool.subscribeMany(
+        relays,
+        { kinds: [KIND_FILE], authors: [pubkey] },
+        {
+          onevent: async (event: Event) => {
+            if (isCancelled) return;
+            const addr = getEventAddress(event);
+            if (addr) {
+              setLocalOnlyAddresses((prev) => {
+                if (!prev.has(addr)) return prev;
+                const next = new Set(prev);
+                next.delete(addr);
+                return next;
+              });
+            }
+            const localEntry = addr ? localEntriesRef.current.get(addr) : undefined;
+            const viewKey = localEntry?.viewKey;
+            const editKey = localEntry?.editKey;
+
+            await addDocument(event, { viewKey, editKey });
+            if (addr) {
+              storeLocalEvent({
+                address: addr,
+                event,
+                viewKey,
+                editKey,
+                pendingBroadcast: false,
+                savedAt: Date.now(),
+              }).catch(() => {});
+            }
+          },
+        },
+      );
+    })();
+
+    return () => {
+      isCancelled = true;
+      if (liveSub) {
+        try {
+          liveSub.close();
+        } catch {} // eslint-disable-line no-empty
+      }
+    };
+  }, [user?.pubkey, relays, addDocument]);
 
   return (
     <DocumentContext.Provider

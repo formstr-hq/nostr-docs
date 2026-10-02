@@ -12,7 +12,6 @@ import {
   List,
   ListItem,
   ListItemText,
-  Divider,
 } from "@mui/material";
 import DeleteIcon from "@mui/icons-material/Delete";
 import AddIcon from "@mui/icons-material/Add";
@@ -49,7 +48,7 @@ export default function BlossomServersModal({ open, onClose }: Props) {
   };
 
   return (
-    <Dialog open={open} onClose={onClose} maxWidth="sm" fullWidth>
+    <Dialog open={open} onClose={onClose} maxWidth="sm" fullWidth PaperProps={{ sx: { borderRadius: 1.5, border: '1px solid', borderColor: 'divider', backgroundImage: 'none', bgcolor: 'background.paper' } }}>
       <DialogTitle>Blossom Servers</DialogTitle>
 
       <DialogContent>
@@ -59,11 +58,12 @@ export default function BlossomServersModal({ open, onClose }: Props) {
         </Typography>
 
         <List disablePadding>
-          {servers.map((server, i) => (
+          {servers.map((server) => (
             <Box key={server}>
-              {i > 0 && <Divider />}
+              
               <ListItem
                 disableGutters
+                sx={{ bgcolor: (theme) => `${theme.palette.primary.main}08`, borderRadius: 1, border: '1px solid rgba(255,255,255,0.06)', mb: 1, px: 2 }}
                 secondaryAction={
                   <IconButton
                     edge="end"
@@ -104,8 +104,7 @@ export default function BlossomServersModal({ open, onClose }: Props) {
             helperText={error}
           />
           <Button
-            variant="outlined"
-            startIcon={<AddIcon />}
+            variant="contained" color="secondary" startIcon={<AddIcon />}
             onClick={handleAdd}
             sx={{ flexShrink: 0 }}
           >

@@ -14,8 +14,8 @@ import {
   CircularProgress,
   IconButton,
   Tooltip,
-  Divider,
 } from "@mui/material";
+import { alpha } from "@mui/material/styles";
 import RestoreIcon from "@mui/icons-material/Restore";
 import DeleteForeverIcon from "@mui/icons-material/DeleteForever";
 import WarningAmberIcon from "@mui/icons-material/WarningAmber";
@@ -134,9 +134,9 @@ export default function TrashDialog({
 
   return (
     <>
-      <Dialog open={open} onClose={onClose} maxWidth="sm" fullWidth>
+      <Dialog open={open} onClose={onClose} maxWidth="sm" fullWidth PaperProps={{ sx: { borderRadius: 1.5, border: '1px solid', borderColor: 'divider', backgroundImage: 'none', bgcolor: 'background.paper' } }}>
         <DialogTitle>Trash</DialogTitle>
-        <DialogContent sx={{ p: 0 }}>
+        <DialogContent sx={{ p: 2 }}>
           {loading ? (
             <Box sx={{ display: "flex", justifyContent: "center", py: 4 }}>
               <CircularProgress size={28} />
@@ -149,12 +149,12 @@ export default function TrashDialog({
               Trash is empty.
             </Typography>
           ) : (
-            <List disablePadding>
-              {items.map((item, idx) => (
+            <List>
+              {items.map((item) => (
                 <Box key={item.address}>
-                  {idx > 0 && <Divider />}
+                  
                   <ListItem
-                    sx={{ px: 3, py: 1.5, alignItems: "flex-start" }}
+                    sx={{ px: 3, py: 1.5, alignItems: "flex-start", bgcolor: (t) => `${t.palette.primary.main}08`, borderRadius: 0.75, border: '1px solid', borderColor: (t) => alpha(t.palette.text.primary, 0.06), mb: 1 }}
                     secondaryAction={
                       <Box sx={{ display: "flex", gap: 0.5, mt: 0.5 }}>
                         <Tooltip title="Restore">

@@ -104,7 +104,7 @@ async function useMockWllama(page: Page) {
 test("AI writing settings expose text suggestions and free-form proofreading", async ({
   page,
 }) => {
-  await page.goto("/");
+  await page.goto("/new");
 
   const settingsButton = page.getByRole("button", {
     name: "AI writing settings",
@@ -220,7 +220,8 @@ test("AI writing settings expose text suggestions and free-form proofreading", a
 test("AI writing settings open other-model searches on Hugging Face", async ({
   page,
 }) => {
-  await page.goto("/");
+  await useMockWllama(page);
+  await page.goto("/new");
 
   await page.getByRole("button", { name: "AI writing settings" }).click();
   const dialog = page
@@ -280,7 +281,7 @@ test("loading a GGUF does not auto-enable text suggestions", async ({
   page,
 }) => {
   await useMockWllama(page);
-  await page.goto("/");
+  await page.goto("/new");
 
   await page.getByRole("button", { name: "AI writing settings" }).click();
   const dialog = page
@@ -315,7 +316,7 @@ test("Wllama adapter serializes full-document proofreading with autocomplete", a
   page,
 }) => {
   await useMockWllama(page);
-  await page.goto("/");
+  await page.goto("/new");
 
   const result = await page.evaluate(async () => {
     const modulePath = "/src/lib/textSuggest/wllamaService.ts";
@@ -404,7 +405,7 @@ test("proofreading protects embeds and refuses unsafe context sizes", async ({
   page,
 }) => {
   await useMockWllama(page);
-  await page.goto("/");
+  await page.goto("/new");
 
   const result = await page.evaluate(async () => {
     const modulePath = "/src/lib/textSuggest/wllamaService.ts";
@@ -471,7 +472,7 @@ test("proofreading keeps formatting locked unless the instruction opts in", asyn
   page,
 }) => {
   await useMockWllama(page);
-  await page.goto("/");
+  await page.goto("/new");
 
   const result = await page.evaluate(async () => {
     const servicePath = "/src/lib/textSuggest/wllamaService.ts";
@@ -625,7 +626,7 @@ test("unexpected Markdown never reaches the proofreading review", async ({
   page,
 }) => {
   await useMockWllama(page);
-  await page.goto("/");
+  await page.goto("/new");
 
   const original = "This is teh short note.";
   const editor = page.locator(".tiptap").first();
@@ -678,7 +679,7 @@ test("unexpected Markdown never reaches the proofreading review", async ({
 test("proofreading keeps acronym expansions and Markdown wrappers atomic", async ({
   page,
 }) => {
-  await page.goto("/");
+  await page.goto("/new");
   const result = await page.evaluate(async () => {
     const modulePath = "/src/lib/textSuggest/textDiff.ts";
     const { createTextDiffSegments, resolveTextDiff } = await import(modulePath);
@@ -729,7 +730,7 @@ test("proofreading diff can be rejected unchanged and then accepted", async ({
   page,
 }) => {
   await useMockWllama(page);
-  await page.goto("/");
+  await page.goto("/new");
 
   const original = "This is teh complete draft.";
   const revised = "This is the complete draft.";
@@ -830,7 +831,7 @@ test("keeps an acronym original and accepts the remaining proofreading changes",
 }) => {
   await useMockWllama(page);
   await page.setViewportSize({ width: 390, height: 844 });
-  await page.goto("/");
+  await page.goto("/new");
 
   const original = "Our API handles teh request.";
   const modelRevision =

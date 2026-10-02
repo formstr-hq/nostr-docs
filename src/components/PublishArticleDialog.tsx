@@ -253,7 +253,7 @@ export default function PublishArticleDialog({
 
   return (
     <>
-      <Dialog open={open} onClose={handleClose} maxWidth="md" fullWidth>
+      <Dialog open={open} onClose={handleClose} maxWidth="md" fullWidth PaperProps={{ sx: { borderRadius: 1.5, border: '1px solid', borderColor: 'divider', backgroundImage: 'none', bgcolor: 'background.paper' } }}>
         <DialogTitle sx={{ display: "flex", alignItems: "center", gap: 1 }}>
           <PublicIcon fontSize="small" />
           {isEditing

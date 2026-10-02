@@ -5,7 +5,6 @@ import {
   typeIntoEditor,
   save,
   queryLocalRelay,
-  unlockAfterReload,
 } from "./helpers";
 
 /**
@@ -59,19 +58,16 @@ test("publish a page as a NIP-23 long-form article", async ({ page }) => {
   const articleDTag = article!.tags.find((t) => t[0] === "d")?.[1];
   expect(articleDTag).toBeTruthy();
 
-  // It shows up under the sidebar's "Published" tab (no reload needed — the
+  // It shows up in the Published workspace (no reload needed — the
   // published-articles subscription picks it up live).
   await dialog.getByRole("button", { name: "Close" }).click();
-  await page.getByRole("tab", { name: /Published/ }).click();
-  await expect(page.getByRole("button", { name: new RegExp(unique) })).toBeVisible({ timeout: 20_000 });
+  await page.getByRole("button", { name: "Published" }).click();
+  const publishedTitle = page.getByText(unique, { exact: true }).first();
+  await expect(publishedTitle).toBeVisible({ timeout: 20_000 });
 
-  // The published link opens our own in-app reader — it fetches the event back
-  // from the relay and renders the markdown.
-  const articleNaddr = nip19.naddrEncode({ identifier: articleDTag!, pubkey, kind: 30023 });
-  await page.goto(`/article/${articleNaddr}`);
-  // The full navigation drops the session into a locked (NIP-49) state; the
-  // unlock modal makes background content inert, so answer it before asserting.
-  await unlockAfterReload(page);
+  // Open the published card in the in-app reader and verify its rendered body.
+  await publishedTitle.click();
+  await expect(page).toHaveURL(/\/article\/naddr1/);
   // The rendered markdown produces an <h1> from the "# <unique>" heading, proving
   // the in-app viewer fetched the event and rendered its content.
   await expect(page.getByRole("heading", { name: unique, level: 1 })).toBeVisible({ timeout: 20_000 });
