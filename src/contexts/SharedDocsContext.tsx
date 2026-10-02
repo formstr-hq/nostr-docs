@@ -15,7 +15,7 @@ import {
   type Event,
 } from "nostr-tools";
 import { hexToBytes } from "nostr-tools/utils";
-import { storeLocalEvent } from "../lib/localStore";
+import { storeLocalEvent, loadAllLocalEvents } from "../lib/localStore";
 import { pool } from "../nostr/relayPool";
 import { KIND_FILE } from "../nostr/kinds";
 import { fetchAllDocMetadata, saveDocMetadata } from "../nostr/docMetadata";
@@ -43,6 +43,19 @@ const SharedPagesContext = createContext<SharedPagesContextValue | undefined>(
   undefined,
 );
 
+function matchAddress(a: string, b: string): boolean {
+  if (a === b) return true;
+  const aParts = a.split(":");
+  const bParts = b.split(":");
+  const aDTag = aParts.length >= 3 ? aParts.slice(2).join(":") : a;
+  const bDTag = bParts.length >= 3 ? bParts.slice(2).join(":") : b;
+  if (!aDTag || !bDTag || aDTag !== bDTag) return false;
+  if (aParts.length >= 3 && bParts.length >= 3) {
+    return aParts[1] === bParts[1];
+  }
+  return true;
+}
+
 export const SharedPagesProvider: React.FC<{ children: React.ReactNode }> = ({
   children,
 }) => {
@@ -58,7 +71,7 @@ export const SharedPagesProvider: React.FC<{ children: React.ReactNode }> = ({
   const subscriptionRef = useRef<SubCloser | null>(null);
 
   const getKeys = (id: string) => {
-    const keys = sharedDocs.find((t) => t[0] === id);
+    const keys = sharedDocs.find((t) => matchAddress(t[0], id));
     return keys?.slice(1) || [];
   };
 
@@ -71,29 +84,47 @@ export const SharedPagesProvider: React.FC<{ children: React.ReactNode }> = ({
     if (sharedDocs.length === 0) return;
 
     const aTags = sharedDocs.map((t) => t[0]);
-    const dTags = aTags
-      .map((a) => {
-        try { return a.split(":")[2]; } catch { return null; }
-      })
-      .filter((b): b is string => b !== null);
-    const pubkeys = aTags
-      .map((a) => {
-        try { return a.split(":")[1]; } catch { return null; }
-      })
-      .filter((b): b is string => b !== null);
+    const dTags = Array.from(
+      new Set(
+        aTags
+          .map((a) => {
+            const parts = a.split(":");
+            return parts.length >= 3 ? parts.slice(2).join(":") : a;
+          })
+          .filter(Boolean),
+      ),
+    );
+    const pubkeys = Array.from(
+      new Set(
+        aTags
+          .map((a) => {
+            const parts = a.split(":");
+            return parts.length >= 3 ? parts[1] : null;
+          })
+          .filter((b): b is string => Boolean(b)),
+      ),
+    );
 
-    if (dTags.length === 0 || pubkeys.length === 0) return;
+    if (dTags.length === 0) return;
+
+    const filter: { kinds: number[]; "#d": string[]; authors?: string[] } = {
+      kinds: [KIND_FILE],
+      "#d": dTags,
+    };
+    if (pubkeys.length > 0 && pubkeys.length === aTags.length) {
+      filter.authors = pubkeys;
+    }
 
     subscriptionRef.current = pool.subscribeMany(
       relays,
-      { "#d": dTags, authors: pubkeys, kinds: [KIND_FILE] },
+      filter,
       {
         onevent: (event: Event) => {
           const dTag = event.tags.find((t) => t[0] === "d")?.[1];
           if (!dTag) return;
 
           const address = `${KIND_FILE}:${event.pubkey}:${dTag}`;
-          const keys = sharedDocs.find((t) => t[0] === address);
+          const keys = sharedDocs.find((t) => matchAddress(t[0], address));
           if (!keys || !keys[1]) return;
 
           const conversationKey = nip44.getConversationKey(
@@ -109,17 +140,15 @@ export const SharedPagesProvider: React.FC<{ children: React.ReactNode }> = ({
           }
 
           if (event.pubkey === currentUserPubkey) {
-            addDocument(event, { viewKey: keys[1] });
-            const dTag = event.tags.find((t) => t[0] === "d")?.[1];
-            if (dTag) {
-              storeLocalEvent({
-                address: `${event.kind}:${event.pubkey}:${dTag}`,
-                event,
-                viewKey: keys[1],
-                pendingBroadcast: false,
-                savedAt: Date.now(),
-              }).catch(() => {});
-            }
+            addDocument(event, { viewKey: keys[1], editKey: keys[2] });
+            storeLocalEvent({
+              address,
+              event,
+              viewKey: keys[1],
+              editKey: keys[2],
+              pendingBroadcast: false,
+              savedAt: Date.now(),
+            }).catch(() => {});
             return;
           }
 
@@ -139,6 +168,16 @@ export const SharedPagesProvider: React.FC<{ children: React.ReactNode }> = ({
             next.set(address, history);
             return next;
           });
+
+          storeLocalEvent({
+            address,
+            event,
+            viewKey: keys[1],
+            editKey: keys[2],
+            pendingBroadcast: false,
+            savedAt: Date.now(),
+            visited: true,
+          }).catch(() => {});
         },
       },
     );
@@ -163,7 +202,13 @@ export const SharedPagesProvider: React.FC<{ children: React.ReactNode }> = ({
         }
       }
 
-      setSharedDocs(shared);
+      setSharedDocs((prev) => {
+        // Merge with existing sharedDocs to preserve any locally-added ones
+        const map = new Map<string, string[]>();
+        for (const s of prev) map.set(s[0], s);
+        for (const s of shared) map.set(s[0], s);
+        return Array.from(map.values());
+      });
       fetchSharedDocuments(shared, pubkey);
     } catch (err) {
       console.error("Failed to fetch shared pages:", err);
@@ -171,6 +216,58 @@ export const SharedPagesProvider: React.FC<{ children: React.ReactNode }> = ({
       setLoading(false);
     }
   };
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const entries = await loadAllLocalEvents();
+        const initialSharedDocs: string[][] = [];
+        for (const entry of entries) {
+          if (entry.viewKey) {
+            initialSharedDocs.push([
+              entry.address,
+              entry.viewKey,
+              ...(entry.editKey ? [entry.editKey] : []),
+            ]);
+
+            // If authored by someone else, decrypt and add to sharedDocuments
+            if (entry.event.pubkey !== user?.pubkey) {
+              try {
+                const conversationKey = nip44.getConversationKey(
+                  hexToBytes(entry.viewKey),
+                  getPublicKey(hexToBytes(entry.viewKey)),
+                );
+                const decryptedContent = nip44.decrypt(entry.event.content, conversationKey);
+                setSharedDocuments((prev) => {
+                  const next = new Map(prev);
+                  const history = next.get(entry.address) ?? { address: entry.address, versions: [] };
+                  if (history.versions.some((v) => v.event.id === entry.event.id)) return prev;
+                  history.versions = [
+                    ...history.versions,
+                    { event: entry.event, decryptedContent },
+                  ].sort((a, b) => a.event.created_at - b.event.created_at);
+                  next.set(entry.address, history);
+                  return next;
+                });
+              } catch {} // eslint-disable-line no-empty
+            }
+          }
+        }
+        if (initialSharedDocs.length > 0) {
+          setSharedDocs((prev) => {
+            const map = new Map<string, string[]>();
+            for (const s of prev) map.set(s[0], s);
+            for (const s of initialSharedDocs) {
+              if (!map.has(s[0])) map.set(s[0], s);
+            }
+            return Array.from(map.values());
+          });
+        }
+      } catch (err) {
+        console.warn("Failed to load local shared events:", err);
+      }
+    })();
+  }, [user?.pubkey]);
 
   useEffect(() => {
     if (user) {
@@ -198,7 +295,7 @@ export const SharedPagesProvider: React.FC<{ children: React.ReactNode }> = ({
     // Non-logged-in users with an editKey have no key to encrypt metadata to.
     // Skip the write (and its signer prompt) when this exact entry is already
     // in our list — re-opening share on an already-shared doc shouldn't re-sign.
-    const existing = sharedDocs.find((t) => t[0] === address);
+    const existing = sharedDocs.find((t) => matchAddress(t[0], address));
     const alreadyStored =
       existing && existing[1] === viewKey && (existing[2] ?? undefined) === (editKey ?? undefined);
     const signer = await signerManager.getSigner();
@@ -213,7 +310,7 @@ export const SharedPagesProvider: React.FC<{ children: React.ReactNode }> = ({
     const pubkey = signer ? await signer.getPublicKey() : undefined;
 
     setSharedDocs((prev) => {
-      const updated = prev.filter((t) => t[0] !== address);
+      const updated = prev.filter((t) => !matchAddress(t[0], address));
       updated.push(tag);
       return updated;
     });

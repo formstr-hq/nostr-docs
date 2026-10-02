@@ -16,27 +16,34 @@ export async function fetchAllDocMetadata(
   relays: string[],
   pubkey: string,
 ): Promise<Map<string, DocMetadata>> {
+  if (relays.length === 0 || !pubkey) {
+    return new Map();
+  }
+
   return new Promise((resolve) => {
     const events: Event[] = [];
     const seenIds = new Set<string>();
     let settled = false;
-    let eoseCount = 0;
 
     const finish = async () => {
       if (settled) return;
       settled = true;
-      subs.forEach((s) => {
-        try {
-          s.close();
-        } catch {} // eslint-disable-line no-empty
-      });
+      try {
+        sub.close();
+      } catch {} // eslint-disable-line no-empty
 
       const result = new Map<string, DocMetadata>();
       events.sort((a, b) => b.created_at - a.created_at);
       const seenAddresses = new Set<string>();
 
-      const signer = await signerManager.getSigner();
-      if (!signer) {
+      let signer;
+      try {
+        signer = await signerManager.getSigner();
+      } catch {
+        resolve(result);
+        return;
+      }
+      if (!signer || !signer.nip44Decrypt) {
         resolve(result);
         return;
       }
@@ -50,7 +57,7 @@ export async function fetchAllDocMetadata(
         seenAddresses.add(address);
 
         try {
-          const decrypted = await signer.nip44Decrypt!(pubkey, event.content);
+          const decrypted = await signer.nip44Decrypt(pubkey, event.content);
           const metadata: DocMetadata = JSON.parse(decrypted);
           result.set(address, metadata);
         } catch {
@@ -61,28 +68,23 @@ export async function fetchAllDocMetadata(
       resolve(result);
     };
 
-    const timeout = setTimeout(finish, 6000);
+    const timeout = setTimeout(finish, 5000);
 
-    const subs = relays.map((relay) =>
-      pool.subscribeMany(
-        [relay],
-        { kinds: [KIND_DOC_METADATA], authors: [pubkey] },
-        {
-          onevent(event) {
-            if (!seenIds.has(event.id)) {
-              seenIds.add(event.id);
-              events.push(event);
-            }
-          },
-          oneose: () => {
-            eoseCount++;
-            if (eoseCount >= relays.length) {
-              clearTimeout(timeout);
-              finish();
-            }
-          },
+    const sub = pool.subscribeMany(
+      relays,
+      { kinds: [KIND_DOC_METADATA], authors: [pubkey] },
+      {
+        onevent(event) {
+          if (!seenIds.has(event.id)) {
+            seenIds.add(event.id);
+            events.push(event);
+          }
         },
-      ),
+        oneose: () => {
+          clearTimeout(timeout);
+          finish();
+        },
+      },
     );
   });
 }
