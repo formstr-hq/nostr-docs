@@ -17,11 +17,13 @@ export interface NostrSigner {
 }
 
 /**
- * How an account's key material is held — all four are owned by
+ * How an account's key material is held — all five are owned by
  * `@formstr/signer`. `ncryptsec` is a NIP-49 passphrase-encrypted key
- * (decrypted into memory only while unlocked).
+ * (decrypted into memory only while unlocked). `nip55-web` is browser
+ * NIP-55: an Android signer app reached over intents + clipboard, with no
+ * Capacitor bridge.
  */
-export type AuthMethod = "extension" | "nip46" | "android" | "ncryptsec";
+export type AuthMethod = "extension" | "nip46" | "android" | "nip55-web" | "ncryptsec";
 
 /** A single identity in the account list. */
 export interface AccountSummary {
