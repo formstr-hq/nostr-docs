@@ -1,14 +1,14 @@
 /**
- * One-time, non-destructive migration of the legacy local document store
- * (`src/lib/localStore.ts`, IndexedDB `nostr-docs-local`) into the local relay's
- * own IndexedDB store.
+ * One-time, non-destructive seed of the local relay's IndexedDB store from the
+ * legacy local document store (`src/lib/localStore.ts`, IndexedDB
+ * `nostr-docs-local`).
  *
- * Permanent dual storage: unlike a normal migration, we never delete the
- * legacy store — it is the only owner of each document's `viewKey`/`editKey`/
- * flags (the local relay stores raw events, never keys). This only *seeds* the
- * relay cache so events already on the device are served by the new path too.
- * Reads union both sources (see `DocumentContext`), so anything in either store
- * remains visible forever. Writes continue to update both.
+ * We never delete or rewrite the legacy store: rows written before events moved
+ * to the local relay keep their `event` payload and stay readable (read-only
+ * back-compat). The legacy store now owns per-document keys/flags only; new
+ * events are written to the local relay, never to `nostr-docs-local`. This seed
+ * merely copies already-on-device events into the relay cache so they are served
+ * by the new path too. Reads union both sources (see `DocumentContext`).
  *
  * Every step is best-effort: a failure (IDB eviction, private mode, a corrupt
  * row) is logged and skipped, never thrown — tags/documents must keep loading.

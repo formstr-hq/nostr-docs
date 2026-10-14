@@ -15,10 +15,11 @@ import {
   type Event,
 } from "nostr-tools";
 import { hexToBytes } from "nostr-tools/utils";
-import { storeLocalEvent, loadAllLocalEvents } from "../lib/localStore";
+import { saveLocalDocState, loadAllLocalEvents, type LocalStoredEvent } from "../lib/localStore";
 import { KIND_FILE } from "../nostr/kinds";
 import { fetchAllDocMetadata, saveDocMetadata } from "../nostr/docMetadata";
-import { subscribe, type Subscription } from "../dataLayer";
+import { subscribe, resolveEventsByAddress, cacheLocalEvents, type Subscription } from "../dataLayer";
+import { getEventAddress } from "../utils/helpers";
 
 type DocumentVersion = {
   event: Event;
@@ -139,13 +140,14 @@ export const SharedPagesProvider: React.FC<{ children: React.ReactNode }> = ({
 
           if (event.pubkey === currentUserPubkey) {
             addDocument(event, { viewKey: keys[1], editKey: keys[2] });
-            storeLocalEvent({
+            cacheLocalEvents([event]);
+            saveLocalDocState({
               address,
-              event,
               viewKey: keys[1],
               editKey: keys[2],
               pendingBroadcast: false,
               savedAt: Date.now(),
+              lastEventCreatedAt: event.created_at,
             }).catch(() => {});
             return;
           }
@@ -167,13 +169,14 @@ export const SharedPagesProvider: React.FC<{ children: React.ReactNode }> = ({
             return next;
           });
 
-          storeLocalEvent({
+          cacheLocalEvents([event]);
+          saveLocalDocState({
             address,
-            event,
             viewKey: keys[1],
             editKey: keys[2],
             pendingBroadcast: false,
             savedAt: Date.now(),
+            lastEventCreatedAt: event.created_at,
           }).catch(() => {});
         },
       },
@@ -220,6 +223,7 @@ export const SharedPagesProvider: React.FC<{ children: React.ReactNode }> = ({
       try {
         const entries = await loadAllLocalEvents();
         const initialSharedDocs: string[][] = [];
+        const sharedEntries = new Map<string, LocalStoredEvent>();
         for (const entry of entries) {
           if (entry.viewKey && !entry.visited) {
             initialSharedDocs.push([
@@ -227,28 +231,7 @@ export const SharedPagesProvider: React.FC<{ children: React.ReactNode }> = ({
               entry.viewKey,
               ...(entry.editKey ? [entry.editKey] : []),
             ]);
-
-            // If authored by someone else, decrypt and add to sharedDocuments
-            if (entry.event.pubkey !== user?.pubkey) {
-              try {
-                const conversationKey = nip44.getConversationKey(
-                  hexToBytes(entry.viewKey),
-                  getPublicKey(hexToBytes(entry.viewKey)),
-                );
-                const decryptedContent = nip44.decrypt(entry.event.content, conversationKey);
-                setSharedDocuments((prev) => {
-                  const next = new Map(prev);
-                  const history = next.get(entry.address) ?? { address: entry.address, versions: [] };
-                  if (history.versions.some((v) => v.event.id === entry.event.id)) return prev;
-                  history.versions = [
-                    ...history.versions,
-                    { event: entry.event, decryptedContent },
-                  ].sort((a, b) => a.event.created_at - b.event.created_at);
-                  next.set(entry.address, history);
-                  return next;
-                });
-              } catch {} // eslint-disable-line no-empty
-            }
+            sharedEntries.set(entry.address, entry);
           }
         }
         if (initialSharedDocs.length > 0) {
@@ -261,11 +244,49 @@ export const SharedPagesProvider: React.FC<{ children: React.ReactNode }> = ({
             return Array.from(map.values());
           });
         }
+
+        // Event payloads live in the local relay now. Prefer the cached copy and
+        // fall back to a legacy row's `event` (read-only back-compat) so docs
+        // written by either era still resolve.
+        const cached = await resolveEventsByAddress(
+          [...sharedEntries.keys()],
+          relays,
+        );
+        const cachedByAddress = new Map<string, Event>();
+        for (const ev of cached) {
+          const dTag = ev.tags.find((t) => t[0] === "d")?.[1];
+          if (dTag) cachedByAddress.set(`${ev.kind}:${ev.pubkey}:${dTag}`, ev);
+        }
+
+        for (const [address, entry] of sharedEntries) {
+          const viewKey = entry.viewKey;
+          if (!viewKey) continue;
+          const event = cachedByAddress.get(address) ?? entry.event;
+          if (!event || event.pubkey === user?.pubkey) continue;
+          try {
+            const conversationKey = nip44.getConversationKey(
+              hexToBytes(viewKey),
+              getPublicKey(hexToBytes(viewKey)),
+            );
+            const decryptedContent = nip44.decrypt(event.content, conversationKey);
+            setSharedDocuments((prev) => {
+              const next = new Map(prev);
+              const history = next.get(address) ?? { address, versions: [] };
+              if (history.versions.some((v) => v.event.id === event.id)) return prev;
+              history.versions = [
+                ...history.versions,
+                { event, decryptedContent },
+              ].sort((a, b) => a.event.created_at - b.event.created_at);
+              next.set(address, history);
+              return next;
+            });
+          } catch {} // eslint-disable-line no-empty
+        }
       } catch (err) {
         console.warn("Failed to load local shared events:", err);
       }
     })();
-  }, [user?.pubkey]);
+  }, [user?.pubkey, relays]);
 
   useEffect(() => {
     if (user) {
@@ -313,31 +334,38 @@ export const SharedPagesProvider: React.FC<{ children: React.ReactNode }> = ({
       return updated;
     });
 
-    // Also populate sharedDocuments immediately from local store if available,
-    // so we don't depend solely on relay subscription round-trips
+    // Also populate sharedDocuments immediately from local state + the relay
+    // cache if available, so we don't depend solely on relay subscription
+    // round-trips.
     try {
       const entries = await loadAllLocalEvents();
       const entry = entries.find((e) => matchAddress(e.address, address));
-      if (entry && entry.viewKey && (!user?.pubkey || entry.event.pubkey !== user?.pubkey)) {
-        const conversationKey = nip44.getConversationKey(
-          hexToBytes(entry.viewKey),
-          getPublicKey(hexToBytes(entry.viewKey)),
-        );
-        const decryptedContent = nip44.decrypt(entry.event.content, conversationKey);
-        setSharedDocuments((prev) => {
-          const next = new Map(prev);
-          const history = next.get(entry.address) ?? { address: entry.address, versions: [] };
-          if (!history.versions.some((v) => v.event.id === entry.event.id)) {
-            history.versions = [
-              ...history.versions,
-              { event: entry.event, decryptedContent },
-            ].sort((a, b) => a.event.created_at - b.event.created_at);
-            next.set(entry.address, history);
-          }
-          return next;
-        });
+      const viewKey2 = entry?.viewKey;
+      if (entry && viewKey2) {
+        const cached = await resolveEventsByAddress([entry.address], relays);
+        const event =
+          cached.find((ev) => getEventAddress(ev) === entry.address) ?? entry.event;
+        if (event && event.pubkey !== user?.pubkey) {
+          const conversationKey = nip44.getConversationKey(
+            hexToBytes(viewKey2),
+            getPublicKey(hexToBytes(viewKey2)),
+          );
+          const decryptedContent = nip44.decrypt(event.content, conversationKey);
+          setSharedDocuments((prev) => {
+            const next = new Map(prev);
+            const history = next.get(entry.address) ?? { address: entry.address, versions: [] };
+            if (!history.versions.some((v) => v.event.id === event.id)) {
+              history.versions = [
+                ...history.versions,
+                { event, decryptedContent },
+              ].sort((a, b) => a.event.created_at - b.event.created_at);
+              next.set(entry.address, history);
+            }
+            return next;
+          });
+        }
       }
-    } catch {}
+    } catch {} // eslint-disable-line no-empty
 
     fetchSharedDocuments([tag], pubkey);
   };

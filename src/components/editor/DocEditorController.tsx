@@ -76,13 +76,14 @@ import { useRelays } from "../../contexts/RelayContext";
 import { publishEvent } from "../../nostr/publish";
 import { makeTag } from "../../utils/makeTag";
 import {
-  storeLocalEvent,
+  saveLocalDocState,
   markBroadcast,
   removeLocalEvent,
   trashLocalEvent,
   setLocalOnlyFlag,
   clearVisitedFlag,
 } from "../../lib/localStore";
+import { cacheLocalEvents } from "../../dataLayer";
 
 import { EditorToolbar } from "./EditorToolbar";
 import { DocEditorSurface } from "./DocEditorSurface";
@@ -1169,18 +1170,24 @@ export function DocumentEditorController({
     // 1. Update React state (in-memory, for immediate UI)
     addDocument(stored, { viewKey, editKey });
 
-    // 2. Persist locally — source of truth when offline (or device-only).
-    await storeLocalEvent({
+    // 2. Cache the event in the local relay — the single owner of event
+    //    payloads. Covers device-only (unsigned) events too, which are never
+    //    published but must survive a reload.
+    cacheLocalEvents([stored]);
+
+    // 3. Persist only keys/flags in the legacy store. `pendingBroadcast` stays
+    //    set until a relay accepts the event (cleared by markBroadcast below).
+    await saveLocalDocState({
       address,
-      event: stored,
       viewKey: viewKey ?? undefined,
       editKey: editKey ?? undefined,
       pendingBroadcast: !localOnly,
       savedAt: Date.now(),
       localOnly: localOnly || undefined,
+      lastEventCreatedAt: stored.created_at,
     });
 
-    // 3. Broadcast to relays — skipped entirely for device-only documents.
+    // 4. Broadcast to relays — skipped entirely for device-only documents.
     if (!localOnly) {
       try {
         await publishEvent(stored, relays);

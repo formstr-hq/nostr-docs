@@ -44,11 +44,23 @@ stores `events` + `outbox`), and re-delivers failed publishes from a durable
 outbox. If the worker fails to boot, the helpers transparently fall back to the
 plain `SimplePool` (`src/nostr/relayPool.ts`) — protection against errors.
 
-Storage is intentionally **dual, and permanent**: the local relay is the event
-cache/transport, while the legacy `nostr-docs-local` DB (`src/lib/localStore.ts`)
-remains the owner of each document's `viewKey`/`editKey` and flags. It is never
-deleted; the local relay is seeded from it once (`src/dataLayer/migration.ts`)
-and reads union both sources.
+Storage ownership is split by *what* the data is, not duplicated per event:
+
+- **Events live in the local relay.** It is the single owner of event payloads —
+  including device-only pages, which are signed with an empty `sig` and never
+  published (they pass the worker's structural validation and are stored
+  locally without fan-out). New events are **never** written to the legacy DB.
+- **`nostr-docs-local` (`src/lib/localStore.ts`) owns per-document keys and flags
+  only** — `viewKey`/`editKey`, `localOnly` (Device), `visited`, `trashedAt`,
+  `pendingBroadcast`. Relays never hold these, and the local relay's event store
+  has no place for them, so they keep a small address-keyed state store. Its write
+  API (`saveLocalDocState`) takes no event and never persists one.
+
+The legacy DB is **never deleted or migrated**; rows written before this rule keep
+their `event` and stay readable (read-only back-compat), and reads union both
+sources. Because the local relay's durable write-through is debounced (~1s, no
+flush API), hydration resolves events from the relay cache first and falls back to
+a live relay fetch (`resolveEventsByAddress`) when a page isn't on disk yet.
 
 > Note: in this package `onEose` means the **local cache replay** finished, not
 > the network. `fetchOne`/`fetchMany` therefore settle a short debounce after the

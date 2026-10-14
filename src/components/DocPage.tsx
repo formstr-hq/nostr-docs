@@ -7,7 +7,8 @@ import { nip19 } from "nostr-tools";
 import { decodeNKeys } from "../utils/nkeys";
 import { useTextSuggest, type TextSuggestHook } from "../hooks/useTextSuggest";
 import { DocumentEditorController } from "./editor/DocEditorController";
-import { storeLocalEvent } from "../lib/localStore";
+import { saveLocalDocState } from "../lib/localStore";
+import { cacheLocalEvents } from "../dataLayer";
 import { useUser } from "../contexts/UserContext";
 
 import { useSharedPages } from "../contexts/SharedDocsContext";
@@ -78,14 +79,15 @@ export default function DocPage({
       if (isVisited) {
         const latestVersion = docExists.versions.at(-1);
         if (latestVersion) {
-          storeLocalEvent({
+          cacheLocalEvents([latestVersion.event]);
+          saveLocalDocState({
             address,
-            event: latestVersion.event,
             viewKey: keys.viewKey,
             editKey: keys.editKey,
             visited: true,
             pendingBroadcast: false,
             savedAt: Date.now(),
+            lastEventCreatedAt: latestVersion.event.created_at,
           }).catch(() => {});
         }
       }
@@ -134,19 +136,20 @@ export default function DocPage({
         const isAlreadyShared = getKeys(eventAddress).length > 0 || sharedDocuments.has(eventAddress);
         const isVisited = !isAlreadyShared && !!keys.viewKey && latestEvent.pubkey !== user?.pubkey;
 
-        // Cache in IndexedDB so this device has it available offline, so the
-        // two-device sync works, and so visited pages survive a reload (they
+        // Cache the event in the local relay (its owner) and remember only the
+        // keys/flags locally, so visited pages survive a reload (they
         // repopulate the Visited tab from here — no signer/metadata write, and
         // therefore no prompt just for opening a link). Promotion to the Shared
         // tab is an explicit "Save to Shared" action in the editor.
-        storeLocalEvent({
+        cacheLocalEvents([latestEvent]);
+        saveLocalDocState({
           address: eventAddress,
-          event: latestEvent,
           viewKey: keys.viewKey,
           editKey: keys.editKey,
           visited: isVisited || undefined,
           pendingBroadcast: false,
           savedAt: Date.now(),
+          lastEventCreatedAt: latestEvent.created_at,
         }).catch(() => {});
 
         setSelectedDocumentId(eventAddress);

@@ -413,6 +413,114 @@ export function setUserRelays(relays: string[]): void {
 }
 
 /**
+ * Cache events in the local relay without touching the network.
+ *
+ * The local relay is the single owner of event payloads. Anything that must
+ * survive offline — including device-only documents that are never published —
+ * is cached here rather than in the legacy `nostr-docs-local` store, which is
+ * now read-only for events (it keeps only per-document keys/flags).
+ *
+ * Best-effort: if the worker failed to boot there is no local store to write
+ * to, so we warn and drop rather than crash the save path.
+ */
+export function cacheLocalEvents(events: NostrEvent[]): void {
+  if (events.length === 0) return;
+  let dl: DataLayer | null = null;
+  try {
+    dl = getDataLayer();
+  } catch {
+    dl = null;
+  }
+  if (dl && !usingFallback) {
+    try {
+      dl.addEvents(events);
+      return;
+    } catch (e) {
+      console.warn("[dataLayer] cacheLocalEvents failed:", e);
+    }
+  }
+  console.warn("[dataLayer] local relay unavailable — event not cached locally");
+}
+
+/**
+ * Cache-only read of events by `kind:pubkey:dtag` address. No network: serves
+ * whatever the local relay already holds. Used to resolve events whose
+ * per-document keys/flags live in the legacy store.
+ */
+export async function fetchCachedByAddresses(
+  addresses: string[],
+): Promise<NostrEvent[]> {
+  const filters: Filter[] = [];
+  const seen = new Set<string>();
+  for (const address of addresses) {
+    const parts = address.split(":");
+    if (parts.length < 3) continue;
+    const kind = Number(parts[0]);
+    if (!Number.isFinite(kind)) continue;
+    const author = parts[1];
+    const dTag = parts.slice(2).join(":");
+    const key = `${kind}:${author}:${dTag}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    filters.push({ kinds: [kind], authors: [author], "#d": [dTag] });
+  }
+  if (filters.length === 0) return [];
+  return fetchCachedMany(filters);
+}
+
+/** `kind:pubkey:dtag` address of an event, or null when it has no `d` tag. */
+function eventAddress(event: NostrEvent): string | null {
+  const dTag = event.tags.find((t) => t[0] === "d")?.[1];
+  return dTag ? `${event.kind}:${event.pubkey}:${dTag}` : null;
+}
+
+/**
+ * Resolve events by `kind:pubkey:dtag` address: read the local relay cache
+ * first, then fetch any still-missing addresses from the given relays (when
+ * provided). This makes hydration resilient to the local relay's ~1s debounced
+ * write-through — a page cached just before navigation may not be on disk yet,
+ * so we fall back to the network.
+ */
+export async function resolveEventsByAddress(
+  addresses: string[],
+  relays?: string[],
+): Promise<NostrEvent[]> {
+  if (addresses.length === 0) return [];
+  const byAddress = new Map<string, NostrEvent>();
+  const add = (event: NostrEvent) => {
+    const address = eventAddress(event);
+    if (address) byAddress.set(address, event);
+  };
+
+  for (const event of await fetchCachedByAddresses(addresses)) add(event);
+
+  const missing = addresses.filter((address) => !byAddress.has(address));
+  if (missing.length > 0 && relays && relays.length > 0) {
+    const filters: Filter[] = [];
+    const seen = new Set<string>();
+    for (const address of missing) {
+      const parts = address.split(":");
+      if (parts.length < 3) continue;
+      const kind = Number(parts[0]);
+      if (!Number.isFinite(kind)) continue;
+      const key = `${kind}:${parts[1]}:${parts.slice(2).join(":")}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      filters.push({ kinds: [kind], authors: [parts[1]], "#d": [parts.slice(2).join(":")] });
+    }
+    if (filters.length > 0) {
+      try {
+        for (const event of await fetchMany(filters, relays, 6000)) add(event);
+      } catch (e) {
+        console.warn("[dataLayer] resolveEventsByAddress fetch failed:", e);
+      }
+    }
+  }
+
+  return Array.from(byAddress.values());
+}
+
+/**
  * Publish and report per-relay outcomes (for UIs that show accepted/rejected
  * relay lists). Falls back to a plain pool when the worker is unavailable.
  */

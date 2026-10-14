@@ -19,7 +19,7 @@ import { alpha } from "@mui/material/styles";
 import RestoreIcon from "@mui/icons-material/Restore";
 import DeleteForeverIcon from "@mui/icons-material/DeleteForever";
 import WarningAmberIcon from "@mui/icons-material/WarningAmber";
-import { nip44, nip19, getPublicKey } from "nostr-tools";
+import { nip44, nip19, getPublicKey, type Event } from "nostr-tools";
 import { getConversationKey } from "nostr-tools/nip44";
 import { hexToBytes } from "nostr-tools/utils";
 import { useNavigate } from "react-router-dom";
@@ -29,6 +29,8 @@ import {
   removeLocalEvent,
   type LocalStoredEvent,
 } from "../lib/localStore";
+import { resolveEventsByAddress } from "../dataLayer";
+import { getEventAddress } from "../utils/helpers";
 import { useDocumentContext } from "../contexts/DocumentContext";
 import { useRelays } from "../contexts/RelayContext";
 import { publishEvent } from "../nostr/publish";
@@ -36,9 +38,9 @@ import { signerManager } from "../signer";
 import { encodeNKeys } from "../utils/nkeys";
 import ConfirmModal from "./common/ConfirmModal";
 
-type TrashItem = LocalStoredEvent & { title: string };
+type TrashItem = LocalStoredEvent & { title: string; event: Event };
 
-async function decryptTitle(entry: LocalStoredEvent): Promise<string> {
+async function decryptTitle(entry: LocalStoredEvent & { event: Event }): Promise<string> {
   try {
     let content: string;
     if (entry.viewKey) {
@@ -81,14 +83,30 @@ export default function TrashDialog({
     setLoading(true);
     loadTrashedEvents()
       .then(async (entries) => {
-        const withTitles = await Promise.all(
-          entries.map(async (e) => ({ ...e, title: await decryptTitle(e) })),
+        // Event payloads live in the local relay; legacy rows may still carry a
+        // copy (read-only back-compat). Resolve each item's event, then title it.
+        const cached = await resolveEventsByAddress(
+          entries.map((e) => e.address),
+          relays,
         );
-        withTitles.sort((a, b) => (b.trashedAt ?? 0) - (a.trashedAt ?? 0));
-        setItems(withTitles);
+        const cachedByAddress = new Map<string, Event>();
+        for (const ev of cached) {
+          const a = getEventAddress(ev);
+          if (a) cachedByAddress.set(a, ev);
+        }
+        const withTitles = await Promise.all(
+          entries.map(async (e): Promise<TrashItem | null> => {
+            const event = cachedByAddress.get(e.address) ?? e.event;
+            if (!event) return null;
+            return { ...e, event, title: await decryptTitle({ ...e, event }) };
+          }),
+        );
+        const items = withTitles.filter((x): x is TrashItem => x !== null);
+        items.sort((a, b) => (b.trashedAt ?? 0) - (a.trashedAt ?? 0));
+        setItems(items);
       })
       .finally(() => setLoading(false));
-  }, [open]);
+  }, [open, relays]);
 
   const handleRestore = async (item: TrashItem) => {
     setRestoring(item.address);

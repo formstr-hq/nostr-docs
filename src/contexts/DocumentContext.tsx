@@ -17,7 +17,7 @@ import { getEventAddress } from "../utils/helpers";
 import {
   loadAllLocalEvents,
   loadVisitedEvents,
-  storeLocalEvent,
+  saveLocalDocState,
   markBroadcast,
   type LocalStoredEvent,
 } from "../lib/localStore";
@@ -27,7 +27,7 @@ import { fetchDeleteRequests } from "../nostr/fetchDelete";
 import { publishEvent } from "../nostr/publish";
 import { encryptContent } from "../utils/encryption";
 import { makeTag } from "../utils/makeTag";
-import { subscribe, fetchCachedMany, type Subscription } from "../dataLayer";
+import { subscribe, fetchCachedMany, fetchCachedByAddresses, resolveEventsByAddress, cacheLocalEvents, type Subscription } from "../dataLayer";
 
 type DocumentVersion = {
   event: Event;
@@ -330,17 +330,16 @@ export const DocumentProvider: React.FC<{ children: React.ReactNode }> = ({
         created_at: Math.floor(Date.now() / 1000),
       });
 
-      // Populate the in-memory list (decrypts through the signer) and persist
-      // locally so the page survives a reload even if the relay write fails.
+      // Populate the in-memory list (decrypts through the signer). The event is
+      // cached in the local relay (owner of event payloads); only the retry flag
+      // goes to the legacy store.
       await addDocument(stored);
-      await storeLocalEvent({
+      cacheLocalEvents([stored]);
+      await saveLocalDocState({
         address,
-        event: stored,
-        // Leave pendingBroadcast set until a relay actually accepts it: if the
-        // worker is in fallback mode (plain pool) and the write fails, startup's
-        // re-broadcast pass picks this entry up. Cleared by markBroadcast below.
         pendingBroadcast: true,
         savedAt: Date.now(),
+        lastEventCreatedAt: stored.created_at,
       });
 
       try {
@@ -369,10 +368,27 @@ export const DocumentProvider: React.FC<{ children: React.ReactNode }> = ({
 
         const visitedEntries = await loadVisitedEvents();
         if (visitedEntries.length === 0) return;
+
+        // Resolve each visited page's event: local relay cache first, then a
+        // live relay fetch (the relay's write-through is debounced, so a page
+        // just opened may not be on disk yet). Falls back to a legacy row's
+        // `event` (read-only back-compat).
+        const cached = await resolveEventsByAddress(
+          visitedEntries.map((e) => e.address),
+          relays,
+        );
+        const cachedByAddress = new Map<string, Event>();
+        for (const ev of cached) {
+          const a = getEventAddress(ev);
+          if (a) cachedByAddress.set(a, ev);
+        }
+
         const addresses: string[] = [];
         for (const entry of visitedEntries) {
+          const event = cachedByAddress.get(entry.address) ?? entry.event;
+          if (!event) continue;
           try {
-            await addDocument(entry.event, {
+            await addDocument(event, {
               viewKey: entry.viewKey,
               editKey: entry.editKey,
             });
@@ -388,7 +404,7 @@ export const DocumentProvider: React.FC<{ children: React.ReactNode }> = ({
         console.warn("Failed to hydrate visited pages:", err);
       }
     })();
-  }, [addDocument]);
+  }, [addDocument, relays]);
 
   // Reset user's personal documents when logged out
   useEffect(() => {
@@ -399,8 +415,18 @@ export const DocumentProvider: React.FC<{ children: React.ReactNode }> = ({
       (async () => {
         try {
           const visitedEntries = await loadVisitedEvents();
+          const cached = await fetchCachedByAddresses(
+            visitedEntries.map((e) => e.address),
+          );
+          const cachedByAddress = new Map<string, Event>();
+          for (const ev of cached) {
+            const a = getEventAddress(ev);
+            if (a) cachedByAddress.set(a, ev);
+          }
           for (const entry of visitedEntries) {
-            await addDocument(entry.event, {
+            const event = cachedByAddress.get(entry.address) ?? entry.event;
+            if (!event) continue;
+            await addDocument(event, {
               viewKey: entry.viewKey,
               editKey: entry.editKey,
             });
@@ -436,19 +462,23 @@ export const DocumentProvider: React.FC<{ children: React.ReactNode }> = ({
 
         for (const entry of localEntries) {
           localEntriesRef.current.set(entry.address, entry);
-          try {
-            await addDocument(entry.event, {
-              viewKey: entry.viewKey,
-              editKey: entry.editKey,
-            });
-            if (entry.visited) {
-              setSessionVisited((prev) => new Set([...prev, entry.address]));
+          // Legacy rows still carry the event; newer rows resolve it from the
+          // local relay cache in phase 1b below.
+          if (entry.event) {
+            try {
+              await addDocument(entry.event, {
+                viewKey: entry.viewKey,
+                editKey: entry.editKey,
+              });
+            } catch {
+              // Skip events that can't be decrypted
             }
-            if (entry.localOnly || entry.pendingBroadcast || !entry.event.sig) {
-              markLocalOnly(entry.address, true);
-            }
-          } catch {
-            // Skip events that can't be decrypted
+          }
+          if (entry.visited) {
+            setSessionVisited((prev) => new Set([...prev, entry.address]));
+          }
+          if (entry.localOnly || entry.pendingBroadcast || (entry.event && !entry.event.sig)) {
+            markLocalOnly(entry.address, true);
           }
         }
       } catch (err) {
@@ -506,13 +536,13 @@ export const DocumentProvider: React.FC<{ children: React.ReactNode }> = ({
                 return next;
               });
 
-              storeLocalEvent({
+              saveLocalDocState({
                 address,
-                event: doc,
                 viewKey,
                 editKey,
                 pendingBroadcast: false,
                 savedAt: Date.now(),
+                lastEventCreatedAt: doc.created_at,
               }).catch(() => {});
             }
           },
@@ -523,9 +553,22 @@ export const DocumentProvider: React.FC<{ children: React.ReactNode }> = ({
         await fetchDeleteRequests(relays, addDeletionRequest, pubkey);
 
         // ── Phase 3: Re-broadcast offline saves ─────────────
-        for (const entry of localEntries) {
-          if (entry.pendingBroadcast && !entry.localOnly) {
-            publishEvent(entry.event, relays)
+        const pending = localEntries.filter(
+          (entry) => entry.pendingBroadcast && !entry.localOnly,
+        );
+        if (pending.length > 0) {
+          const cachedPending = await fetchCachedByAddresses(
+            pending.map((entry) => entry.address),
+          );
+          const cachedByAddress = new Map<string, Event>();
+          for (const ev of cachedPending) {
+            const a = getEventAddress(ev);
+            if (a) cachedByAddress.set(a, ev);
+          }
+          for (const entry of pending) {
+            const event = cachedByAddress.get(entry.address) ?? entry.event;
+            if (!event) continue;
+            publishEvent(event, relays)
               .then(() => markBroadcast(entry.address))
               .catch(() => {});
           }
@@ -556,13 +599,13 @@ export const DocumentProvider: React.FC<{ children: React.ReactNode }> = ({
 
             await addDocument(event, { viewKey, editKey });
             if (addr) {
-              storeLocalEvent({
+              saveLocalDocState({
                 address: addr,
-                event,
                 viewKey,
                 editKey,
                 pendingBroadcast: false,
                 savedAt: Date.now(),
+                lastEventCreatedAt: event.created_at,
               }).catch(() => {});
             }
           },
