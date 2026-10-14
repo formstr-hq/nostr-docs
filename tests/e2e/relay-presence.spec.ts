@@ -33,6 +33,26 @@ test("a page card shows which relays hold it", async ({ page }) => {
   ).toBeVisible();
 });
 
+test("the editor toolbar shows relay coverage for the open page", async ({ page }) => {
+  const title = `Editor Relay ${Date.now()}`;
+
+  await loginAsGuest(page);
+  await typeIntoEditor(page, `# ${title}\n\neditor body`);
+  await save(page);
+
+  // Editor is open; the merged indicator replaces the old dots + broadcast icon.
+  const indicator = page.getByRole("button", { name: /^Relay status:/ });
+  await expect(indicator).toBeVisible({ timeout: 20_000 });
+  await indicator.click();
+
+  const popover = page.getByRole("dialog", { name: "Relay status" });
+  await expect(popover.getByText("1/1")).toBeVisible({ timeout: 15_000 });
+  await expect(popover.getByText("localhost:7449")).toBeVisible();
+  await expect(
+    popover.getByRole("button", { name: "Re-broadcast to relays" }),
+  ).toBeVisible();
+});
+
 test("warns and re-broadcasts when no relay holds the page", async ({ page }) => {
   const title = `Relay Missing ${Date.now()}`;
 

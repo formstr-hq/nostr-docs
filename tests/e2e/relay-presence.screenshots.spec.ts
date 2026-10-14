@@ -28,7 +28,18 @@ test("capture relay presence flow", async ({ page }) => {
   await typeIntoEditor(page, "# Meeting notes\n\nStandup summary.");
   await save(page);
 
-  // ── 01: relay coverage popover (page is on the relay) ──────────
+  // ── 01: editor-toolbar indicator (merged dots + broadcast) ──────
+  const editorIndicator = page.getByRole("button", { name: /^Relay status:/ });
+  await expect(editorIndicator).toBeVisible({ timeout: 20_000 });
+  await editorIndicator.click();
+  await expect(
+    page.getByRole("dialog", { name: "Relay status" }).getByText("1/1"),
+  ).toBeVisible({ timeout: 15_000 });
+  await page.waitForTimeout(400);
+  await page.screenshot({ path: path.join(OUT, "01-editor.png") });
+  await page.keyboard.press("Escape");
+
+  // ── 02: relay coverage popover (page is on the relay) ──────────
   await page.getByRole("button", { name: "All pages" }).click();
   const indicator = page.getByRole("button", { name: /^Relay status:/ }).first();
   await expect(indicator).toBeVisible({ timeout: 20_000 });
@@ -36,10 +47,10 @@ test("capture relay presence flow", async ({ page }) => {
   const popover = page.getByRole("dialog", { name: "Relay status" });
   await expect(popover.getByText("1/1")).toBeVisible({ timeout: 15_000 });
   await page.waitForTimeout(400);
-  await page.screenshot({ path: path.join(OUT, "01-relays-have-it.png") });
+  await page.screenshot({ path: path.join(OUT, "02-relays-have-it.png") });
   await page.keyboard.press("Escape");
 
-  // ── 02: missing-everywhere warning ─────────────────────────────
+  // ── 03: missing-everywhere warning ─────────────────────────────
   await page.waitForTimeout(2000); // let the local relay flush to disk
   await fetch("http://localhost:7449/clear", { method: "POST" });
   await page.reload();
@@ -52,5 +63,5 @@ test("capture relay presence flow", async ({ page }) => {
     page.getByRole("dialog", { name: "Relay status" }).getByText("None of your relays have this page."),
   ).toBeVisible();
   await page.waitForTimeout(400);
-  await page.screenshot({ path: path.join(OUT, "02-missing.png") });
+  await page.screenshot({ path: path.join(OUT, "03-missing.png") });
 });

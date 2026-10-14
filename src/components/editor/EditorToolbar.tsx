@@ -28,7 +28,8 @@ import ChatBubbleOutlineIcon from "@mui/icons-material/ChatBubbleOutline";
 import FullscreenExitIcon from "@mui/icons-material/FullscreenExit";
 import CropFreeIcon from "@mui/icons-material/CropFree";
 import HistoryIcon from "@mui/icons-material/History";
-import SensorsIcon from "@mui/icons-material/Sensors";
+import type { Event } from "nostr-tools";
+import RelayPresenceIndicator from "../RelayPresenceIndicator";
 import FormatBoldIcon from "@mui/icons-material/FormatBold";
 import FormatItalicIcon from "@mui/icons-material/FormatItalic";
 import FormatListBulletedIcon from "@mui/icons-material/FormatListBulleted";
@@ -80,6 +81,8 @@ type Props = {
   focusMode: boolean;
   onToggleFocusMode: () => void;
   isViewOnly: boolean;
+  /** Latest signed event for this page, for the relay-coverage indicator. */
+  relayEvent?: Event | null;
   onAttachFile?: (files: FileList) => void;
   uploading?: boolean;
   isLocalOnly?: boolean;
@@ -118,6 +121,7 @@ export function EditorToolbar({
   focusMode,
   onToggleFocusMode,
   isViewOnly,
+  relayEvent = null,
   onAttachFile,
   uploading,
   isLocalOnly = false,
@@ -260,36 +264,19 @@ export function EditorToolbar({
             {focusMode ? "Exit Focus" : "Focus"}
           </Button>
 
-          {/* Relay Sync Dots */}
-          <Tooltip title={`Connected to ${relays.length || 3} relays`}>
+          {/* Relay coverage for this page — one indicator that both shows
+              coverage and offers a re-broadcast (replaces the old static dots
+              + separate "live broadcast" button). */}
+          {relayEvent && (
             <Box
               sx={{
-                display: { xs: "none", sm: "flex" },
+                display: { xs: "none", sm: "inline-flex" },
                 alignItems: "center",
-                cursor: "default",
-                userSelect: "none",
-                px: 0.75,
-                py: 0.5,
-                borderRadius: 1,
-                "&:hover": {
-                  bgcolor: (t) => alpha(t.palette.text.primary, 0.04),
-                },
               }}
             >
-              <Box sx={{ display: "inline-flex", alignItems: "center", gap: 0.4 }}>
-                <Box sx={{ width: 5.5, height: 5.5, borderRadius: "50%", bgcolor: "#34D399" }} />
-                <Box sx={{ width: 5.5, height: 5.5, borderRadius: "50%", bgcolor: "#34D399" }} />
-                <Box sx={{ width: 5.5, height: 5.5, borderRadius: "50%", bgcolor: "text.disabled", opacity: 0.5 }} />
-              </Box>
+              <RelayPresenceIndicator event={relayEvent} relays={relays} />
             </Box>
-          </Tooltip>
-
-          {/* Live broadcast status icon */}
-          <Tooltip title="Live Relay Broadcast">
-            <IconButton size="small" sx={{ color: "text.secondary", p: 0.6, display: { xs: "none", sm: "inline-flex" } }}>
-              <SensorsIcon sx={{ fontSize: 18 }} />
-            </IconButton>
-          </Tooltip>
+          )}
 
           {/* History Button */}
           <Tooltip title="Version History">

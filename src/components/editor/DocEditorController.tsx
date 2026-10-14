@@ -1542,6 +1542,7 @@ export function DocumentEditorController({
             focusMode={focusMode}
             onToggleFocusMode={handleToggleFocusMode}
             isViewOnly={isViewOnly}
+            relayEvent={isLocalOnly ? null : (history?.versions.at(-1)?.event ?? null)}
             onAttachFile={(files) => Array.from(files).forEach(handleFileUpload)}
             uploading={uploading}
             isLocalOnly={isLocalOnly}
