@@ -336,7 +336,10 @@ export const DocumentProvider: React.FC<{ children: React.ReactNode }> = ({
       await storeLocalEvent({
         address,
         event: stored,
-        pendingBroadcast: false,
+        // Leave pendingBroadcast set until a relay actually accepts it: if the
+        // worker is in fallback mode (plain pool) and the write fails, startup's
+        // re-broadcast pass picks this entry up. Cleared by markBroadcast below.
+        pendingBroadcast: true,
         savedAt: Date.now(),
       });
 
