@@ -3,11 +3,13 @@ import {
   Alert,
   Box,
   Button,
+  Checkbox,
   Chip,
   Dialog,
   DialogActions,
   DialogContent,
   DialogTitle,
+  FormControlLabel,
   IconButton,
   LinearProgress,
   Typography,
@@ -46,6 +48,7 @@ export default function ImportPagesDialog({
   const [progress, setProgress] = useState({ done: 0, total: 0 });
   const [result, setResult] = useState<{ ok: number; failed: number } | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [publishToRelays, setPublishToRelays] = useState(true);
 
   const busy = parsing || importing;
 
@@ -97,7 +100,7 @@ export default function ImportPagesDialog({
 
     for (const entry of entries) {
       try {
-        await addImportedDocument(entry.markdown);
+        await addImportedDocument(entry.markdown, { publish: publishToRelays });
         ok += 1;
       } catch (err) {
         console.error("Failed to import page:", entry.source, err);
@@ -147,8 +150,35 @@ export default function ImportPagesDialog({
       <DialogContent dividers sx={{ px: 2.5, py: 2 }}>
         <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5 }}>
           Add Markdown (.md) files, or a .zip of Markdown files. Each file becomes
-          a new page, published to your relays.
+          a new page.
         </Typography>
+
+        <FormControlLabel
+          sx={{ display: "flex", alignItems: "flex-start", ml: 0, mb: 1.5 }}
+          control={
+            <Checkbox
+              size="small"
+              checked={publishToRelays}
+              disabled={busy}
+              onChange={(e) => setPublishToRelays(e.target.checked)}
+            />
+          }
+          label={
+            <Box>
+              <Typography variant="body2" sx={{ fontWeight: 600, fontSize: "0.84rem" }}>
+                Publish to relays
+              </Typography>
+              <Typography
+                variant="caption"
+                sx={{ display: "block", color: "text.secondary", fontSize: "0.72rem" }}
+              >
+                {publishToRelays
+                  ? "Imported pages sync to your relays (end-to-end encrypted)."
+                  : "Imported pages stay on this device only — never published."}
+              </Typography>
+            </Box>
+          }
+        />
 
         {!user && (
           <Alert severity="info" sx={{ mb: 1.5 }}>
@@ -307,6 +337,7 @@ export default function ImportPagesDialog({
             sx={{ mt: 1.5 }}
           >
             Imported {result.ok} page{result.ok === 1 ? "" : "s"}
+            {publishToRelays ? "" : " on this device"}
             {result.failed > 0 ? `, ${result.failed} failed` : ""}.
           </Alert>
         )}

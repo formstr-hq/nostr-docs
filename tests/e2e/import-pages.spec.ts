@@ -67,3 +67,37 @@ test("imports single markdown files and a zip of markdown files", async ({
     timeout: 20_000,
   });
 });
+
+test("importing can keep pages on this device only", async ({ page }, testInfo) => {
+  const stamp = Date.now();
+  const title = `Device Only Import ${stamp}`;
+
+  const mdPath = testInfo.outputPath("Local.md");
+  writeFileSync(mdPath, `# ${title}\n\nnever published ${stamp}`);
+
+  await loginAsGuest(page);
+  await page.getByRole("button", { name: "Account menu" }).click();
+  await page.getByRole("menuitem", { name: /Import pages/ }).click();
+
+  const dialog = page.getByRole("dialog").filter({ hasText: "Import pages" });
+  await expect(dialog).toBeVisible();
+
+  // Opt out of publishing — imported pages become device-only.
+  await dialog.getByRole("checkbox", { name: /Publish to relays/ }).uncheck();
+  await dialog.getByLabel("Choose Markdown or zip files").setInputFiles(mdPath);
+
+  await dialog.getByRole("button", { name: "Import 1 page" }).click();
+  await expect(dialog.getByText(/Imported 1 page on this device/)).toBeVisible({
+    timeout: 30_000,
+  });
+  await dialog.getByRole("button", { name: "View pages" }).click();
+
+  // It is classified as a Device page and is absent from Personal.
+  await page.getByRole("button", { name: "Device", exact: true }).click();
+  await expect(page.getByText(title, { exact: true }).first()).toBeVisible({
+    timeout: 20_000,
+  });
+
+  await page.getByRole("button", { name: "Personal", exact: true }).click();
+  await expect(page.getByText(title, { exact: true })).toBeHidden({ timeout: 5_000 });
+});

@@ -15,7 +15,8 @@ nostr-docs flows end to end. These are **health checks**, not UI specs.
   selected page landed with its own content.
 - **import-pages** — the Import dialog reads single `.md` files and a `.zip` of
   `.md` files, creates a page per file, reports skipped non-Markdown inputs, and
-  the imported content survives the encrypt → publish → reopen round trip.
+  the imported content survives the encrypt → publish → reopen round trip. Also
+  covers opting out of publishing to keep an import device-only.
 - **ai-writing** — verifies the Local AI writing settings, preference
   persistence, recommended GGUF links, Wllama model-loading options, correction
   normalization, serialized correction/autocomplete generation, and that an

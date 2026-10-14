@@ -1,4 +1,4 @@
-import { getPublicKey, nip44, type Event } from "nostr-tools";
+import { getPublicKey, getEventHash, nip44, type Event } from "nostr-tools";
 import React, {
   createContext,
   useContext,
@@ -53,11 +53,17 @@ interface DocumentContextValue {
   ) => Promise<void>;
 
   /**
-   * Create a brand-new owner-encrypted page from raw Markdown and publish it.
-   * Used by the import feature (single .md files / zips of .md files). Returns
-   * the new document address. Throws if there is no signer.
+   * Create a brand-new owner-encrypted page from raw Markdown. Returns the new
+   * document address. Throws if there is no signer.
+   *
+   * `publish` (default true) broadcasts the page to the user's relays; when
+   * false the page is stored on this device only (unsigned, never published),
+   * mirroring the editor's "Device" mode.
    */
-  addImportedDocument: (markdown: string) => Promise<string>;
+  addImportedDocument: (
+    markdown: string,
+    options?: { publish?: boolean },
+  ) => Promise<string>;
 
   removeDocument: (id: string) => void;
   addDeletionRequest: (delEvent: Event) => void;
@@ -308,13 +314,18 @@ export const DocumentProvider: React.FC<{ children: React.ReactNode }> = ({
   );
 
   /**
-   * Create a new owner-encrypted page from raw Markdown and publish it.
-   * Mirrors the editor's "Save" path for a brand-new document: NIP-44 encrypt
-   * with the signer's own key, sign a fresh kind-33457 event, cache it locally
-   * (offline-first) and broadcast best-effort. Returns the new address.
+   * Create a new owner-encrypted page from raw Markdown. Mirrors the editor's
+   * "Save" path for a brand-new document: NIP-44 encrypt with the signer's own
+   * key, sign a fresh kind-33457 event, cache it in the local relay
+   * (offline-first) and broadcast best-effort. When `publish` is false the event
+   * is left unsigned (never accepted by any relay) — a device-only page.
    */
   const addImportedDocument = useCallback(
-    async (markdown: string): Promise<string> => {
+    async (
+      markdown: string,
+      options?: { publish?: boolean },
+    ): Promise<string> => {
+      const publish = options?.publish ?? true;
       const signer = await signerManager.getSigner();
       if (!signer) throw new Error("Not signed in");
 
@@ -323,24 +334,50 @@ export const DocumentProvider: React.FC<{ children: React.ReactNode }> = ({
       const address = `${KIND_FILE}:${pubkey}:${dTag}`;
 
       const encryptedContent = await encryptContent(markdown);
-      const stored = await signer.signEvent({
-        kind: KIND_FILE,
-        tags: [["d", dTag]],
-        content: encryptedContent,
-        created_at: Math.floor(Date.now() / 1000),
-      });
+      const createdAt = Math.floor(Date.now() / 1000);
 
-      // Populate the in-memory list (decrypts through the signer). The event is
-      // cached in the local relay (owner of event payloads); only the retry flag
-      // goes to the legacy store.
+      let stored: Event;
+      if (publish) {
+        stored = await signer.signEvent({
+          kind: KIND_FILE,
+          tags: [["d", dTag]],
+          content: encryptedContent,
+          created_at: createdAt,
+        });
+      } else {
+        // Device-only: a valid event id with an empty signature. Relays reject
+        // it, so it structurally cannot be published.
+        const template = {
+          kind: KIND_FILE,
+          tags: [["d", dTag]],
+          content: encryptedContent,
+          created_at: createdAt,
+          pubkey,
+        };
+        stored = { ...template, id: getEventHash(template), sig: "" };
+      }
+
+      // The event lives in the local relay; only keys/flags go to the legacy
+      // store (here just the device-only flag).
       await addDocument(stored);
       cacheLocalEvents([stored]);
       await saveLocalDocState({
         address,
-        pendingBroadcast: true,
+        pendingBroadcast: publish,
         savedAt: Date.now(),
+        localOnly: publish ? undefined : true,
         lastEventCreatedAt: stored.created_at,
       });
+
+      if (!publish) {
+        setLocalOnlyAddresses((prev) => {
+          if (prev.has(address)) return prev;
+          const next = new Set(prev);
+          next.add(address);
+          return next;
+        });
+        return address;
+      }
 
       try {
         await publishEvent(stored, relays);
