@@ -1,7 +1,7 @@
 import path from "node:path";
 import { mkdirSync } from "node:fs";
 import { test, expect } from "@playwright/test";
-import { loginAsGuest, typeIntoEditor, save, unlockAfterReload } from "./helpers";
+import { loginAsGuest, typeIntoEditor, save, unlockAfterReload, clearRelayEvents, pubkeyFromDocUrl } from "./helpers";
 
 /**
  * Not part of the normal suite — regenerates the reference screenshots for the
@@ -27,6 +27,7 @@ test("capture relay presence flow", async ({ page }) => {
   await page.getByRole("button", { name: "New page" }).click();
   await typeIntoEditor(page, "# Meeting notes\n\nStandup summary.");
   await save(page);
+  const pubkey = pubkeyFromDocUrl(page.url());
 
   // ── 01: editor-toolbar indicator (merged dots + broadcast) ──────
   const editorIndicator = page.getByRole("button", { name: /^Relay status:/ });
@@ -52,7 +53,7 @@ test("capture relay presence flow", async ({ page }) => {
 
   // ── 03: missing-everywhere warning ─────────────────────────────
   await page.waitForTimeout(2000); // let the local relay flush to disk
-  await fetch("http://localhost:7449/clear", { method: "POST" });
+  await clearRelayEvents({ authors: [pubkey] });
   await page.reload();
   await unlockAfterReload(page);
   await page.getByRole("button", { name: "All pages" }).click();

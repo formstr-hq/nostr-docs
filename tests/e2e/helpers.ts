@@ -1,9 +1,36 @@
 import { Page, expect } from "@playwright/test";
 import WebSocket from "ws";
-import type { Event, Filter } from "nostr-tools";
+import { nip19, type Event, type Filter } from "nostr-tools";
 
 export const LOCAL_RELAY = "localhost:7449";
 export const LOCAL_RELAY_URL = "ws://localhost:7449";
+export const LOCAL_RELAY_CONTROL = "http://localhost:7449";
+
+/**
+ * Empty matching events from the test relay via its HTTP control surface. Pass
+ * an author/id filter to scope the wipe (recommended) — the relay is shared
+ * across the whole suite, so an unfiltered clear removes everyone's events.
+ */
+export async function clearRelayEvents(filter?: {
+  authors?: string[];
+  ids?: string[];
+}): Promise<void> {
+  const res = await fetch(`${LOCAL_RELAY_CONTROL}/clear`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(filter ?? {}),
+  });
+  if (!res.ok) throw new Error(`relay clear failed: HTTP ${res.status}`);
+}
+
+/** The pubkey embedded in a `/doc/<naddr>` URL. */
+export function pubkeyFromDocUrl(url: string): string {
+  const match = url.match(/\/doc\/(naddr1[0-9a-z]+)/i);
+  if (!match) throw new Error(`no naddr in url: ${url}`);
+  const decoded = nip19.decode(match[1]);
+  if (decoded.type !== "naddr") throw new Error(`not an naddr: ${match[1]}`);
+  return decoded.data.pubkey;
+}
 
 /**
  * Shared building blocks for the e2e tests.

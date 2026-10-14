@@ -1,12 +1,17 @@
 import { test, expect } from "@playwright/test";
-import { loginAsGuest, typeIntoEditor, save, unlockAfterReload } from "./helpers";
+import {
+  loginAsGuest,
+  typeIntoEditor,
+  save,
+  unlockAfterReload,
+  clearRelayEvents,
+  pubkeyFromDocUrl,
+} from "./helpers";
 
 /**
  * Per-page relay presence: the card indicator names the relays holding a page
  * and, when none do, warns and offers a re-broadcast.
  */
-
-const RELAY_CONTROL = "http://localhost:7449";
 
 test("a page card shows which relays hold it", async ({ page }) => {
   const title = `Relay Presence ${Date.now()}`;
@@ -60,14 +65,15 @@ test("warns and re-broadcasts when no relay holds the page", async ({ page }) =>
   await typeIntoEditor(page, `# ${title}\n\nmissing body`);
   await save(page);
 
+  const pubkey = pubkeyFromDocUrl(page.url());
+
   // Let the local relay flush the page to disk (its write-through is debounced
   // ~1s) so it survives the reload even after the relay server is emptied.
   await page.waitForTimeout(2000);
 
-  // Empty the test relay, then reload so presence is checked fresh (the check
-  // is cached per session).
-  const cleared = await fetch(`${RELAY_CONTROL}/clear`, { method: "POST" });
-  expect(cleared.ok).toBeTruthy();
+  // Drop this account's events from the test relay, then reload so presence is
+  // checked fresh (the check is cached per session).
+  await clearRelayEvents({ authors: [pubkey] });
 
   await page.reload();
   await unlockAfterReload(page);

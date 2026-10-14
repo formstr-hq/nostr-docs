@@ -72,9 +72,31 @@ const wss = new WebSocketServer({ noServer: true });
 // upgrade is handled on the same server.
 const server = http.createServer((req, res) => {
   if (req.method === "POST" && req.url === "/clear") {
-    events.length = 0;
-    res.writeHead(200, { "content-type": "text/plain" });
-    res.end("cleared");
+    let body = "";
+    req.on("data", (chunk) => (body += chunk));
+    req.on("end", () => {
+      let authors = null;
+      let ids = null;
+      try {
+        const parsed = body ? JSON.parse(body) : {};
+        authors = Array.isArray(parsed.authors) ? parsed.authors : null;
+        ids = Array.isArray(parsed.ids) ? parsed.ids : null;
+      } catch {
+        // ignore malformed body — treat as clear-all
+      }
+      if (authors || ids) {
+        for (let i = events.length - 1; i >= 0; i -= 1) {
+          const e = events[i];
+          if ((authors && authors.includes(e.pubkey)) || (ids && ids.includes(e.id))) {
+            events.splice(i, 1);
+          }
+        }
+      } else {
+        events.length = 0;
+      }
+      res.writeHead(200, { "content-type": "text/plain" });
+      res.end("cleared");
+    });
     return;
   }
   if (req.method === "GET" && req.url === "/health") {
