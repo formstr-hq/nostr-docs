@@ -89,7 +89,13 @@ export const DocMetadataProvider: React.FC<{ children: React.ReactNode }> = ({
               }
             }
           }
-          if (meta.sharedAs) sharedAsMap.set(address, meta.sharedAs);
+          if (meta.sharedAs) {
+            sharedAsMap.set(address, meta.sharedAs);
+            const parts = address.split(":");
+            if (parts.length >= 3) {
+              sharedAsMap.set(parts.slice(2).join(":"), meta.sharedAs);
+            }
+          }
         }
         setDocTagsState(tagsMap);
         setDocTitlesState(titlesMap);
@@ -168,6 +174,10 @@ export const DocMetadataProvider: React.FC<{ children: React.ReactNode }> = ({
     setDocSharedAsState((prev) => {
       const next = new Map(prev);
       next.set(address, sharedAs);
+      const parts = address.split(":");
+      if (parts.length >= 3) {
+        next.set(parts.slice(2).join(":"), sharedAs);
+      }
       return next;
     });
   };

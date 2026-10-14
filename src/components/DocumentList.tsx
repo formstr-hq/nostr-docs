@@ -6,21 +6,27 @@ import { usePublished } from "../contexts/PublishedContext.tsx";
 import { useNavigate, useLocation } from "react-router-dom";
 import { loadTrashedEvents } from "../lib/localStore.ts";
 import { useDocMetadata } from "../contexts/DocMetadataContext.tsx";
-import { getDocumentTags } from "./AllPagesView.tsx";
+import { getDocumentTags, isDocSharedByMe } from "./AllPagesView.tsx";
 import type { DocumentHistory } from "../lib/docSearch";
 import TrashDialog from "./TrashDialog.tsx";
 import UserMenu from "./UserMenu";
-import FormstrLogo from "../assets/formstr-pages-logo.png";
+import PagesLogo from "./PagesLogo";
 
 export default function DocumentList({
   onEdit,
 }: {
   onEdit: (docId: string | null) => void;
 }) {
-  const { visibleDocuments, visitedDocuments, setSelectedDocumentId, localOnlyAddresses } = useDocumentContext();
-  const { sharedDocuments } = useSharedPages();
+  const {
+    visibleDocuments,
+    visitedDocuments,
+    setSelectedDocumentId,
+    localOnlyAddresses,
+    getDocumentKeys,
+  } = useDocumentContext();
+  const { sharedDocuments, getKeys } = useSharedPages();
   const { publishedDocuments } = usePublished();
-  const { docTags, selectedTag, setSelectedTag } = useDocMetadata();
+  const { docTags, docSharedAs, selectedTag, setSelectedTag } = useDocMetadata();
   const navigate = useNavigate();
   const location = useLocation();
   const isHome = location.pathname === "/";
@@ -51,7 +57,15 @@ export default function DocumentList({
         if (!isLocal) list.push({ address, history });
       });
     } else if (workspaceFilter === "shared") {
-      sharedDocuments.forEach((history, address) => list.push({ address, history }));
+      visibleDocuments.forEach((history, address) => {
+        if (isDocSharedByMe(address, docSharedAs, getKeys, getDocumentKeys)) {
+          list.push({ address, history });
+        }
+      });
+      sharedDocuments.forEach((history, address) => {
+        list.push({ address, history });
+      });
+    } else if (workspaceFilter === "visited") {
       visitedDocuments.forEach((history, address) => {
         if (!sharedDocuments.has(address)) list.push({ address, history });
       });
@@ -65,9 +79,22 @@ export default function DocumentList({
     }
 
     return Array.from(tagSet).filter(Boolean).sort();
-  }, [workspaceFilter, visibleDocuments, sharedDocuments, visitedDocuments, publishedDocuments, docTags, localOnlyAddresses]);
+  }, [
+    workspaceFilter,
+    visibleDocuments,
+    sharedDocuments,
+    visitedDocuments,
+    publishedDocuments,
+    docTags,
+    docSharedAs,
+    getKeys,
+    getDocumentKeys,
+    localOnlyAddresses,
+  ]);
 
-  const selectWorkspace = (filter: "all" | "device" | "personal" | "shared" | "published") => {
+  const selectWorkspace = (
+    filter: "all" | "device" | "personal" | "shared" | "visited" | "published"
+  ) => {
     setSelectedDocumentId(null);
     setSelectedTag(null);
     onEdit(null);
@@ -114,7 +141,7 @@ export default function DocumentList({
         flexDirection: "column",
         overflow: "hidden",
         pt: 3,
-        pl: 1,
+        px: 1,
       }}
     >
       <Box
@@ -126,9 +153,9 @@ export default function DocumentList({
         }}
         sx={{
           display: "flex",
+          justifyContent: "flex-start",
           alignItems: "center",
-          gap: 1.25,
-          px: 2,
+          px: 1,
           pt: 1,
           pb: 1.5,
           flexShrink: 0,
@@ -136,22 +163,7 @@ export default function DocumentList({
           userSelect: "none",
         }}
       >
-        <img
-          src={FormstrLogo}
-          alt="Pages"
-          style={{ height: 60, width: 60, objectFit: "contain" }}
-        />
-        <Typography
-          variant="subtitle1"
-          sx={{
-            fontWeight: 700,
-            fontSize: "1.15rem",
-            letterSpacing: "-0.01em",
-            color: "text.primary",
-          }}
-        >
-          Pages
-        </Typography>
+        <PagesLogo size={100} />
       </Box>
 
       <Box sx={{ px: 1.5, pb: 0.5, flexShrink: 0 }}>
@@ -290,7 +302,38 @@ export default function DocumentList({
               }}
             />
             <Typography variant="body2" sx={{ fontWeight: workspaceFilter === "shared" && !selectedTag ? 700 : 500, fontSize: "0.82rem" }}>
-              Shared with me
+              Shared
+            </Typography>
+          </Box>
+        </ListItemButton>
+
+        <ListItemButton
+          onClick={() => selectWorkspace("visited")}
+          sx={{
+            borderRadius: 1,
+            py: 0.55,
+            px: 1.25,
+            mb: 0.3,
+            bgcolor: workspaceFilter === "visited" && !selectedTag ? (t) => alpha(t.palette.secondary.main, 0.18) : "transparent",
+            color: workspaceFilter === "visited" && !selectedTag ? "secondary.main" : "text.secondary",
+            "&:hover": {
+              bgcolor: (t) => alpha(t.palette.secondary.main, 0.08),
+              color: "text.primary",
+            },
+            transition: "all 0.15s ease",
+          }}
+        >
+          <Box sx={{ display: "flex", alignItems: "center", gap: 1.25 }}>
+            <Box
+              sx={{
+                width: 6,
+                height: 6,
+                borderRadius: "50%",
+                bgcolor: workspaceFilter === "visited" && !selectedTag ? "secondary.main" : (t) => alpha(t.palette.text.primary, 0.35),
+              }}
+            />
+            <Typography variant="body2" sx={{ fontWeight: workspaceFilter === "visited" && !selectedTag ? 700 : 500, fontSize: "0.82rem" }}>
+              Visited
             </Typography>
           </Box>
         </ListItemButton>

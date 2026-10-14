@@ -29,7 +29,7 @@ import QRCode from "qrcode";
 import { signerManager } from "../signer";
 import type { AndroidSignerAppInfo } from "@formstr/signer";
 import { isNativePlatform, isCapacitor } from "../signer/secureStorage";
-import FormstrLogo from "../assets/formstr-pages-logo.png";
+import PagesLogo from "./PagesLogo";
 
 // Default relays for NIP-46 nostrconnect (QR) pairing. Several, because the
 // pairing fails outright if *every* listed relay is unreachable — and
@@ -486,11 +486,7 @@ export default function LoginModal({
             flexShrink: 0,
           }}
         >
-          <img
-            src={FormstrLogo}
-            alt="Pages by Form*"
-            style={{ width: 120, height: 120, objectFit: "contain" }}
-          />
+          <PagesLogo size={120} />
           <Box textAlign="center">
             <Typography variant="h6" fontWeight={700}>
               Sign in

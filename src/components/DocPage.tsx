@@ -10,6 +10,8 @@ import { DocumentEditorController } from "./editor/DocEditorController";
 import { storeLocalEvent } from "../lib/localStore";
 import { useUser } from "../contexts/UserContext";
 
+import { useSharedPages } from "../contexts/SharedDocsContext";
+
 export default function DocPage({
   textSuggest: textSuggestOverride,
 }: {
@@ -20,10 +22,16 @@ export default function DocPage({
   const outletCtx = useOutletContext<{ textSuggest?: TextSuggestHook } | null>();
   const fallbackTextSuggest = useTextSuggest();
   const textSuggest = textSuggestOverride ?? outletCtx?.textSuggest ?? fallbackTextSuggest;
-  const { documents, setSelectedDocumentId, addDocument } =
-    useDocumentContext();
+  const {
+    documents,
+    setSelectedDocumentId,
+    addDocument,
+    getDocumentKeys,
+    unmarkVisited,
+  } = useDocumentContext();
   const { relays } = useRelays();
   const { user } = useUser();
+  const { getKeys, sharedDocuments } = useSharedPages();
 
   const [loading, setLoading] = useState(true);
   const [invalid, setInvalid] = useState(false);
@@ -53,13 +61,34 @@ export default function DocPage({
     }
 
     const hash = location.hash.replace("#", "");
-    const keys = hash ? decodeNKeys(hash) : {};
+    let keys = hash ? decodeNKeys(hash) : {};
+    if (!keys.viewKey) {
+      const stored = getDocumentKeys(address);
+      if (stored?.viewKey) {
+        keys = { ...stored, ...keys };
+      }
+    }
     setDecodedKeys(keys);
 
     const docExists = documents.get(address);
 
     // Document already in context — no loading flash, editor stays mounted
     if (docExists) {
+      const isVisited = !!keys.viewKey && docExists.versions[0]?.event.pubkey !== user?.pubkey;
+      if (isVisited) {
+        const latestVersion = docExists.versions.at(-1);
+        if (latestVersion) {
+          storeLocalEvent({
+            address,
+            event: latestVersion.event,
+            viewKey: keys.viewKey,
+            editKey: keys.editKey,
+            visited: true,
+            pendingBroadcast: false,
+            savedAt: Date.now(),
+          }).catch(() => {});
+        }
+      }
       setSelectedDocumentId(address);
       setLoading(false);
       return;
@@ -100,8 +129,10 @@ export default function DocPage({
         await addDocument(latestEvent, keys);
         if (cancelled) return;
 
-        // A page opened via someone else's shared link is a "visited" page.
-        const isVisited = !!keys.viewKey && latestEvent.pubkey !== user?.pubkey;
+        // A page opened via someone else's shared link is a "visited" page
+        // unless it has already been saved to the user's Shared list.
+        const isAlreadyShared = getKeys(eventAddress).length > 0 || sharedDocuments.has(eventAddress);
+        const isVisited = !isAlreadyShared && !!keys.viewKey && latestEvent.pubkey !== user?.pubkey;
 
         // Cache in IndexedDB so this device has it available offline, so the
         // two-device sync works, and so visited pages survive a reload (they
@@ -119,6 +150,9 @@ export default function DocPage({
         }).catch(() => {});
 
         setSelectedDocumentId(eventAddress);
+        if (isAlreadyShared) {
+          unmarkVisited(eventAddress);
+        }
       } catch (err) {
         console.error("Failed to fetch document:", err);
         if (!cancelled) setInvalid(true);

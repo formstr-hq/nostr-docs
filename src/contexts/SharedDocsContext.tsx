@@ -176,7 +176,6 @@ export const SharedPagesProvider: React.FC<{ children: React.ReactNode }> = ({
             editKey: keys[2],
             pendingBroadcast: false,
             savedAt: Date.now(),
-            visited: true,
           }).catch(() => {});
         },
       },
@@ -223,7 +222,7 @@ export const SharedPagesProvider: React.FC<{ children: React.ReactNode }> = ({
         const entries = await loadAllLocalEvents();
         const initialSharedDocs: string[][] = [];
         for (const entry of entries) {
-          if (entry.viewKey) {
+          if (entry.viewKey && !entry.visited) {
             initialSharedDocs.push([
               entry.address,
               entry.viewKey,
@@ -314,6 +313,33 @@ export const SharedPagesProvider: React.FC<{ children: React.ReactNode }> = ({
       updated.push(tag);
       return updated;
     });
+
+    // Also populate sharedDocuments immediately from local store if available,
+    // so we don't depend solely on relay subscription round-trips
+    try {
+      const entries = await loadAllLocalEvents();
+      const entry = entries.find((e) => matchAddress(e.address, address));
+      if (entry && entry.viewKey && (!user?.pubkey || entry.event.pubkey !== user?.pubkey)) {
+        const conversationKey = nip44.getConversationKey(
+          hexToBytes(entry.viewKey),
+          getPublicKey(hexToBytes(entry.viewKey)),
+        );
+        const decryptedContent = nip44.decrypt(entry.event.content, conversationKey);
+        setSharedDocuments((prev) => {
+          const next = new Map(prev);
+          const history = next.get(entry.address) ?? { address: entry.address, versions: [] };
+          if (!history.versions.some((v) => v.event.id === entry.event.id)) {
+            history.versions = [
+              ...history.versions,
+              { event: entry.event, decryptedContent },
+            ].sort((a, b) => a.event.created_at - b.event.created_at);
+            next.set(entry.address, history);
+          }
+          return next;
+        });
+      }
+    } catch {}
+
     fetchSharedDocuments([tag], pubkey);
   };
 

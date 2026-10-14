@@ -66,6 +66,10 @@ interface DocumentContextValue {
   localOnlyAddresses: Set<string>;
   /** Update the in-memory device-only flag for a document address. */
   markLocalOnly: (address: string, localOnly: boolean) => void;
+  /** Retrieve stored decryption/signing keys (viewKey, editKey) for a document. */
+  getDocumentKeys: (
+    address: string,
+  ) => { viewKey?: string; editKey?: string } | undefined;
 }
 
 const DocumentContext = createContext<DocumentContextValue | undefined>(
@@ -138,6 +142,10 @@ export const DocumentProvider: React.FC<{ children: React.ReactNode }> = ({
   };
 
   const unmarkVisited = (address: string) => {
+    const localEntry = localEntriesRef.current.get(address);
+    if (localEntry) {
+      localEntry.visited = undefined;
+    }
     setSessionVisited((prev) => {
       if (!prev.has(address)) return prev;
       const next = new Set(prev);
@@ -172,6 +180,7 @@ export const DocumentProvider: React.FC<{ children: React.ReactNode }> = ({
   };
 
   const removeDocument = (id: string) => {
+    localEntriesRef.current.delete(id);
     setDocuments((prev) => {
       const newDocuments = new Map(prev);
       newDocuments.delete(id);
@@ -237,6 +246,23 @@ export const DocumentProvider: React.FC<{ children: React.ReactNode }> = ({
 
       const cachedEntry = address ? localEntriesRef.current.get(address) : undefined;
       const viewKey = keys?.viewKey ?? cachedEntry?.viewKey;
+
+      if (address && (keys?.viewKey || keys?.editKey)) {
+        const existing = localEntriesRef.current.get(address);
+        if (existing) {
+          existing.viewKey = keys.viewKey ?? existing.viewKey;
+          existing.editKey = keys.editKey ?? existing.editKey;
+        } else {
+          localEntriesRef.current.set(address, {
+            address,
+            event: document,
+            viewKey: keys.viewKey,
+            editKey: keys.editKey,
+            pendingBroadcast: false,
+            savedAt: Date.now(),
+          });
+        }
+      }
 
       const decryptedContent = await getDecryptedContent(document, viewKey);
       if (!decryptedContent) return;
@@ -473,6 +499,27 @@ export const DocumentProvider: React.FC<{ children: React.ReactNode }> = ({
     };
   }, [user?.pubkey, relays, addDocument]);
 
+  const getDocumentKeys = useCallback(
+    (address: string): { viewKey?: string; editKey?: string } | undefined => {
+      let entry = localEntriesRef.current.get(address);
+      if (!entry) {
+        for (const [addr, e] of localEntriesRef.current.entries()) {
+          const parts = addr.split(":");
+          const dTag = parts.length >= 3 ? parts.slice(2).join(":") : addr;
+          if (dTag === address) {
+            entry = e;
+            break;
+          }
+        }
+      }
+      if (entry && (entry.viewKey || entry.editKey)) {
+        return { viewKey: entry.viewKey, editKey: entry.editKey };
+      }
+      return undefined;
+    },
+    [],
+  );
+
   return (
     <DocumentContext.Provider
       value={{
@@ -490,6 +537,7 @@ export const DocumentProvider: React.FC<{ children: React.ReactNode }> = ({
         visitedDocuments,
         localOnlyAddresses,
         markLocalOnly,
+        getDocumentKeys,
       }}
     >
       {children}

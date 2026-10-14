@@ -370,9 +370,9 @@ export function DocumentEditorController({
     try {
       const tag = [selectedDocumentId, viewKey];
       if (editKey) tag.push(editKey);
-      await addSharedDoc(tag);
       await clearVisitedFlag(selectedDocumentId).catch(() => {});
       unmarkVisited(selectedDocumentId);
+      await addSharedDoc(tag);
       setToast({ open: true, message: "Saved to your Shared pages.", severity: "success" });
     } catch (err) {
       console.error("Failed to save to Shared:", err);

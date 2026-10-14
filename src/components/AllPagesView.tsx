@@ -26,10 +26,12 @@ import SortIcon from "@mui/icons-material/Sort";
 import KeyboardArrowDownIcon from "@mui/icons-material/KeyboardArrowDown";
 import KeyboardArrowUpIcon from "@mui/icons-material/KeyboardArrowUp";
 import CheckIcon from "@mui/icons-material/Check";
-import FormstrLogo from "../assets/formstr-pages-logo.png";
+import HistoryOutlinedIcon from "@mui/icons-material/HistoryOutlined";
+import DeleteOutlineIcon from "@mui/icons-material/DeleteOutline";
+import PagesLogo from "./PagesLogo";
 import UserMenu from "./UserMenu";
 import TrashDialog from "./TrashDialog";
-import { loadTrashedEvents } from "../lib/localStore";
+import { loadTrashedEvents, removeLocalEvent } from "../lib/localStore";
 import { useDocumentContext } from "../contexts/DocumentContext";
 import { useSharedPages } from "../contexts/SharedDocsContext";
 import { usePublished } from "../contexts/PublishedContext";
@@ -122,6 +124,39 @@ export function getDocumentTags(
   return Array.from(tagSet);
 }
 
+// Helper to determine if a document is authored by the user and actively shared
+export function isDocSharedByMe(
+  address: string,
+  docSharedAs: Map<string, string>,
+  getKeys: (id: string) => string[],
+  getDocumentKeys?: (address: string) => { viewKey?: string; editKey?: string } | undefined,
+): boolean {
+  const parts = address.split(":");
+  const dTag = parts.length >= 3 ? parts.slice(2).join(":") : address;
+
+  if (docSharedAs.has(address) || (dTag && docSharedAs.has(dTag))) {
+    return true;
+  }
+
+  if (getKeys(address).length > 0 || (dTag && getKeys(dTag).length > 0)) {
+    return true;
+  }
+
+  const sharedAsAddr = docSharedAs.get(address) || (dTag ? docSharedAs.get(dTag) : undefined);
+  if (sharedAsAddr && getKeys(sharedAsAddr).length > 0) {
+    return true;
+  }
+
+  if (getDocumentKeys) {
+    const localKeys = getDocumentKeys(address) || (dTag ? getDocumentKeys(dTag) : undefined);
+    if (localKeys?.viewKey) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
 type SortOption = "last_edited" | "title" | "date_created";
 
 export default function AllPagesView() {
@@ -130,10 +165,13 @@ export default function AllPagesView() {
     visitedDocuments,
     setSelectedDocumentId,
     localOnlyAddresses,
+    unmarkVisited,
+    removeDocument,
+    getDocumentKeys,
   } = useDocumentContext();
   const { sharedDocuments, getKeys } = useSharedPages();
   const { publishedDocuments } = usePublished();
-  const { docTitles, docTags, selectedTag, setSelectedTag } = useDocMetadata();
+  const { docTitles, docTags, docSharedAs, selectedTag, setSelectedTag } = useDocMetadata();
   const navigate = useNavigate();
   const location = useLocation();
 
@@ -174,7 +212,7 @@ export default function AllPagesView() {
     const rawTag = params.get("tag") ?? params.get("tags") ?? null;
     const cleanTag = rawTag ? rawTag.trim().toLowerCase().replace(/^#/, "") : null;
 
-    if (["all", "device", "personal", "shared", "published"].includes(workspaceFilter)) {
+    if (["all", "device", "personal", "shared", "visited", "published"].includes(workspaceFilter)) {
       setActiveCategory(workspaceFilter);
     }
     setSelectedTag(cleanTag);
@@ -206,12 +244,17 @@ export default function AllPagesView() {
       return;
     }
 
-    const keys = getKeys(`${doc.kind}:${doc.pubkey}:${dTag}`);
+    const sharedAsAddress = docSharedAs.get(address) || (dTag ? docSharedAs.get(dTag) : undefined);
+    const sharedAsKeys = sharedAsAddress ? getKeys(sharedAsAddress) : [];
+    const sharedKeys = getKeys(`${doc.kind}:${doc.pubkey}:${dTag}`);
+    const localKeys = getDocumentKeys(address);
+    const viewKey = sharedKeys[0] || sharedAsKeys[0] || localKeys?.viewKey;
+    const editKey = sharedKeys[1] || sharedAsKeys[1] || localKeys?.editKey;
 
     let path = `/doc/${naddr}`;
-    if (keys.length > 0 && keys[0]) {
-      const nkeysObj: Record<string, string> = { viewKey: keys[0] };
-      if (keys[1]) nkeysObj.editKey = keys[1];
+    if (viewKey) {
+      const nkeysObj: Record<string, string> = { viewKey };
+      if (editKey) nkeysObj.editKey = editKey;
       path = `/doc/${naddr}#${encodeNKeys(nkeysObj)}`;
     }
 
@@ -246,6 +289,12 @@ export default function AllPagesView() {
     params.delete("tags");
     const searchStr = params.toString();
     navigate(searchStr ? `/?${searchStr}` : "/", { replace: true });
+  };
+
+  const handleRemoveVisited = (address: string) => {
+    unmarkVisited(address);
+    removeDocument(address);
+    removeLocalEvent(address).catch(() => {});
   };
 
   // Combine documents based on active category
@@ -285,11 +334,18 @@ export default function AllPagesView() {
         (localOnlyAddresses.has(item.address) || !item.history.versions.at(-1)?.event.sig);
       if (activeCategory === "device") return isLocal;
       if (activeCategory === "personal") return item.origin === "personal" && !isLocal;
-      if (activeCategory === "shared") return item.origin === "shared" || item.origin === "visited";
+      if (activeCategory === "shared") {
+        return (
+          (item.origin === "personal" &&
+            isDocSharedByMe(item.address, docSharedAs, getKeys, getDocumentKeys)) ||
+          item.origin === "shared"
+        );
+      }
+      if (activeCategory === "visited") return item.origin === "visited";
       if (activeCategory === "published") return item.origin === "published";
       return true; // 'all'
     });
-  }, [allItems, activeCategory, localOnlyAddresses]);
+  }, [allItems, activeCategory, localOnlyAddresses, docSharedAs, getKeys, getDocumentKeys]);
 
   // Workspace-specific tags only!
   const workspaceTags = useMemo(() => {
@@ -348,6 +404,7 @@ export default function AllPagesView() {
             "Untitled"
           ).toLowerCase();
         };
+
         return getTitle(a).localeCompare(getTitle(b));
       }
 
@@ -372,7 +429,9 @@ export default function AllPagesView() {
       : activeCategory === "personal"
       ? "Personal"
       : activeCategory === "shared"
-      ? "Shared with me"
+      ? "Shared"
+      : activeCategory === "visited"
+      ? "Visited"
       : activeCategory === "published"
       ? "Published"
       : "All pages";
@@ -422,22 +481,7 @@ export default function AllPagesView() {
             userSelect: "none",
           }}
         >
-          <img
-            src={FormstrLogo}
-            alt="Pages"
-            style={{ height: 34, width: 34, objectFit: "contain" }}
-          />
-          <Typography
-            variant="subtitle1"
-            sx={{
-              fontWeight: 700,
-              fontSize: "1.18rem",
-              color: "text.primary",
-              letterSpacing: "-0.015em",
-            }}
-          >
-            Pages
-          </Typography>
+          <PagesLogo size={34} />
         </Box>
 
         <Box sx={{ display: "flex", alignItems: "center" }}>
@@ -785,7 +829,10 @@ export default function AllPagesView() {
             customTitle || titleTag || heuristicTitle(decryptedContent ?? "", 40) || "Untitled";
 
           const isPublic = origin === "published";
-          const isShared = origin === "shared" || origin === "visited";
+          const isShared =
+            origin === "shared" ||
+            isDocSharedByMe(address, docSharedAs, getKeys, getDocumentKeys);
+          const isVisited = origin === "visited";
           const isLocal =
             origin === "personal" &&
             (localOnlyAddresses.has(address) || !event.sig);
@@ -828,7 +875,9 @@ export default function AllPagesView() {
                     isPublic
                       ? "Public"
                       : isShared
-                      ? "Shared with me"
+                      ? "Shared"
+                      : isVisited
+                      ? "Visited (local)"
                       : isLocal
                       ? "Device only"
                       : "Private"
@@ -844,6 +893,8 @@ export default function AllPagesView() {
                           ? alpha("#10B981", 0.08)
                           : isShared
                           ? alpha(t.palette.secondary.main, 0.08)
+                          : isVisited
+                          ? alpha(t.palette.secondary.main, 0.08)
                           : alpha(t.palette.text.primary, 0.05),
                       display: "flex",
                       alignItems: "center",
@@ -852,6 +903,8 @@ export default function AllPagesView() {
                         ? "#10B981"
                         : isShared
                         ? "secondary.main"
+                        : isVisited
+                        ? "secondary.main"
                         : "text.secondary",
                     }}
                   >
@@ -859,6 +912,8 @@ export default function AllPagesView() {
                       <PublicOutlinedIcon sx={{ fontSize: 18, color: "inherit" }} />
                     ) : isShared ? (
                       <GroupOutlinedIcon sx={{ fontSize: 18, color: "inherit" }} />
+                    ) : isVisited ? (
+                      <HistoryOutlinedIcon sx={{ fontSize: 18, color: "inherit" }} />
                     ) : isLocal ? (
                       <SmartphoneOutlinedIcon sx={{ fontSize: 18, color: "inherit" }} />
                     ) : (
@@ -866,6 +921,28 @@ export default function AllPagesView() {
                     )}
                   </Box>
                 </Tooltip>
+
+                {isVisited && (
+                  <Tooltip title="Remove from visited">
+                    <IconButton
+                      size="small"
+                      aria-label="Remove from visited"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleRemoveVisited(address);
+                      }}
+                      sx={{
+                        color: "text.secondary",
+                        p: 0.5,
+                        "&:hover": {
+                          color: "error.main",
+                        },
+                      }}
+                    >
+                      <DeleteOutlineIcon sx={{ fontSize: 18 }} />
+                    </IconButton>
+                  </Tooltip>
+                )}
               </Box>
 
               {/* Card Middle: Title & Tags */}
@@ -1148,7 +1225,8 @@ export default function AllPagesView() {
             { id: "all", label: "All pages" },
             { id: "device", label: "Device" },
             { id: "personal", label: "Personal" },
-            { id: "shared", label: "Shared with me" },
+            { id: "shared", label: "Shared" },
+            { id: "visited", label: "Visited" },
             { id: "published", label: "Published" },
           ].map((item) => {
             const isSelected = activeCategory === item.id && !selectedTag;
