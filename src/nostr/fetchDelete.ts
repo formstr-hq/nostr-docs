@@ -1,6 +1,6 @@
 import type { Event } from "nostr-tools";
-import { pool } from "./relayPool";
 import { KIND_FILE } from "./kinds";
+import { fetchMany } from "../dataLayer";
 
 export const fetchDeleteRequests = (
   relays: string[],
@@ -12,24 +12,10 @@ export const fetchDeleteRequests = (
     "#k": [`${KIND_FILE}`],
     authors: [pubkey],
   };
-  return new Promise((resolve) => {
-    let settled = false;
-
-    const finish = () => {
-      if (settled) return;
-      settled = true;
-      clearTimeout(timeout);
-      sub.close();
-      resolve(undefined);
-    };
-
-    const timeout = setTimeout(finish, 8000);
-
-    const sub = pool.subscribeMany(relays, deleteSubscriptionFilter, {
-      onevent: (event: Event) => {
-        onEvent(event);
-      },
-      oneose: finish,
-    });
-  });
+  return fetchMany([deleteSubscriptionFilter], relays, 8000)
+    .then((events) => {
+      events.forEach(onEvent);
+      return undefined;
+    })
+    .catch(() => undefined);
 };

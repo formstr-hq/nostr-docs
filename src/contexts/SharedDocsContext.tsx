@@ -16,10 +16,9 @@ import {
 } from "nostr-tools";
 import { hexToBytes } from "nostr-tools/utils";
 import { storeLocalEvent, loadAllLocalEvents } from "../lib/localStore";
-import { pool } from "../nostr/relayPool";
 import { KIND_FILE } from "../nostr/kinds";
 import { fetchAllDocMetadata, saveDocMetadata } from "../nostr/docMetadata";
-import type { SubCloser } from "nostr-tools/abstract-pool";
+import { subscribe, type Subscription } from "../dataLayer";
 
 type DocumentVersion = {
   event: Event;
@@ -68,7 +67,7 @@ export const SharedPagesProvider: React.FC<{ children: React.ReactNode }> = ({
     Map<string, DocumentHistory>
   >(new Map());
 
-  const subscriptionRef = useRef<SubCloser | null>(null);
+  const subscriptionRef = useRef<Subscription | null>(null);
 
   const getKeys = (id: string) => {
     const keys = sharedDocs.find((t) => matchAddress(t[0], id));
@@ -115,11 +114,10 @@ export const SharedPagesProvider: React.FC<{ children: React.ReactNode }> = ({
       filter.authors = pubkeys;
     }
 
-    subscriptionRef.current = pool.subscribeMany(
-      relays,
-      filter,
+    subscriptionRef.current = subscribe(
+      [filter],
       {
-        onevent: (event: Event) => {
+        onEvent: (event: Event) => {
           const dTag = event.tags.find((t) => t[0] === "d")?.[1];
           if (!dTag) return;
 
@@ -180,6 +178,7 @@ export const SharedPagesProvider: React.FC<{ children: React.ReactNode }> = ({
           }).catch(() => {});
         },
       },
+      relays,
     );
   };
 

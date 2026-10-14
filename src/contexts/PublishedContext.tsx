@@ -6,8 +6,7 @@ import React, {
   useState,
 } from "react";
 import type { Event } from "nostr-tools";
-import type { SubCloser } from "nostr-tools/abstract-pool";
-import { pool } from "../nostr/relayPool";
+import { subscribe, type Subscription } from "../dataLayer";
 import { useRelays } from "./RelayContext";
 import { useUser } from "./UserContext";
 import type { DocumentHistory } from "../lib/docSearch";
@@ -33,7 +32,7 @@ export const PublishedProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     new Map(),
   );
   const [loading, setLoading] = useState(false);
-  const subRef = useRef<SubCloser | null>(null);
+  const subRef = useRef<Subscription | null>(null);
 
   useEffect(() => {
     subRef.current?.close();
@@ -47,11 +46,10 @@ export const PublishedProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     setLoading(true);
     setPublishedDocuments(new Map());
 
-    subRef.current = pool.subscribeMany(
-      relays,
-      { kinds: [KIND_LONGFORM, KIND_COMMUNITY_NIP], authors: [user.pubkey] },
+    subRef.current = subscribe(
+      [{ kinds: [KIND_LONGFORM, KIND_COMMUNITY_NIP], authors: [user.pubkey] }],
       {
-        onevent: (event: Event) => {
+        onEvent: (event: Event) => {
           const dTag = event.tags.find((t) => t[0] === "d")?.[1];
           if (!dTag) return;
           const address = `${event.kind}:${event.pubkey}:${dTag}`;
@@ -64,8 +62,9 @@ export const PublishedProvider: React.FC<{ children: React.ReactNode }> = ({ chi
             return next;
           });
         },
-        oneose: () => setLoading(false),
+        onEose: () => setLoading(false),
       },
+      relays,
     );
 
     return () => {

@@ -1,7 +1,6 @@
 import { finalizeEvent, getPublicKey, nip44, type Event, type EventTemplate } from "nostr-tools";
 import { hexToBytes } from "nostr-tools/utils";
-import type { SubCloser } from "nostr-tools/abstract-pool";
-import { pool } from "./relayPool";
+import { subscribe, type Subscription } from "../dataLayer";
 import { publishEventStrict } from "./publish";
 import { signerManager } from "../signer";
 import { KIND_COMMENT, KIND_COMMENT_RESOLUTION } from "./kinds";
@@ -139,20 +138,20 @@ export function fetchComments(
   docAddress: string,
   relays: string[],
   onEvent: (event: Event) => void,
-): SubCloser {
+): Subscription {
   const seenIds = new Set<string>();
 
-  return pool.subscribeMany(
-    relays,
-    { kinds: [KIND_COMMENT], "#a": [docAddress] },
+  return subscribe(
+    [{ kinds: [KIND_COMMENT], "#a": [docAddress] }],
     {
-      onevent(event: Event) {
+      onEvent(event: Event) {
         if (!seenIds.has(event.id)) {
           seenIds.add(event.id);
           onEvent(event);
         }
       },
     },
+    relays,
   );
 }
 
@@ -160,19 +159,19 @@ export function fetchResolutions(
   docAddress: string,
   relays: string[],
   onEvent: (event: Event) => void,
-): SubCloser {
+): Subscription {
   const seenIds = new Set<string>();
 
-  return pool.subscribeMany(
-    relays,
-    { kinds: [KIND_COMMENT_RESOLUTION], "#a": [docAddress] },
+  return subscribe(
+    [{ kinds: [KIND_COMMENT_RESOLUTION], "#a": [docAddress] }],
     {
-      onevent(event: Event) {
+      onEvent(event: Event) {
         if (!seenIds.has(event.id)) {
           seenIds.add(event.id);
           onEvent(event);
         }
       },
     },
+    relays,
   );
 }

@@ -30,6 +30,31 @@ ThemeProvider
 | **11234** | Shared documents list | App-specific replaceable event. Content is NIP-44 encrypted JSON array of `[address, viewKey, editKey?]` tags representing documents shared with this user. |
 | **22457** | CRDT op (ephemeral) | App-specific. Contains base64-encoded Yjs binary update. Used for real-time collaborative editing. Subscriptions are long-lived and must be closed by callers via the returned `SubCloser`. |
 | **33457** | Encrypted document (replaceable) | App-specific. Content is NIP-44 encrypted Markdown. Tag `["d", <uuid>]` identifies the document. Multiple versions accumulate in `DocumentHistory`; the latest `created_at` wins for display. |
+| **34579** | Per-document metadata | App-specific. Tag `["d", "<33457 address>"]`. Content is NIP-44 encrypted JSON (`tags`, `title`, `viewKey`, `editKey`, `sharedAs`). Parameterised-replaceable — writes go through `nextCreatedAt()` so consecutive edits never collide on the 1-second `created_at` granularity. |
+
+---
+
+## Transport (local relay)
+
+All network I/O goes through a `@formstr/local-relay` Web Worker "local relay"
+(`src/dataLayer/`). The main thread only declares interests (`subscribe`,
+`fetchOne`, `fetchMany`) and publishes; the worker owns every connection
+decision, caches events in its own IndexedDB (`pollerama-local-relay:nostr-docs`,
+stores `events` + `outbox`), and re-delivers failed publishes from a durable
+outbox. If the worker fails to boot, the helpers transparently fall back to the
+plain `SimplePool` (`src/nostr/relayPool.ts`) — protection against errors.
+
+Storage is intentionally **dual, and permanent**: the local relay is the event
+cache/transport, while the legacy `nostr-docs-local` DB (`src/lib/localStore.ts`)
+remains the owner of each document's `viewKey`/`editKey` and flags. It is never
+deleted; the local relay is seeded from it once (`src/dataLayer/migration.ts`)
+and reads union both sources.
+
+> Note: in this package `onEose` means the **local cache replay** finished, not
+> the network. `fetchOne`/`fetchMany` therefore settle a short debounce after the
+> last match (or a bounded grace window on an empty cache) instead of resolving on
+> `onEose` — otherwise a cold cache resolves instantly and misses the network.
+
 
 ---
 
@@ -142,7 +167,11 @@ handleDelete()
 | `src/nostr/fetchProfile.ts` | Fetch kind-0 profile |
 | `src/nostr/fetchDelete.ts` | Fetch kind-5 deletion requests |
 | `src/nostr/crdt.ts` | Subscribe to kind-22457 CRDT ops |
-| `src/nostr/publish.ts` | Publish events to relays |
+| `src/nostr/publish.ts` | Publish events to relays (through the local relay) |
+| `src/dataLayer/index.ts` | App data layer — worker bootstrap, subscribe/one-shot helpers, fallback |
+| `src/dataLayer/relay.worker.ts` | Local-relay worker entry (IndexedDB namespace + prune policy) |
+| `src/dataLayer/migration.ts` | One-time, non-destructive seed of the local relay from the legacy store |
+| `src/nostr/relayPool.ts` | `SimplePool` used only as the fallback transport + `DEFAULT_RELAYS` |
 | `src/nostr/relayPool.ts` | Shared `SimplePool` instance + default relays |
 | `src/utils/encryption.ts` | `encryptContent()` wrapper |
 | `src/utils/nkeys.ts` | URL hash encode/decode for view/edit keys |

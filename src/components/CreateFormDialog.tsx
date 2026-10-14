@@ -28,7 +28,7 @@ import { FormstrSDK, encodeNKeys } from "@formstr/sdk";
 import type { FormsSigner, FormField, CreateFormResult } from "@formstr/sdk";
 import { useRelays } from "../contexts/RelayContext";
 import { useMyForms } from "../contexts/MyFormsContext";
-import { pool } from "../nostr/relayPool";
+import { publishEventResults } from "../dataLayer";
 import type { Event as NostrEvent } from "nostr-tools";
 
 const sdk = new FormstrSDK();
@@ -116,13 +116,9 @@ export default function CreateFormDialog({ open, onClose, onCreated, signer }: P
   const rebroadcast = async (event: NostrEvent, targetRelays: string[], kind: "form" | "myForms") => {
     setRetrying(kind);
     try {
-      const results = await Promise.allSettled(pool.publish(targetRelays, event));
-      const accepted: string[] = [];
-      const rejected: string[] = [];
-      results.forEach((r, i) => {
-        if (r.status === "fulfilled") accepted.push(targetRelays[i]);
-        else rejected.push(targetRelays[i]);
-      });
+      const outcomes = await publishEventResults(event, targetRelays);
+      const accepted = outcomes.filter((o) => o.accepted).map((o) => o.relay);
+      const rejected = outcomes.filter((o) => !o.accepted).map((o) => o.relay);
       setResult((prev) => {
         if (!prev) return prev;
         if (kind === "form") return { ...prev, formRelays: { accepted: [...prev.formRelays.accepted, ...accepted], rejected } };

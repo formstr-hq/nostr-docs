@@ -25,6 +25,7 @@
     "@capacitor/preferences": "^8.0.0",
     "@emotion/react": "^11.14.0",
     "@emotion/styled": "^11.14.1",
+    "@formstr/local-relay": "^0.6.5",
     "@formstr/sdk": "^0.2.7",
     "@formstr/signer": "^0.2.2",
     "@mui/icons-material": "^7.3.5",

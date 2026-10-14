@@ -14,7 +14,7 @@ import ArrowBackIcon from "@mui/icons-material/ArrowBack";
 import ShareIcon from "@mui/icons-material/Share";
 import CheckIcon from "@mui/icons-material/Check";
 import OpenInNewIcon from "@mui/icons-material/OpenInNew";
-import { pool } from "../nostr/relayPool";
+import { fetchOne } from "../dataLayer";
 import { useRelays } from "../contexts/RelayContext";
 import { KIND_LONGFORM, KIND_COMMUNITY_NIP } from "../utils/publishArticle";
 import ArticleRenderer from "./ArticleRenderer";
@@ -57,12 +57,16 @@ export default function ArticleView() {
     let cancelled = false;
     // Query the article's own relay hints first, falling back to our defaults.
     const queryRelays = parsed.relays?.length ? parsed.relays : relays;
-    pool
-      .get(queryRelays, {
-        kinds: [parsed.kind],
-        authors: [parsed.pubkey],
-        "#d": [parsed.identifier],
-      })
+    fetchOne(
+      [
+        {
+          kinds: [parsed.kind],
+          authors: [parsed.pubkey],
+          "#d": [parsed.identifier],
+        },
+      ],
+      queryRelays,
+    )
       .then((ev) => {
         if (cancelled) return;
         if (!ev) {

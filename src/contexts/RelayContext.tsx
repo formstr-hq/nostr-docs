@@ -6,7 +6,8 @@ import {
   type ReactNode,
 } from "react";
 import { useUser } from "../contexts/UserContext";
-import { DEFAULT_RELAYS, pool } from "../nostr/relayPool";
+import { DEFAULT_RELAYS } from "../nostr/relayPool";
+import { fetchOne, setUserRelays } from "../dataLayer";
 
 interface RelayContextInterface {
   relays: string[];
@@ -35,11 +36,10 @@ export function RelayProvider({ children }: { children: ReactNode }) {
     const fetchUserRelays = async () => {
       try {
         const filters = { kinds: [10002], authors: [user.pubkey!] };
-        const results = await pool.querySync(defaultRelays, filters);
+        const relayEvent = await fetchOne([filters], defaultRelays);
 
-        if (results && results.length > 0) {
-          results.sort((a, b) => b.created_at - a.created_at);
-          const userRelays = results[0].tags
+        if (relayEvent) {
+          const userRelays = relayEvent.tags
             .filter((tag) => tag[0] === "r")
             .map((tag) => tag[1]);
 
@@ -62,6 +62,11 @@ export function RelayProvider({ children }: { children: ReactNode }) {
 
     fetchUserRelays();
   }, [user]);
+
+  // Keep the local relay's routing policy in sync with the selected relays.
+  useEffect(() => {
+    setUserRelays(relays);
+  }, [relays]);
 
   return (
     <RelayContext.Provider value={{ relays, isUsingUserRelays }}>

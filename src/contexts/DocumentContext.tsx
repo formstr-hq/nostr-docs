@@ -21,12 +21,11 @@ import {
   markBroadcast,
   type LocalStoredEvent,
 } from "../lib/localStore";
-import { pool } from "../nostr/relayPool";
 import { KIND_FILE } from "../nostr/kinds";
 import { fetchAllDocuments } from "../nostr/fetchFile";
 import { fetchDeleteRequests } from "../nostr/fetchDelete";
 import { publishEvent } from "../nostr/publish";
-import type { SubCloser } from "nostr-tools/abstract-pool";
+import { subscribe, fetchCachedMany, type Subscription } from "../dataLayer";
 
 type DocumentVersion = {
   event: Event;
@@ -333,7 +332,7 @@ export const DocumentProvider: React.FC<{ children: React.ReactNode }> = ({
     if (!user?.pubkey) return;
 
     let isCancelled = false;
-    let liveSub: SubCloser | null = null;
+    let liveSub: Subscription | null = null;
 
     (async () => {
       let signer;
@@ -371,6 +370,32 @@ export const DocumentProvider: React.FC<{ children: React.ReactNode }> = ({
         }
       } catch (err) {
         console.warn("Failed to load local events:", err);
+      }
+
+      // ── Phase 1b: local-relay cache (second read source) ──
+      // Union the new local-relay IndexedDB with the legacy store above, so a
+      // doc present in either place stays visible. Only the user's own docs are
+      // pulled here; visited/shared docs still come from the legacy store and
+      // SharedDocsProvider. Best-effort: a cold/empty cache is a no-op.
+      try {
+        const cachedEvents = await fetchCachedMany([
+          { kinds: [KIND_FILE], authors: [pubkey] },
+        ]);
+        for (const event of cachedEvents) {
+          if (isCancelled) return;
+          const address = getEventAddress(event);
+          const entry = address ? localEntriesRef.current.get(address) : undefined;
+          try {
+            await addDocument(event, {
+              viewKey: entry?.viewKey,
+              editKey: entry?.editKey,
+            });
+          } catch {
+            // Skip events that can't be decrypted
+          }
+        }
+      } catch (err) {
+        console.warn("Failed to read local relay cache:", err);
       }
 
       if (relays.length === 0 || isCancelled) return;
@@ -428,11 +453,10 @@ export const DocumentProvider: React.FC<{ children: React.ReactNode }> = ({
 
       // ── Phase 4: Live relay subscription ─────────────────
       if (isCancelled) return;
-      liveSub = pool.subscribeMany(
-        relays,
-        { kinds: [KIND_FILE], authors: [pubkey] },
+      liveSub = subscribe(
+        [{ kinds: [KIND_FILE], authors: [pubkey] }],
         {
-          onevent: async (event: Event) => {
+          onEvent: async (event: Event) => {
             if (isCancelled) return;
             const addr = getEventAddress(event);
             if (addr) {
@@ -460,6 +484,7 @@ export const DocumentProvider: React.FC<{ children: React.ReactNode }> = ({
             }
           },
         },
+        relays,
       );
     })();
 
