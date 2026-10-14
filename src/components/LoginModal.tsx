@@ -10,7 +10,6 @@ import {
   Divider,
   CircularProgress,
   IconButton,
-  Chip,
   useMediaQuery,
 } from "@mui/material";
 import { useTheme, alpha } from "@mui/material/styles";
@@ -775,22 +774,9 @@ function HeroCard({ onClick }: { onClick: () => void }) {
         <AutoAwesomeIcon sx={{ fontSize: 24 }} />
       </Box>
       <Box flex={1} minWidth={0}>
-        <Box display="flex" alignItems="center" gap={1}>
-          <Typography variant="body1" fontWeight={700} lineHeight={1.3}>
-            Create new account
-          </Typography>
-          <Chip
-            label="Recommended"
-            size="small"
-            color="secondary"
-            sx={{
-              height: 20,
-              fontSize: "0.68rem",
-              fontWeight: 700,
-              "& .MuiChip-label": { px: 0.75 },
-            }}
-          />
-        </Box>
+        <Typography variant="body1" fontWeight={700} lineHeight={1.3}>
+          Create new account
+        </Typography>
         <Typography variant="caption" color="text.secondary" mt={0.25} display="block">
           One passphrase encrypts your data across all your devices
         </Typography>
