@@ -24,6 +24,8 @@ import PersonAddAltOutlinedIcon from "@mui/icons-material/PersonAddAltOutlined";
 import CloudUploadIcon from "@mui/icons-material/CloudUpload";
 import MicIcon from "@mui/icons-material/Mic";
 import MoreHorizIcon from "@mui/icons-material/MoreHoriz";
+import DownloadOutlinedIcon from "@mui/icons-material/DownloadOutlined";
+import UploadFileOutlinedIcon from "@mui/icons-material/UploadFileOutlined";
 import { nip19 } from "nostr-tools";
 import { useThemeMode } from "../contexts/ThemeModeContext";
 import { useUser } from "../contexts/UserContext";
@@ -31,6 +33,8 @@ import { NostrAvatar } from "./common/NostrAvatar";
 import type { AuthMethod } from "../signer";
 import BlossomServersModal from "./BlossomServersModal";
 import DictationSettingsDialog from "./dictation/DictationSettingsDialog";
+import ExportPagesDialog from "./ExportPagesDialog";
+import ImportPagesDialog from "./ImportPagesDialog";
 import { themes } from "../theme";
 import type { ThemeId, ThemeDefinition } from "../theme";
 
@@ -70,6 +74,8 @@ export default function UserMenu({
   const [themeDialogOpen, setThemeDialogOpen] = useState(false);
   const [blossomOpen, setBlossomOpen] = useState(false);
   const [dictationOpen, setDictationOpen] = useState(false);
+  const [exportOpen, setExportOpen] = useState(false);
+  const [importOpen, setImportOpen] = useState(false);
 
   const handleOpen = (e: React.MouseEvent<HTMLElement>) =>
     setAnchorEl(e.currentTarget);
@@ -108,6 +114,15 @@ export default function UserMenu({
       ) : (
         <Box
           onClick={handleOpen}
+          role="button"
+          tabIndex={0}
+          aria-label="Account menu"
+          onKeyDown={(e) => {
+            if (e.key === "Enter" || e.key === " ") {
+              e.preventDefault();
+              setAnchorEl(e.currentTarget as HTMLElement);
+            }
+          }}
           sx={{
             display: "flex",
             alignItems: "center",
@@ -383,6 +398,48 @@ export default function UserMenu({
             sx={{ minWidth: 0, my: 0 }}
           />
         </MenuItem>
+
+        <Divider />
+
+        {/* Backup / export all pages */}
+        <MenuItem
+          onClick={() => {
+            setExportOpen(true);
+            handleClose();
+          }}
+          sx={{ px: 1.25, py: 0.6 }}
+        >
+          <ListItemIcon sx={{ minWidth: 26, mr: 0.75 }}>
+            <DownloadOutlinedIcon fontSize="small" />
+          </ListItemIcon>
+          <ListItemText
+            primary="Backup pages"
+            secondary="Export as .md zip"
+            primaryTypographyProps={{ noWrap: true, sx: { fontSize: "0.82rem" } }}
+            secondaryTypographyProps={{ noWrap: true, variant: "caption", sx: { fontSize: "0.68rem" } }}
+            sx={{ minWidth: 0, my: 0 }}
+          />
+        </MenuItem>
+
+        {/* Import pages from .md files or a .zip of .md files */}
+        <MenuItem
+          onClick={() => {
+            setImportOpen(true);
+            handleClose();
+          }}
+          sx={{ px: 1.25, py: 0.6 }}
+        >
+          <ListItemIcon sx={{ minWidth: 26, mr: 0.75 }}>
+            <UploadFileOutlinedIcon fontSize="small" />
+          </ListItemIcon>
+          <ListItemText
+            primary="Import pages"
+            secondary="From .md or .zip"
+            primaryTypographyProps={{ noWrap: true, sx: { fontSize: "0.82rem" } }}
+            secondaryTypographyProps={{ noWrap: true, variant: "caption", sx: { fontSize: "0.68rem" } }}
+            sx={{ minWidth: 0, my: 0 }}
+          />
+        </MenuItem>
       </Menu>
 
       {/* Dedicated Themes Dialog */}
@@ -509,6 +566,8 @@ export default function UserMenu({
         open={dictationOpen}
         onClose={() => setDictationOpen(false)}
       />
+      <ExportPagesDialog open={exportOpen} onClose={() => setExportOpen(false)} />
+      <ImportPagesDialog open={importOpen} onClose={() => setImportOpen(false)} />
     </>
   );
 }

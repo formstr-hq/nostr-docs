@@ -25,6 +25,8 @@ import { KIND_FILE } from "../nostr/kinds";
 import { fetchAllDocuments } from "../nostr/fetchFile";
 import { fetchDeleteRequests } from "../nostr/fetchDelete";
 import { publishEvent } from "../nostr/publish";
+import { encryptContent } from "../utils/encryption";
+import { makeTag } from "../utils/makeTag";
 import { subscribe, fetchCachedMany, type Subscription } from "../dataLayer";
 
 type DocumentVersion = {
@@ -49,6 +51,13 @@ interface DocumentContextValue {
     document: Event,
     keys?: { viewKey?: string; editKey?: string },
   ) => Promise<void>;
+
+  /**
+   * Create a brand-new owner-encrypted page from raw Markdown and publish it.
+   * Used by the import feature (single .md files / zips of .md files). Returns
+   * the new document address. Throws if there is no signer.
+   */
+  addImportedDocument: (markdown: string) => Promise<string>;
 
   removeDocument: (id: string) => void;
   addDeletionRequest: (delEvent: Event) => void;
@@ -296,6 +305,51 @@ export const DocumentProvider: React.FC<{ children: React.ReactNode }> = ({
       });
     },
     [],
+  );
+
+  /**
+   * Create a new owner-encrypted page from raw Markdown and publish it.
+   * Mirrors the editor's "Save" path for a brand-new document: NIP-44 encrypt
+   * with the signer's own key, sign a fresh kind-33457 event, cache it locally
+   * (offline-first) and broadcast best-effort. Returns the new address.
+   */
+  const addImportedDocument = useCallback(
+    async (markdown: string): Promise<string> => {
+      const signer = await signerManager.getSigner();
+      if (!signer) throw new Error("Not signed in");
+
+      const pubkey = await signer.getPublicKey();
+      const dTag = makeTag(6);
+      const address = `${KIND_FILE}:${pubkey}:${dTag}`;
+
+      const encryptedContent = await encryptContent(markdown);
+      const stored = await signer.signEvent({
+        kind: KIND_FILE,
+        tags: [["d", dTag]],
+        content: encryptedContent,
+        created_at: Math.floor(Date.now() / 1000),
+      });
+
+      // Populate the in-memory list (decrypts through the signer) and persist
+      // locally so the page survives a reload even if the relay write fails.
+      await addDocument(stored);
+      await storeLocalEvent({
+        address,
+        event: stored,
+        pendingBroadcast: false,
+        savedAt: Date.now(),
+      });
+
+      try {
+        await publishEvent(stored, relays);
+        await markBroadcast(address);
+      } catch (err) {
+        console.warn("Imported page kept locally (broadcast failed):", err);
+      }
+
+      return address;
+    },
+    [relays, addDocument],
   );
 
   // Hydrate visited pages from IndexedDB on mount so they survive a reload.
@@ -554,6 +608,7 @@ export const DocumentProvider: React.FC<{ children: React.ReactNode }> = ({
         sessionVisited,
         unmarkVisited,
         addDocument,
+        addImportedDocument,
         removeDocument,
         deletedEventIds,
         addDeletionRequest,
