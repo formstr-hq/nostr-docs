@@ -36,10 +36,13 @@ import { useDocumentContext } from "../contexts/DocumentContext";
 import { useSharedPages } from "../contexts/SharedDocsContext";
 import { usePublished } from "../contexts/PublishedContext";
 import { useDocMetadata } from "../contexts/DocMetadataContext";
+import { useRelays } from "../contexts/RelayContext";
+import { useUser } from "../contexts/UserContext";
 import { useLocation, useNavigate } from "react-router-dom";
 import { nip19, type Event } from "nostr-tools";
 import { encodeNKeys } from "../utils/nkeys";
 import { getEventAddress } from "../utils/helpers";
+import RelayPresenceIndicator from "./RelayPresenceIndicator";
 import {
   heuristicTitle,
   useDocSearch,
@@ -172,6 +175,8 @@ export default function AllPagesView() {
   const { sharedDocuments, getKeys } = useSharedPages();
   const { publishedDocuments } = usePublished();
   const { docTitles, docTags, docSharedAs, selectedTag, setSelectedTag } = useDocMetadata();
+  const { relays } = useRelays();
+  const { user } = useUser();
   const navigate = useNavigate();
   const location = useLocation();
 
@@ -1013,14 +1018,17 @@ export default function AllPagesView() {
                 }}
               >
                 <span>{formatRelativeTime(event.created_at)}</span>
-                {isRelaySynced && (
-                  <Tooltip title="Synced to relays">
-                    <Box sx={{ display: "inline-flex", alignItems: "center", gap: 0.3 }}>
-                      <Box sx={{ width: 4, height: 4, borderRadius: "50%", bgcolor: "#34D399" }} />
-                      <Box sx={{ width: 4, height: 4, borderRadius: "50%", bgcolor: "#34D399" }} />
-                    </Box>
-                  </Tooltip>
-                )}
+                {isRelaySynced &&
+                  (event.pubkey === user?.pubkey ? (
+                    <RelayPresenceIndicator event={event} relays={relays} />
+                  ) : (
+                    <Tooltip title="Synced to relays">
+                      <Box sx={{ display: "inline-flex", alignItems: "center", gap: 0.3 }}>
+                        <Box sx={{ width: 4, height: 4, borderRadius: "50%", bgcolor: "#34D399" }} />
+                        <Box sx={{ width: 4, height: 4, borderRadius: "50%", bgcolor: "#34D399" }} />
+                      </Box>
+                    </Tooltip>
+                  ))}
               </Box>
             </Box>
           );

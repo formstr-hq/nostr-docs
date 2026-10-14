@@ -17,6 +17,9 @@ nostr-docs flows end to end. These are **health checks**, not UI specs.
   `.md` files, creates a page per file, reports skipped non-Markdown inputs, and
   the imported content survives the encrypt → publish → reopen round trip. Also
   covers opting out of publishing to keep an import device-only.
+- **relay-presence** — a page card's relay indicator names the relays holding the
+  page, and when none do it shows a warning with a re-broadcast action (the test
+  relay exposes a `POST /clear` control to empty it).
 - **ai-writing** — verifies the Local AI writing settings, preference
   persistence, recommended GGUF links, Wllama model-loading options, correction
   normalization, serialized correction/autocomplete generation, and that an
@@ -53,6 +56,8 @@ CAPTURE_SCREENSHOTS=1 npx playwright test backup-import.screenshots
 - `backup-import.screenshots` → `Screenshots/backup-import/` (backup dialog,
   import dialog, imported pages). Pins the `Corpo Docs` theme so the captures are
   byte-stable — a fresh profile otherwise picks a random theme.
+- `relay-presence.screenshots` → `Screenshots/relay-presence/` (relay coverage
+  popover, missing-everywhere warning).
 - `local-relay.screenshots` → `Screenshots/local-relay/` (local-relay tag flow).
 
 ## Principles

@@ -7,6 +7,7 @@
  * end), and it is wiped on restart. Run standalone: `node tests/e2e/relay-server.cjs`.
  */
 const { WebSocketServer } = require("ws");
+const http = require("http");
 
 const PORT = Number(process.env.RELAY_PORT || 7448);
 
@@ -64,7 +65,30 @@ function store(event) {
   return true;
 }
 
-const wss = new WebSocketServer({ port: PORT });
+const wss = new WebSocketServer({ noServer: true });
+
+// Plain-HTTP control surface, test-only: lets specs manipulate relay state (e.g.
+// drop every event to exercise the "not on any relay" path). The WebSocket
+// upgrade is handled on the same server.
+const server = http.createServer((req, res) => {
+  if (req.method === "POST" && req.url === "/clear") {
+    events.length = 0;
+    res.writeHead(200, { "content-type": "text/plain" });
+    res.end("cleared");
+    return;
+  }
+  if (req.method === "GET" && req.url === "/health") {
+    res.writeHead(200, { "content-type": "text/plain" });
+    res.end("ok");
+    return;
+  }
+  res.writeHead(404);
+  res.end();
+});
+
+server.on("upgrade", (req, socket, head) => {
+  wss.handleUpgrade(req, socket, head, (ws) => wss.emit("connection", ws, req));
+});
 
 wss.on("connection", (ws) => {
   subs.set(ws, new Map());
@@ -107,6 +131,6 @@ wss.on("connection", (ws) => {
   ws.on("close", () => subs.delete(ws));
 });
 
-wss.on("listening", () =>
+server.listen(PORT, () =>
   console.log(`[e2e-relay] listening on ws://localhost:${PORT}`),
 );
