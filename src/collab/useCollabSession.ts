@@ -6,6 +6,8 @@ import type { NostrYjsProvider as NostrYjsProviderType } from "./NostrYjsProvide
 import type { Collaboration as CollaborationType } from "@tiptap/extension-collaboration";
 import type { CollaborationCaret as CollaborationCaretType } from "@tiptap/extension-collaboration-caret";
 import { getOrCreateSession } from "./sessionKeys";
+import { fetchYjsCheckpoints, parseRootAddress } from "../nostr/sharedDoc";
+import { base64ToUint8, uint8ToBase64 } from "../utils/base64";
 
 // Grace period for the initial sync-step round-trip so the editor doesn't flash
 // empty content before any online peer replies. Only used when this device has
@@ -20,6 +22,8 @@ export interface CollabSession {
   ready: boolean;
   CollaborationExt: typeof CollaborationType;
   CollaborationCaretExt: typeof CollaborationCaretType;
+  /** Encode the current Yjs state as a base64 update for a durable checkpoint. */
+  encodeState: () => string;
 }
 
 interface InternalSession {
@@ -27,6 +31,7 @@ interface InternalSession {
   provider: NostrYjsProviderType;
   CollaborationExt: typeof CollaborationType;
   CollaborationCaretExt: typeof CollaborationCaretType;
+  encodeState: () => string;
 }
 
 /**
@@ -81,6 +86,32 @@ export function useCollabSession(
       await idb.whenSynced;
       if (cancelled) return;
 
+      // Durable CRDT checkpoint: if this device has no local Yjs history, apply
+      // the state updates every author left on relays. Yjs merges them, so the
+      // result is the merged document regardless of which markdown snapshot won
+      // last-write-wins (and without the empty-doc seeding race).
+      let appliedCheckpoint = false;
+      if (ydoc.getXmlFragment("default").length === 0) {
+        const parsed = parseRootAddress(docAddress);
+        if (parsed) {
+          const checkpoints = await fetchYjsCheckpoints(
+            parsed.owner,
+            parsed.d,
+            viewKey,
+            relays,
+          ).catch(() => [] as string[]);
+          if (cancelled) return;
+          for (const state of checkpoints) {
+            try {
+              YjsModule.applyUpdate(ydoc, base64ToUint8(state));
+              appliedCheckpoint = true;
+            } catch {
+              /* skip malformed checkpoint */
+            }
+          }
+        }
+      }
+
       const collabSession = await getOrCreateSession(docAddress, viewKey, relays);
       if (cancelled) return;
 
@@ -92,19 +123,22 @@ export function useCollabSession(
         session: collabSession,
       });
       provider.connect();
+      const encodeState = () =>
+        uint8ToBase64(YjsModule.encodeStateAsUpdate(ydoc as YType.Doc));
       setSession({
         ydoc: ydoc!,
         provider,
         CollaborationExt: Collaboration,
         CollaborationCaretExt: CollaborationCaret,
+        encodeState,
       });
 
-      // If this device already holds the document's Yjs history (persisted in
-      // IndexedDB by y-indexeddb), there is nothing to seed and no peers to wait
-      // for — go ready immediately. The grace period is only needed the first
-      // time, to avoid two clients each seeding the empty doc from the markdown
+      // Ready immediately if the doc already has content (from local IndexedDB
+      // or an applied checkpoint). Only a doc with no history anywhere needs the
+      // grace period, to avoid two clients each seeding it from the markdown
       // snapshot (which Yjs would merge into a duplicated document).
-      const hasLocalHistory = ydoc!.getXmlFragment("default").length > 0;
+      const hasLocalHistory =
+        appliedCheckpoint || ydoc!.getXmlFragment("default").length > 0;
       if (hasLocalHistory) {
         setReady(true);
       } else {
@@ -133,5 +167,6 @@ export function useCollabSession(
     ready,
     CollaborationExt: session.CollaborationExt,
     CollaborationCaretExt: session.CollaborationCaretExt,
+    encodeState: session.encodeState,
   };
 }

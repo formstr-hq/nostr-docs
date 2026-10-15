@@ -66,14 +66,9 @@ test("open share: a collaborator edits and the owner sees it", async ({
     timeout: 20_000,
   });
 
-  // Collaboration is intentional: the editor is read-only until the Yjs session
-  // finishes its initial sync, so wait for the "connecting" notice to clear.
-  await expect(editor.getByText("Connecting to collaborators…")).toBeVisible({
-    timeout: 20_000,
-  });
-  await expect(editor.getByText("Connecting to collaborators…")).toBeHidden({
-    timeout: 20_000,
-  });
+  // The editor is read-only until the Yjs session finishes its initial sync;
+  // wait for the brief "Connecting…" indicator to clear.
+  await expect(editor.getByText(/Connecting/)).toBeHidden({ timeout: 20_000 });
 
   // 4. Switch to the visual editor and append text.
   await editor.getByRole("button", { name: "More actions" }).click();
@@ -97,6 +92,173 @@ test("open share: a collaborator edits and the owner sees it", async ({
   await page.reload();
   await unlockAfterReload(page);
   await expect(page.getByText(collabText)).toBeVisible({ timeout: 20_000 });
+
+  await editorContext.close();
+});
+
+test("save in between: a checkpoint survives when a peer leaves", async ({
+  page,
+  browser,
+}) => {
+  const unique = `e2e-save-${Date.now()}`;
+  const ownerText = `owner-save-${Date.now()}`;
+  const editorText = `editor-save-${Date.now()}`;
+
+  await loginAsGuest(page);
+  await typeIntoEditor(page, `# ${unique}\n\nbody`);
+  await save(page);
+  await page.getByRole("button", { name: "Share", exact: true }).click();
+  const dialog = page.getByRole("dialog").filter({ hasText: "Share Page" });
+  await dialog.getByRole("switch", { name: "Can edit" }).click();
+  await dialog.getByRole("switch", { name: "Anyone with the link can edit" }).click();
+  await dialog.getByRole("button", { name: "Generate Link" }).click();
+  await expect(page).toHaveURL(/#nkeys1/, { timeout: 20_000 });
+  const shareLink = page.url();
+
+  const editorContext = await browser.newContext();
+  const editor = await editorContext.newPage();
+  await loginAsGuest(editor);
+  await editor.goto(shareLink);
+  await unlockAfterReload(editor);
+  await expect(editor.getByText("Shared page · edit access")).toBeVisible({
+    timeout: 20_000,
+  });
+  for (const p of [page, editor]) {
+    await expect(p.getByText(/Connecting/)).toBeHidden({ timeout: 20_000 });
+  }
+
+  // Owner types…
+  await page.getByRole("button", { name: "More actions" }).click();
+  await page.getByRole("menuitem", { name: "Visual editor" }).click();
+  await editorSurface(page).click();
+  await page.keyboard.press("End");
+  await page.keyboard.press("Enter");
+  await page.keyboard.type(ownerText);
+
+  // …and the collaborator types.
+  await editor.getByRole("button", { name: "More actions" }).click();
+  await editor.getByRole("menuitem", { name: "Visual editor" }).click();
+  await editorSurface(editor).click();
+  await editor.keyboard.press("End");
+  await editor.keyboard.press("Enter");
+  await editor.keyboard.type(editorText);
+
+  // Both must actually have each other's text before the owner saves.
+  await expect(page.getByText(editorText)).toBeVisible({ timeout: 15_000 });
+  await expect(editor.getByText(ownerText)).toBeVisible({ timeout: 15_000 });
+
+  // Owner saves (durable checkpoint), then the collaborator disappears.
+  await page.getByRole("button", { name: "Save", exact: true }).click();
+  await expect(page.getByText("Saved", { exact: true })).toBeVisible({
+    timeout: 20_000,
+  });
+  await editorContext.close();
+
+  // Reload with no peers online: both edits must survive.
+  await page.reload();
+  await unlockAfterReload(page);
+  await expect(page.getByText(ownerText)).toBeVisible({ timeout: 20_000 });
+  await expect(page.getByText(editorText)).toBeVisible({ timeout: 20_000 });
+});
+
+test("flaky network: a reconnecting client converges", async ({
+  page,
+  browser,
+}) => {
+  const unique = `e2e-net-${Date.now()}`;
+  const ownerText = `owner-offline-${Date.now()}`;
+
+  await loginAsGuest(page);
+  await typeIntoEditor(page, `# ${unique}\n\nbody`);
+  await save(page);
+  await page.getByRole("button", { name: "Share", exact: true }).click();
+  const dialog = page.getByRole("dialog").filter({ hasText: "Share Page" });
+  await dialog.getByRole("switch", { name: "Can edit" }).click();
+  await dialog.getByRole("switch", { name: "Anyone with the link can edit" }).click();
+  await dialog.getByRole("button", { name: "Generate Link" }).click();
+  await expect(page).toHaveURL(/#nkeys1/, { timeout: 20_000 });
+  const shareLink = page.url();
+
+  const editorContext = await browser.newContext();
+  const editor = await editorContext.newPage();
+  await loginAsGuest(editor);
+  await editor.goto(shareLink);
+  await unlockAfterReload(editor);
+  await expect(editor.getByText("Shared page · edit access")).toBeVisible({
+    timeout: 20_000,
+  });
+  for (const p of [page, editor]) {
+    await expect(p.getByText(/Connecting/)).toBeHidden({ timeout: 20_000 });
+  }
+
+  // The collaborator drops offline…
+  await editorContext.setOffline(true);
+
+  // …while the owner keeps typing.
+  await page.getByRole("button", { name: "More actions" }).click();
+  await page.getByRole("menuitem", { name: "Visual editor" }).click();
+  await editorSurface(page).click();
+  await page.keyboard.press("End");
+  await page.keyboard.press("Enter");
+  await page.keyboard.type(ownerText);
+
+  // …then reconnects and must converge without a reload.
+  await editorContext.setOffline(false);
+  await expect(editor.getByText(ownerText)).toBeVisible({ timeout: 30_000 });
+
+  await editorContext.close();
+});
+
+test("live: an edit appears without saving", async ({ page, browser }) => {
+  const unique = `e2e-live-${Date.now()}`;
+  const ownerText = `owner-live-${Date.now()}`;
+
+  await loginAsGuest(page);
+  await typeIntoEditor(page, `# ${unique}\n\nowner body`);
+  await save(page);
+  await expect(page).toHaveURL(/\/doc\/naddr1/);
+
+  await page.getByRole("button", { name: "Share", exact: true }).click();
+  const dialog = page.getByRole("dialog").filter({ hasText: "Share Page" });
+  await dialog.getByRole("switch", { name: "Can edit" }).click();
+  await dialog.getByRole("switch", { name: "Anyone with the link can edit" }).click();
+  await dialog.getByRole("button", { name: "Generate Link" }).click();
+  await expect(page).toHaveURL(/#nkeys1/, { timeout: 20_000 });
+  const shareLink = page.url();
+
+  const editorContext = await browser.newContext();
+  const editor = await editorContext.newPage();
+  editor.on("console", (m) => {
+    const t = m.text();
+    if (/collab|Yjs|yjs|sharedDoc|sync/i.test(t)) console.log("EDITOR-CONSOLE", t);
+  });
+  page.on("console", (m) => {
+    const t = m.text();
+    if (/collab|Yjs|yjs|sharedDoc|sync/i.test(t)) console.log("OWNER-CONSOLE", t);
+  });
+  await loginAsGuest(editor);
+  await editor.goto(shareLink);
+  await unlockAfterReload(editor);
+
+  await expect(editor.getByText("Shared page · edit access")).toBeVisible({
+    timeout: 20_000,
+  });
+  // Both sides must finish their initial Yjs sync before typing.
+  for (const p of [page, editor]) {
+    await expect(p.getByText(/Connecting/)).toBeHidden({ timeout: 20_000 });
+  }
+
+  // Owner types live (no save).
+  await page.getByRole("button", { name: "More actions" }).click();
+  await page.getByRole("menuitem", { name: "Visual editor" }).click();
+  const ownerSurface = editorSurface(page);
+  await ownerSurface.click();
+  await page.keyboard.press("End");
+  await page.keyboard.press("Enter");
+  await page.keyboard.type(ownerText);
+
+  // The collaborator should see it without any save/reload.
+  await expect(editor.getByText(ownerText)).toBeVisible({ timeout: 15_000 });
 
   await editorContext.close();
 });

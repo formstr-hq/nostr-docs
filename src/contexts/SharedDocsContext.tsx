@@ -20,7 +20,7 @@ import { KIND_FILE } from "../nostr/kinds";
 import { fetchAllDocMetadata, saveDocMetadata } from "../nostr/docMetadata";
 import { subscribe, resolveEventsByAddress, cacheLocalEvents, type Subscription } from "../dataLayer";
 import { getEventAddress } from "../utils/helpers";
-import { authorSet, fetchRoster, parseRootAddress } from "../nostr/sharedDoc";
+import { authorSet, decodeContentPayload, fetchRoster, parseRootAddress } from "../nostr/sharedDoc";
 
 type DocumentVersion = {
   event: Event;
@@ -159,7 +159,9 @@ export const SharedPagesProvider: React.FC<{ children: React.ReactNode }> = ({
 
           let decryptedContent: string;
           try {
-            decryptedContent = nip44.decrypt(event.content, conversationKey);
+            decryptedContent = decodeContentPayload(
+              nip44.decrypt(event.content, conversationKey),
+            ).md;
           } catch {
             return;
           }
@@ -307,7 +309,7 @@ export const SharedPagesProvider: React.FC<{ children: React.ReactNode }> = ({
               hexToBytes(viewKey),
               getPublicKey(hexToBytes(viewKey)),
             );
-            const decryptedContent = nip44.decrypt(event.content, conversationKey);
+            const decryptedContent = decodeContentPayload(nip44.decrypt(event.content, conversationKey)).md;
             setSharedDocuments((prev) => {
               const next = new Map(prev);
               const history = next.get(address) ?? { address, versions: [] };
@@ -389,7 +391,7 @@ export const SharedPagesProvider: React.FC<{ children: React.ReactNode }> = ({
             hexToBytes(viewKey2),
             getPublicKey(hexToBytes(viewKey2)),
           );
-          const decryptedContent = nip44.decrypt(event.content, conversationKey);
+          const decryptedContent = decodeContentPayload(nip44.decrypt(event.content, conversationKey)).md;
           setSharedDocuments((prev) => {
             const next = new Map(prev);
             const history = next.get(entry.address) ?? { address: entry.address, versions: [] };

@@ -66,6 +66,12 @@ export class NostrYjsProvider {
     this.publishOp(encoding.toUint8Array(encoder));
   };
 
+  // Re-sync promptly after a network blip instead of waiting for the next
+  // periodic step, so a client that was offline converges as soon as it returns.
+  private readonly onOnline = () => {
+    this.sendSyncStep1();
+  };
+
   private readonly onAwarenessUpdate = (
     change: { added: number[]; updated: number[]; removed: number[] },
     origin: unknown,
@@ -114,6 +120,9 @@ export class NostrYjsProvider {
       () => this.sendSyncStep1(),
       SYNC_STEP_INTERVAL_MS,
     );
+    if (typeof window !== "undefined") {
+      window.addEventListener("online", this.onOnline);
+    }
     this.heartbeatInterval = setInterval(() => {
       this.publishPresence(
         encodeAwarenessUpdate(this.awareness, [this.ydoc.clientID]),
@@ -201,6 +210,9 @@ export class NostrYjsProvider {
     }
     this.ydoc.off("update", this.onDocUpdate);
     this.awareness.off("update", this.onAwarenessUpdate);
+    if (typeof window !== "undefined") {
+      window.removeEventListener("online", this.onOnline);
+    }
 
     const clientId = this.ydoc.clientID;
     removeAwarenessStates(this.awareness, [clientId], "tab closed");

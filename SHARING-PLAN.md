@@ -181,21 +181,24 @@ tip; legacy links are untouched. e2e: `tests/e2e/sharing.spec.ts` (open mode).
 - Optional polish: surface the owner's roster title/tags to participants (they
   currently read only their own metadata) and store `role`/`mode` on the entry.
 
-### Phase 6 — CRDT merge (compatibility-first) — live collab ✅, durable checkpoints pending
-The storage was already CRDT-shaped; this phase adds the merge.
-
+### Phase 6 — CRDT merge (compatibility-first) ✅ live + durable checkpoints
 - ✅ **Live collaboration + presence**: Yjs ops (kind 22457) and awareness
   (24578) over Nostr, viewKey-encrypted, tagged `["a", root]`; per-tab session
-  keys with a viewKey-encrypted attestation (34581); `useCollabSession`,
-  trusted-collaborator resolution, remote carets and presence avatars. Writers
-  on a shared doc edit live and merge via Yjs; solo/legacy paths untouched.
-- ⏳ **Durable Yjs checkpoints**: today a device with no local Yjs history waits
-  briefly before its session is "ready" so two clients don't each seed the empty
-  doc from the markdown snapshot (which Yjs would merge into a duplicated
-  document). Storing the Yjs state as a durable event removes that window and
-  makes cross-session merges exact.
-- ⏳ **Lineage/revision**: lets a stale or rogue writer be detected and merged
-  rather than winning by wall clock — the piece that makes `open` mode safe.
+  keys with a viewKey-encrypted attestation (34581). Writers on a shared doc
+  edit live and merge via Yjs; solo/legacy paths untouched. Re-syncs on
+  reconnect (`online` event), not just the 60s periodic step.
+- ✅ **Durable checkpoints**: a save during a collab session stores the Yjs state
+  in a versioned content envelope (`{v:2, md, yjs}`); a loader applies every
+  author's checkpoint (`Y.applyUpdate`) so the merged document is reconstructed
+  regardless of which markdown snapshot won last-write-wins. This closes the
+  "someone saves in between" hole — a save by one client can no longer lose a
+  peer's concurrent edits after everyone disconnects.
+- Remaining: lineage/revision for the `open`-mode adversarial case, and removing
+  the first-time seeding grace entirely once every doc has a checkpoint.
+
+**Tests** (`tests/e2e/sharing.spec.ts`): open-share round-trip, live reflection
+without saving, save-in-between durability with the peer gone, and a
+flaky-network reconnect convergence.
 
 ## Verification
 

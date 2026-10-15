@@ -28,7 +28,7 @@ import { publishEvent } from "../nostr/publish";
 import { encryptContent } from "../utils/encryption";
 import { makeTag } from "../utils/makeTag";
 import { subscribe, fetchCachedMany, fetchCachedByAddresses, resolveEventsByAddress, cacheLocalEvents, type Subscription } from "../dataLayer";
-import { authorSet, fetchRoster, isOpenRoster, parseRootAddress } from "../nostr/sharedDoc";
+import { authorSet, decodeContentPayload, fetchRoster, isOpenRoster, parseRootAddress } from "../nostr/sharedDoc";
 
 type DocumentVersion = {
   event: Event;
@@ -109,8 +109,8 @@ const getDecryptedContent = async (
         hexToBytes(viewKey),
         getPublicKey(hexToBytes(viewKey)),
       );
-      const decryptedContent = nip44.decrypt(event.content, conversationKey);
-      return decryptedContent;
+      const plaintext = nip44.decrypt(event.content, conversationKey);
+      return decodeContentPayload(plaintext).md;
     }
 
     // The signer manager waits for restore and opens the correct login/unlock flow.
@@ -123,7 +123,8 @@ const getDecryptedContent = async (
     if (!signer || !signer.nip44Decrypt) return null;
     const pubkey = await signer.getPublicKey();
     if (event.pubkey !== pubkey) return null;
-    return await signer.nip44Decrypt(pubkey, event.content);
+    const plaintext = await signer.nip44Decrypt(pubkey, event.content);
+    return decodeContentPayload(plaintext).md;
   } catch (err) {
     console.error("Failed to decrypt content:", err);
     return null;

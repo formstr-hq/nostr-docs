@@ -103,7 +103,7 @@ import { useBlossomServers } from "../../contexts/BlossomContext";
 import { KIND_FILE } from "../../nostr/kinds";
 import { getLatestVersion } from "../../utils/helpers";
 import { enableGroupSharing, updateRosterMembers, upsertMember, removeMember } from "../../nostr/shareV2";
-import { fetchRoster, parseRootAddress, type DocMember, type DocMode } from "../../nostr/sharedDoc";
+import { fetchRoster, parseRootAddress, encodeContentPayload, type DocMember, type DocMode } from "../../nostr/sharedDoc";
 import { fetchProfile } from "../../nostr/fetchProfile";
 import { encodeNKeys } from "../../utils/nkeys";
 import {
@@ -276,6 +276,7 @@ export function DocumentEditorController({
   // viewKey present but no editKey = shared read-only link
   const { user } = useUser();
   const history = selectedDocumentId ? documents.get(selectedDocumentId) : null;
+  const activeVersion = history ? getLatestVersion(history) : null;
   const docOwner = history?.owner ?? history?.versions[0]?.event.pubkey;
   const isOwner = !!user?.pubkey && !!docOwner && user.pubkey === docOwner;
   const sharedAsAddress = selectedDocumentId ? (docSharedAs.get(selectedDocumentId) ?? null) : null;
@@ -311,9 +312,11 @@ export function DocumentEditorController({
   const commentsEnabled = !!viewKey && !!selectedDocumentId;
 
   // Realtime collaboration (Yjs over Nostr) for writers on a shared document.
-  // Disabled entirely for solo/draft/view-only docs, which keep the plain
-  // markdown-snapshot path untouched.
-  const isCollabDoc = canWrite && !!viewKey && !!selectedDocumentId && !isDraft;
+  // Starts only once the document's snapshot is loaded, so the Yjs doc can be
+  // seeded from it (an empty seed would blank the editor). Solo/draft/view-only
+  // docs never touch this and keep the plain markdown path.
+  const isCollabDoc =
+    canWrite && !!viewKey && !!selectedDocumentId && !isDraft && !!activeVersion;
   const collab = useCollabSession(
     isCollabDoc ? selectedDocumentId : null,
     isCollabDoc ? viewKey : undefined,
@@ -329,19 +332,18 @@ export function DocumentEditorController({
 
   const sharedAsUrl = sharedAsAddress ? buildSharedDocPath(sharedAsAddress, getKeys) : null;
 
-  // A page opened via someone else's shared link that isn't yet in the user's
-  // Shared list. Offer to promote it (Visited → Shared) — an explicit action so
-  // opening a link never silently writes metadata / prompts the signer.
+  // A view-only visitor to someone else's shared link that isn't yet in their
+  // Shared list may bookmark it. Writers are filed automatically on first save
+  // (see handleSave), so they never see this.
   const alreadyShared = selectedDocumentId ? getKeys(selectedDocumentId).length > 0 : false;
   const isVisitedPage =
-    !!user && !isOwner && !!viewKey && !!selectedDocumentId && !alreadyShared;
+    !!user && !isOwner && !!viewKey && !!selectedDocumentId && !alreadyShared && !canWrite;
 
   const versions =
     history?.versions.map((v) => ({
       id: v.event.id,
       created_at: v.event.created_at,
     })) ?? [];
-  const activeVersion = history ? getLatestVersion(history) : null;
 
   const initialContent = activeVersion?.decryptedContent ?? "";
 
@@ -836,8 +838,11 @@ export function DocumentEditorController({
       // Only trust TipTap as the source of truth in WYSIWYG mode. Spurious
       // onUpdate calls fire during mode transitions (EditorContent remount,
       // setEditable dispatch) and would clobber textarea content with TipTap's
-      // stale internal document.
-      if (modeRef.current !== "edit") return;
+      // stale internal document. For collab docs the editor's content is the
+      // authoritative Yjs state (local AND remote changes), so we must also
+      // refresh the markdown snapshot in preview — otherwise a collaborator
+      // watching in preview never sees live edits.
+      if (modeRef.current !== "edit" && !isCollabDocRef.current) return;
       const newMd = getEditorMarkdown(editor);
       mdRef.current = newMd;
       setMd(newMd);
@@ -1355,7 +1360,14 @@ export function DocumentEditorController({
     // Keep the timestamp strictly above this document's newest known version.
     const prevAt = documents.get(address)?.versions.at(-1)?.event.created_at ?? 0;
     const createdAt = nextContentCreatedAt(prevAt);
-    const encryptedContent = await encryptContent(content, viewKey);
+    // Durable CRDT checkpoint: when a collab session is active, the save also
+    // carries the current Yjs state so a later load can merge authors' states
+    // instead of trusting a single last-write-wins markdown snapshot.
+    const payload =
+      isCollabDocRef.current && collabRef.current
+        ? encodeContentPayload(content, collabRef.current.encodeState())
+        : content;
+    const encryptedContent = await encryptContent(payload, viewKey);
     if (!encryptedContent) throw new Error("Encryption failed");
 
     let stored: Event;
@@ -1514,6 +1526,19 @@ export function DocumentEditorController({
       setWasAutoSaved(silent);
       if (!silent) {
         setToast({ open: true, message: "Saved", severity: "success" });
+      }
+      // v2: a writer on someone else's shared document keeps their own fork and
+      // should be filed under their Shared list automatically once they save —
+      // no manual "Save to Shared" step.
+      if (!isOwner && !!viewKey && canWrite && selectedDocumentId) {
+        if (getKeys(selectedDocumentId).length === 0) {
+          try {
+            await addSharedDoc([selectedDocumentId, viewKey]);
+            unmarkVisited(selectedDocumentId);
+          } catch (err) {
+            console.warn("Failed to auto-add shared doc:", err);
+          }
+        }
       }
     } catch (err) {
       lastSavedMdRef.current = prevSavedMd; // restore so unsaved indicator reappears
@@ -1757,16 +1782,6 @@ export function DocumentEditorController({
           backgroundImage: "none",
         }}
       >
-        {!isViewOnly && isCollabDoc && (
-          <Box sx={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 1, px: 1, pt: 1 }}>
-            {!isCollabReady && (
-              <Typography variant="caption" color="text.secondary">
-                Connecting to collaborators…
-              </Typography>
-            )}
-            <PresenceAvatars collaborators={collaborators} />
-          </Box>
-        )}
         {!isViewOnly && !proofreadReview && (
           <EditorToolbar
             saving={saving}
@@ -1914,6 +1929,16 @@ export function DocumentEditorController({
             <Typography variant="caption" sx={{ fontWeight: 600 }}>
               Device only
             </Typography>
+          </Box>
+        )}
+        {isCollabDoc && (collaborators.size > 0 || !isCollabReady) && (
+          <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+            {!isCollabReady && (
+              <Typography variant="caption" color="text.secondary">
+                Connecting…
+              </Typography>
+            )}
+            <PresenceAvatars collaborators={collaborators} />
           </Box>
         )}
         {activeVersion && (
