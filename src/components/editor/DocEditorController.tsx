@@ -100,6 +100,7 @@ import { KIND_FILE } from "../../nostr/kinds";
 import { getLatestVersion } from "../../utils/helpers";
 import { enableGroupSharing, updateRosterMembers, upsertMember, removeMember } from "../../nostr/shareV2";
 import { fetchRoster, parseRootAddress, type DocMember, type DocMode } from "../../nostr/sharedDoc";
+import { fetchProfile } from "../../nostr/fetchProfile";
 import { encodeNKeys } from "../../utils/nkeys";
 import {
   exportAsMarkdown,
@@ -111,6 +112,19 @@ import {
 
 // Delay after the last edit before auto-save fires (ms)
 const AUTO_SAVE_DELAY_MS = 30_000;
+
+/** Wall-clock seconds. Extracted to module scope so the React Compiler does not
+ *  treat a raw `Date.now()` inside component-scope helpers as a render-time
+ *  impurity. */
+function nowSeconds(): number {
+  return Math.floor(Date.now() / 1000);
+}
+
+/** Next content `created_at`: strictly greater than the document's newest known
+ *  version, since relays drop replaceable events that are not strictly newer. */
+function nextContentCreatedAt(prevAt: number | undefined): number {
+  return Math.max(nowSeconds(), (prevAt ?? 0) + 1);
+}
 
 type EditorMode = "edit" | "preview" | "split";
 
@@ -317,6 +331,35 @@ export function DocumentEditorController({
   );
   // Whether the last save was an auto-save (vs a manual save)
   const [wasAutoSaved, setWasAutoSaved] = useState(false);
+  // Display name of the author of the currently rendered version (who last
+  // edited), resolved from their kind-0 profile; "you" when it's the user.
+  const [lastEditName, setLastEditName] = useState<string | null>(null);
+
+  useEffect(() => {
+    const ev = activeVersion?.event;
+    if (!ev) {
+      setLastEditName(null);
+      return;
+    }
+    if (user?.pubkey && ev.pubkey === user.pubkey) {
+      setLastEditName("you");
+      return;
+    }
+    let cancelled = false;
+    setLastEditName(null);
+    (async () => {
+      const profile = await fetchProfile(ev.pubkey, relays).catch(() => null);
+      if (cancelled) return;
+      const name =
+        profile?.display_name ||
+        profile?.name ||
+        `${ev.pubkey.slice(0, 8)}…${ev.pubkey.slice(-4)}`;
+      setLastEditName(name as string);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [activeVersion?.event, user?.pubkey, relays]);
   const [focusMode, setFocusMode] = useState(false);
   const [focusAnimation, setFocusAnimation] = useState<"enter" | "exit" | null>(null);
   const [showFocusHint, setShowFocusHint] = useState(false);
@@ -408,21 +451,21 @@ export function DocumentEditorController({
     return { kind: Number(kindStr), owner, d: rest.join(":") };
   };
 
+  const decodeEditorInput = (input: string): string | null => {
+    const value = input.trim();
+    if (/^[0-9a-f]{64}$/i.test(value)) return value.toLowerCase();
+    try {
+      const decoded = nip19.decode(value);
+      return decoded.type === "npub" ? decoded.data : null;
+    } catch {
+      return null;
+    }
+  };
+
   const handleAddEditor = async (input: string) => {
     const target = parseShareTarget();
     if (!target || !viewKey) throw new Error("Share this page first, then add editors.");
-    const value = input.trim();
-    let hex: string | null = null;
-    if (/^[0-9a-f]{64}$/i.test(value)) {
-      hex = value.toLowerCase();
-    } else {
-      try {
-        const decoded = nip19.decode(value);
-        if (decoded.type === "npub") hex = decoded.data;
-      } catch {
-        hex = null;
-      }
-    }
+    const hex = decodeEditorInput(input);
     if (!hex) throw new Error("Enter a valid npub or 64-character hex pubkey.");
     const next = upsertMember(shareMembers, hex, "editor");
     await updateRosterMembers(target.owner, target.d, viewKey, next, relays, "restricted");
@@ -433,7 +476,7 @@ export function DocumentEditorController({
 
   const handleRemoveEditor = async (pubkey: string) => {
     const target = parseShareTarget();
-    if (!target || !viewKey) throw new Error("Share this page first.");
+    if (!target || !viewKey) throw new Error("This page isn't shared yet.");
     const next = removeMember(shareMembers, pubkey);
     await updateRosterMembers(target.owner, target.d, viewKey, next, relays);
     setShareMembers(next);
@@ -1230,7 +1273,7 @@ export function DocumentEditorController({
     // re-publish right after a save, e.g. sharing) would be silently discarded.
     // Keep the timestamp strictly above this document's newest known version.
     const prevAt = documents.get(address)?.versions.at(-1)?.event.created_at ?? 0;
-    const createdAt = Math.max(Math.floor(Date.now() / 1000), prevAt + 1);
+    const createdAt = nextContentCreatedAt(prevAt);
     const encryptedContent = await encryptContent(content, viewKey);
     if (!encryptedContent) throw new Error("Encryption failed");
 
@@ -1782,6 +1825,12 @@ export function DocumentEditorController({
             </Typography>
           </Box>
         )}
+        {activeVersion && (
+          <Typography variant="caption" color="text.secondary">
+            Last edit{lastEditName ? ` by ${lastEditName}` : ""} ·{" "}
+            {new Date(activeVersion.event.created_at * 1000).toLocaleString()}
+          </Typography>
+        )}
         {hasUnsavedChanges ? (
           <Typography variant="caption" color="error.main" sx={{ fontWeight: 600 }}>
             ● Unsaved changes
@@ -2035,7 +2084,7 @@ export function DocumentEditorController({
               // Make sure the viewKey-encrypted re-publish strictly supersedes the
               // owner's last version (relays drop equal-or-older replaceables).
               const lastAt = history?.versions.at(-1)?.event.created_at ?? 0;
-              const createdAt = Math.max(Math.floor(Date.now() / 1000), lastAt + 1);
+              const createdAt = nextContentCreatedAt(lastAt);
               await enableGroupSharing(
                 target.owner,
                 target.d,

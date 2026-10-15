@@ -231,12 +231,14 @@ export default function ShareModal({ open, onClose, onPrivateLink, onPublish, ex
             )}
           </Box>
 
-          {/* EDITORS (v2 group share, restricted mode) */}
-          {onAddEditor && canEdit && !openEdit && (
+          {/* EDITORS (v2 group share) */}
+          {onAddEditor && (
             <Box sx={{ bgcolor: (theme) => `${theme.palette.primary.main}08`, borderRadius: 0.75, border: '1px solid rgba(255,255,255,0.06)', p: 2 }}>
               <Typography sx={{ textTransform: 'uppercase', fontSize: '0.7rem', letterSpacing: '1px', color: 'text.secondary', fontWeight: 700, mb: 1 }}>EDITORS</Typography>
               <Typography color="text.secondary" sx={{ mb: 1 }}>
-                Only the people listed here can edit this page. Add someone by their npub (or hex pubkey). Anyone with the link can view.
+                {openEdit
+                  ? "This page is open — anyone with the link can edit. Adding an editor switches it to invited-editors-only."
+                  : "Only the people listed here can edit this page. Add someone by their npub (or hex pubkey). Anyone with the link can view."}
               </Typography>
 
               <Box sx={{ display: "flex", gap: 1, alignItems: "flex-start" }}>
