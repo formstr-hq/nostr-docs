@@ -12,6 +12,7 @@ import {
   RouterProvider,
   Outlet,
   useLocation,
+  useNavigate,
 } from "react-router-dom";
 
 import DocumentList from "./components/DocumentList";
@@ -129,6 +130,47 @@ export default function App() {
 function AppLayout() {
   const isDesktop = useMediaQuery("(min-width:900px)");
   const textSuggest = useTextSuggest();
+  const navigate = useNavigate();
+  const location = useLocation();
+
+  // Android hardware/gesture back: navigate within the app instead of closing
+  // it. Without a `backButton` listener Capacitor performs its default action
+  // (exit). Imported dynamically (like the other Capacitor packages) so the web
+  // bundle doesn't pull in @capacitor/core, which would set window.Capacitor and
+  // flip native-detection / the router on web.
+  React.useEffect(() => {
+    const cap = (
+      window as unknown as { Capacitor?: { isNativePlatform?: () => boolean } }
+    ).Capacitor;
+    if (!cap?.isNativePlatform?.()) return;
+
+    let remove: (() => void) | undefined;
+    let cancelled = false;
+    void import("@capacitor/app")
+      .then(({ App }) => {
+        if (cancelled) return;
+        return App.addListener("backButton", () => {
+          const idx =
+            (window.history.state as { idx?: number } | null)?.idx ?? 0;
+          if (location.pathname !== "/") {
+            // Go back through history when there is one; otherwise (e.g. a deep
+            // link opened straight onto a page) fall back to home.
+            if (idx > 0) window.history.back();
+            else navigate("/", { replace: true });
+          } else {
+            App.exitApp();
+          }
+        }).then((handle) => {
+          remove = () => handle.remove();
+        });
+      })
+      .catch(() => {});
+
+    return () => {
+      cancelled = true;
+      remove?.();
+    };
+  }, [location.pathname, navigate]);
 
   const outletContext = React.useMemo(
     () => ({
