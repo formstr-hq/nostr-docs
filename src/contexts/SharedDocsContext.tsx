@@ -20,6 +20,7 @@ import { KIND_FILE } from "../nostr/kinds";
 import { fetchAllDocMetadata, saveDocMetadata } from "../nostr/docMetadata";
 import { subscribe, resolveEventsByAddress, cacheLocalEvents, type Subscription } from "../dataLayer";
 import { getEventAddress } from "../utils/helpers";
+import { authorSet, fetchRoster, parseRootAddress } from "../nostr/sharedDoc";
 
 type DocumentVersion = {
   event: Event;
@@ -75,7 +76,10 @@ export const SharedPagesProvider: React.FC<{ children: React.ReactNode }> = ({
     return keys?.slice(1) || [];
   };
 
-  const fetchSharedDocuments = (sharedDocs: string[][], currentUserPubkey?: string) => {
+  const fetchSharedDocuments = async (
+    sharedDocs: string[][],
+    currentUserPubkey?: string,
+  ) => {
     if (subscriptionRef.current) {
       subscriptionRef.current.close();
       subscriptionRef.current = null;
@@ -83,52 +87,60 @@ export const SharedPagesProvider: React.FC<{ children: React.ReactNode }> = ({
 
     if (sharedDocs.length === 0) return;
 
-    const aTags = sharedDocs.map((t) => t[0]);
-    const dTags = Array.from(
-      new Set(
-        aTags
-          .map((a) => {
-            const parts = a.split(":");
-            return parts.length >= 3 ? parts.slice(2).join(":") : a;
-          })
-          .filter(Boolean),
-      ),
-    );
-    const pubkeys = Array.from(
-      new Set(
-        aTags
-          .map((a) => {
-            const parts = a.split(":");
-            return parts.length >= 3 ? parts[1] : null;
-          })
-          .filter((b): b is string => Boolean(b)),
-      ),
-    );
-
-    if (dTags.length === 0) return;
-
-    const filter: { kinds: number[]; "#d": string[]; authors?: string[] } = {
-      kinds: [KIND_FILE],
-      "#d": dTags,
+    // One entry per shared document. For v2 group docs the author set comes from
+    // the owner's roster; without a roster it degrades to the single author in
+    // the address (legacy edit-key/view-only shares), preserving old behavior.
+    type Entry = {
+      root: string; // documentId: root address for group docs, author address for legacy
+      owner: string;
+      d: string;
+      viewKey: string;
+      editKey?: string;
+      authors: Set<string>;
     };
-    if (pubkeys.length > 0 && pubkeys.length === aTags.length) {
-      filter.authors = pubkeys;
+    const entries: Entry[] = [];
+    const filters: { kinds: number[]; "#d": string[]; authors?: string[] }[] = [];
+
+    for (const t of sharedDocs) {
+      const [addr, viewKey, editKey] = t;
+      if (!viewKey) continue;
+      const parsed = parseRootAddress(addr);
+      if (!parsed) continue;
+
+      let roster = null;
+      try {
+        roster = await fetchRoster(parsed.owner, parsed.d, viewKey, relays);
+      } catch {
+        roster = null;
+      }
+
+      const authorsList = authorSet(parsed.owner, roster);
+      entries.push({
+        root: addr,
+        owner: parsed.owner,
+        d: parsed.d,
+        viewKey,
+        editKey,
+        authors: new Set(authorsList),
+      });
+      filters.push({ kinds: [KIND_FILE], authors: authorsList, "#d": [parsed.d] });
     }
 
+    if (filters.length === 0) return;
+
     subscriptionRef.current = subscribe(
-      [filter],
+      filters,
       {
         onEvent: (event: Event) => {
           const dTag = event.tags.find((t) => t[0] === "d")?.[1];
           if (!dTag) return;
 
-          const address = `${KIND_FILE}:${event.pubkey}:${dTag}`;
-          const keys = sharedDocs.find((t) => matchAddress(t[0], address));
-          if (!keys || !keys[1]) return;
+          const entry = entries.find((e) => e.d === dTag && e.authors.has(event.pubkey));
+          if (!entry) return;
 
           const conversationKey = nip44.getConversationKey(
-            hexToBytes(keys[1]),
-            getPublicKey(hexToBytes(keys[1])),
+            hexToBytes(entry.viewKey),
+            getPublicKey(hexToBytes(entry.viewKey)),
           );
 
           let decryptedContent: string;
@@ -138,13 +150,20 @@ export const SharedPagesProvider: React.FC<{ children: React.ReactNode }> = ({
             return;
           }
 
-          if (event.pubkey === currentUserPubkey) {
-            addDocument(event, { viewKey: keys[1], editKey: keys[2] });
+          // The owner's own view of a shared/group doc belongs in their personal
+          // documents (keyed by root, owner set) so the editor treats them as the
+          // owner; everyone else's versions land in the shared-with-me store.
+          if (currentUserPubkey === entry.owner) {
+            addDocument(
+              event,
+              { viewKey: entry.viewKey, editKey: entry.editKey },
+              { documentId: entry.root, owner: entry.owner },
+            );
             cacheLocalEvents([event]);
             saveLocalDocState({
-              address,
-              viewKey: keys[1],
-              editKey: keys[2],
+              address: entry.root,
+              viewKey: entry.viewKey,
+              editKey: entry.editKey,
               pendingBroadcast: false,
               savedAt: Date.now(),
               lastEventCreatedAt: event.created_at,
@@ -154,7 +173,11 @@ export const SharedPagesProvider: React.FC<{ children: React.ReactNode }> = ({
 
           setSharedDocuments((prev) => {
             const next = new Map(prev);
-            const history = next.get(address) ?? { address, versions: [] };
+            const history = next.get(entry.root) ?? {
+              address: entry.root,
+              owner: entry.owner,
+              versions: [],
+            };
 
             if (history.versions.some((v) => v.event.id === event.id)) {
               return prev;
@@ -165,15 +188,15 @@ export const SharedPagesProvider: React.FC<{ children: React.ReactNode }> = ({
               { event, decryptedContent },
             ].sort((a, b) => a.event.created_at - b.event.created_at);
 
-            next.set(address, history);
+            next.set(entry.root, history);
             return next;
           });
 
           cacheLocalEvents([event]);
           saveLocalDocState({
-            address,
-            viewKey: keys[1],
-            editKey: keys[2],
+            address: entry.root,
+            viewKey: entry.viewKey,
+            editKey: entry.editKey,
             pendingBroadcast: false,
             savedAt: Date.now(),
             lastEventCreatedAt: event.created_at,
@@ -210,7 +233,9 @@ export const SharedPagesProvider: React.FC<{ children: React.ReactNode }> = ({
         for (const s of shared) map.set(s[0], s);
         return Array.from(map.values());
       });
-      fetchSharedDocuments(shared, pubkey);
+      fetchSharedDocuments(shared, pubkey).catch((err) =>
+        console.error("Failed to subscribe to shared pages:", err),
+      );
     } catch (err) {
       console.error("Failed to fetch shared pages:", err);
     } finally {
@@ -367,7 +392,9 @@ export const SharedPagesProvider: React.FC<{ children: React.ReactNode }> = ({
       }
     } catch {} // eslint-disable-line no-empty
 
-    fetchSharedDocuments([tag], pubkey);
+    fetchSharedDocuments([tag], pubkey).catch((err) =>
+      console.error("Failed to subscribe to shared doc:", err),
+    );
   };
 
   return (

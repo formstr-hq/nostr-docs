@@ -3,12 +3,13 @@ import { useParams, useLocation, useOutletContext } from "react-router-dom";
 import { useDocumentContext } from "../contexts/DocumentContext";
 import { fetchDocumentByNaddr } from "../nostr/fetchFile";
 import { useRelays } from "../contexts/RelayContext";
-import { nip19 } from "nostr-tools";
+import { nip19, type Event } from "nostr-tools";
 import { decodeNKeys } from "../utils/nkeys";
 import { useTextSuggest, type TextSuggestHook } from "../hooks/useTextSuggest";
 import { DocumentEditorController } from "./editor/DocEditorController";
 import { saveLocalDocState } from "../lib/localStore";
 import { cacheLocalEvents } from "../dataLayer";
+import { resolveSharedDocument } from "../nostr/sharedDoc";
 import { useUser } from "../contexts/UserContext";
 
 import { useSharedPages } from "../contexts/SharedDocsContext";
@@ -50,10 +51,14 @@ export default function DocPage({
 
     // Decode address first so we can check the cache before touching loading state
     let address: string;
+    let owner: string;
+    let dTag: string;
     try {
       const decoded = nip19.decode(naddr);
       if (decoded.type !== "naddr") throw new Error("Not an naddr");
-      address = `${decoded.data.kind}:${decoded.data.pubkey}:${decoded.data.identifier}`;
+      owner = decoded.data.pubkey;
+      dTag = decoded.data.identifier;
+      address = `${decoded.data.kind}:${owner}:${dTag}`;
     } catch (err) {
       console.error("Invalid naddr:", naddr, err);
       setInvalid(true);
@@ -75,7 +80,8 @@ export default function DocPage({
 
     // Document already in context — no loading flash, editor stays mounted
     if (docExists) {
-      const isVisited = !!keys.viewKey && docExists.versions[0]?.event.pubkey !== user?.pubkey;
+      const docOwner = docExists.owner ?? docExists.versions[0]?.event.pubkey;
+      const isVisited = !!keys.viewKey && docOwner !== user?.pubkey;
       if (isVisited) {
         const latestVersion = docExists.versions.at(-1);
         if (latestVersion) {
@@ -103,13 +109,90 @@ export default function DocPage({
 
     let cancelled = false;
     (async () => {
-      try {
-        const latestEvent = await fetchDocumentByNaddr(
-          relays,
-          naddr,
-          () => {},
-        );
+      // Shared single-author fallback: cache the event, record keys/flags locally
+      // and select it. Used for legacy edit-key/view-only shares and for a v2
+      // doc before it has a roster.
+      const applySingleEvent = async (
+        event: Event,
+        eventAddress: string,
+        eventOwner?: string,
+      ) => {
+        await addDocument(event, keys);
+        if (cancelled) return;
 
+        // A page opened via someone else's shared link is a "visited" page
+        // unless it has already been saved to the user's Shared list.
+        const eventPubkey = eventOwner ?? event.pubkey;
+        const isAlreadyShared =
+          getKeys(eventAddress).length > 0 || sharedDocuments.has(eventAddress);
+        const isVisited = !isAlreadyShared && !!keys.viewKey && eventPubkey !== user?.pubkey;
+
+        // Cache the event in the local relay (its owner) and remember only the
+        // keys/flags locally, so visited pages survive a reload (they
+        // repopulate the Visited tab from here — no signer/metadata write, and
+        // therefore no prompt just for opening a link). Promotion to the Shared
+        // tab is an explicit "Save to Shared" action in the editor.
+        cacheLocalEvents([event]);
+        saveLocalDocState({
+          address: eventAddress,
+          viewKey: keys.viewKey,
+          editKey: keys.editKey,
+          visited: isVisited || undefined,
+          pendingBroadcast: false,
+          savedAt: Date.now(),
+          lastEventCreatedAt: event.created_at,
+        }).catch(() => {});
+
+        setSelectedDocumentId(eventAddress);
+        if (isAlreadyShared) {
+          unmarkVisited(eventAddress);
+        }
+      };
+
+      try {
+        // v2: when we hold a viewKey, resolve the document as a group — fetch the
+        // owner's roster, then every authorized author's newest version. With no
+        // roster this degrades to the legacy single-author path.
+        if (keys.viewKey) {
+          const resolved = await resolveSharedDocument(owner, dTag, keys.viewKey, relays);
+          if (cancelled) return;
+
+          if (resolved.roster) {
+            for (const ev of resolved.events) {
+              await addDocument(ev, keys, { documentId: address, owner });
+              if (cancelled) return;
+            }
+
+            const isAlreadyShared = getKeys(address).length > 0 || sharedDocuments.has(address);
+            const isVisited = !isAlreadyShared && owner !== user?.pubkey;
+
+            cacheLocalEvents(resolved.events);
+            saveLocalDocState({
+              address,
+              viewKey: keys.viewKey,
+              editKey: keys.editKey,
+              visited: isVisited || undefined,
+              pendingBroadcast: false,
+              savedAt: Date.now(),
+              lastEventCreatedAt: resolved.tip?.created_at,
+            }).catch(() => {});
+
+            setSelectedDocumentId(address);
+            if (isAlreadyShared) unmarkVisited(address);
+            return;
+          }
+
+          if (resolved.tip) {
+            await applySingleEvent(resolved.tip, address, owner);
+            return;
+          }
+
+          console.error("Document not found on relays:", address);
+          if (!cancelled) setNotFound(true);
+          return;
+        }
+
+        const latestEvent = await fetchDocumentByNaddr(relays, naddr, () => {});
         if (cancelled) return;
 
         if (!latestEvent) {
@@ -118,44 +201,13 @@ export default function DocPage({
           return;
         }
 
-        const dTag = latestEvent.tags.find(
-          (t: string[]) => t[0] === "d",
-        )?.[1];
         if (!dTag) {
           if (!cancelled) setInvalid(true);
           return;
         }
 
         const eventAddress = `${latestEvent.kind}:${latestEvent.pubkey}:${dTag}`;
-
-        await addDocument(latestEvent, keys);
-        if (cancelled) return;
-
-        // A page opened via someone else's shared link is a "visited" page
-        // unless it has already been saved to the user's Shared list.
-        const isAlreadyShared = getKeys(eventAddress).length > 0 || sharedDocuments.has(eventAddress);
-        const isVisited = !isAlreadyShared && !!keys.viewKey && latestEvent.pubkey !== user?.pubkey;
-
-        // Cache the event in the local relay (its owner) and remember only the
-        // keys/flags locally, so visited pages survive a reload (they
-        // repopulate the Visited tab from here — no signer/metadata write, and
-        // therefore no prompt just for opening a link). Promotion to the Shared
-        // tab is an explicit "Save to Shared" action in the editor.
-        cacheLocalEvents([latestEvent]);
-        saveLocalDocState({
-          address: eventAddress,
-          viewKey: keys.viewKey,
-          editKey: keys.editKey,
-          visited: isVisited || undefined,
-          pendingBroadcast: false,
-          savedAt: Date.now(),
-          lastEventCreatedAt: latestEvent.created_at,
-        }).catch(() => {});
-
-        setSelectedDocumentId(eventAddress);
-        if (isAlreadyShared) {
-          unmarkVisited(eventAddress);
-        }
+        await applySingleEvent(latestEvent, eventAddress);
       } catch (err) {
         console.error("Failed to fetch document:", err);
         if (!cancelled) setInvalid(true);

@@ -3,6 +3,12 @@ import { publishEvent } from "./publish";
 import { signerManager } from "../signer";
 import { KIND_DOC_METADATA } from "./kinds";
 import { fetchMany } from "../dataLayer";
+import {
+  decryptWithViewKey,
+  encryptWithViewKey,
+  rosterDTag,
+  type DocMember,
+} from "./sharedDoc";
 
 export interface DocMetadata {
   tags: string[];
@@ -10,6 +16,10 @@ export interface DocMetadata {
   viewKey?: string;
   editKey?: string;
   sharedAs?: string; // address of the shared (editKey-signed) copy
+  /** Present (2) only on the owner's viewKey-encrypted roster for a group doc. */
+  v?: number;
+  /** v2 group-doc roster: authorized authors and roles. */
+  members?: DocMember[];
 }
 
 /**
@@ -34,6 +44,7 @@ function nextCreatedAt(address: string): number {
 export async function fetchAllDocMetadata(
   relays: string[],
   pubkey: string,
+  viewKeys?: Map<string, string>,
 ): Promise<Map<string, DocMetadata>> {
   const result = new Map<string, DocMetadata>();
   if (relays.length === 0 || !pubkey) return result;
@@ -72,7 +83,19 @@ export async function fetchAllDocMetadata(
     metaHighWater.set(dTag, Math.max(metaHighWater.get(dTag) ?? 0, event.created_at));
 
     try {
-      const decrypted = await signer.nip44Decrypt(pubkey, event.content);
+      let decrypted: string;
+      try {
+        // Self-encrypted: the per-user metadata we have always written.
+        decrypted = await signer.nip44Decrypt(pubkey, event.content);
+      } catch {
+        // v2: the owner's shareable roster is encrypted with the document
+        // viewKey instead of the owner's own key. Only attempt this when we
+        // know the viewKey for that address; otherwise leave the event alone
+        // so legacy undecryptable events are still skipped as before.
+        const viewKey = viewKeys?.get(dTag);
+        if (!viewKey) throw new Error("no viewKey");
+        decrypted = decryptWithViewKey(event.content, viewKey);
+      }
       result.set(dTag, JSON.parse(decrypted) as DocMetadata);
     } catch {
       // skip undecryptable events
@@ -93,6 +116,13 @@ export function metadataEqual(a: DocMetadata | undefined, b: DocMetadata | undef
   if (a.viewKey !== b.viewKey) return false;
   if (a.editKey !== b.editKey) return false;
   if (a.sharedAs !== b.sharedAs) return false;
+  if (a.v !== b.v) return false;
+  const am = a.members ?? [];
+  const bm = b.members ?? [];
+  if (am.length !== bm.length) return false;
+  for (let i = 0; i < am.length; i++) {
+    if (am[i].pubkey !== bm[i].pubkey || am[i].role !== bm[i].role) return false;
+  }
   const at = a.tags ?? [];
   const bt = b.tags ?? [];
   if (at.length !== bt.length) return false;
@@ -115,6 +145,39 @@ export async function saveDocMetadata(
     tags: [["d", address]],
     content: encrypted,
     created_at: nextCreatedAt(address),
+  };
+
+  const signed = await signer.signEvent(event);
+  await publishEvent(signed, relays);
+}
+
+/**
+ * Write (or update) the owner's shareable roster for a v2 group document. The
+ * content is NIP-44 encrypted with the document viewKey — not the owner's own
+ * key — so every member who holds the viewKey can read it. Only the owner may
+ * write it; the relay's parameterized-replaceable slot is `(34579, owner, root)`.
+ */
+export async function saveRoster(
+  owner: string,
+  d: string,
+  viewKey: string,
+  roster: DocMetadata,
+  relays: string[],
+): Promise<void> {
+  const signer = await signerManager.getSigner();
+  if (!signer) throw new Error("No signer");
+
+  const pubkey = await signer.getPublicKey();
+  if (pubkey !== owner) throw new Error("Only the document owner can write the roster");
+
+  const dTag = rosterDTag(owner, d);
+  const encrypted = encryptWithViewKey(JSON.stringify(roster), viewKey);
+
+  const event: EventTemplate = {
+    kind: KIND_DOC_METADATA,
+    tags: [["d", dTag]],
+    content: encrypted,
+    created_at: nextCreatedAt(dTag),
   };
 
   const signed = await signer.signEvent(event);

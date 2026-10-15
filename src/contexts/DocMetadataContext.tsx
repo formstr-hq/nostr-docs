@@ -4,11 +4,14 @@ import React, {
   useState,
   useEffect,
   useMemo,
+  useRef,
 } from "react";
 import { useUser } from "./UserContext";
 import { useRelays } from "./RelayContext";
 import { signerManager } from "../signer";
-import { fetchAllDocMetadata, saveDocMetadata, metadataEqual, type DocMetadata } from "../nostr/docMetadata";
+import { fetchAllDocMetadata, saveDocMetadata, saveRoster, metadataEqual, type DocMetadata } from "../nostr/docMetadata";
+import { loadAllLocalEvents } from "../lib/localStore";
+import { parseRootAddress } from "../nostr/sharedDoc";
 
 interface DocMetadataContextValue {
   docTags: Map<string, string[]>;
@@ -39,6 +42,9 @@ export const DocMetadataProvider: React.FC<{ children: React.ReactNode }> = ({
   const [docSharedAs, setDocSharedAsState] = useState<Map<string, string>>(new Map());
   const [selectedTag, setSelectedTag] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  // viewKey per document address, from the local store. Lets us decrypt the
+  // owner's shareable v2 roster (encrypted with the viewKey, not the owner key).
+  const viewKeysRef = useRef<Map<string, string>>(new Map());
 
   useEffect(() => {
     if (!user) {
@@ -46,6 +52,7 @@ export const DocMetadataProvider: React.FC<{ children: React.ReactNode }> = ({
       setDocTagsState(new Map());
       setDocTitlesState(new Map());
       setDocSharedAsState(new Map());
+      viewKeysRef.current = new Map();
       return;
     }
 
@@ -55,7 +62,21 @@ export const DocMetadataProvider: React.FC<{ children: React.ReactNode }> = ({
         const signer = await signerManager.getSigner();
         if (!signer) return;
         const pubkey = await signer.getPublicKey();
-        const metadata = await fetchAllDocMetadata(relays, pubkey);
+
+        // Cache the viewKeys we already hold locally so the owner's v2 roster
+        // (viewKey-encrypted) can be decrypted alongside self-encrypted metadata.
+        try {
+          const entries = await loadAllLocalEvents();
+          const viewKeys = new Map<string, string>();
+          for (const e of entries) {
+            if (e.viewKey) viewKeys.set(e.address, e.viewKey);
+          }
+          viewKeysRef.current = viewKeys;
+        } catch {
+          // local store unavailable — proceed with self-encrypted metadata only
+        }
+
+        const metadata = await fetchAllDocMetadata(relays, pubkey, viewKeysRef.current);
         setMetadataMap(metadata);
         const tagsMap = new Map<string, string[]>();
         const titlesMap = new Map<string, string>();
@@ -123,7 +144,22 @@ export const DocMetadataProvider: React.FC<{ children: React.ReactNode }> = ({
     const existing = metadataMap.get(address) ?? { tags: [] };
     const newMeta: DocMetadata = { ...existing, tags: cleanTags };
     // Skip the sign+publish (and its signer prompt) when nothing changed.
-    if (!metadataEqual(existing, newMeta)) await saveDocMetadata(address, newMeta, relays);
+    if (!metadataEqual(existing, newMeta)) {
+      const viewKey = existing.viewKey ?? viewKeysRef.current.get(address);
+      const parsed = parseRootAddress(address);
+      if (existing.members && viewKey && parsed) {
+        // v2 group doc: the owner's metadata IS the shareable roster, so tags
+        // must be written viewKey-encrypted with the member list preserved.
+        await saveRoster(parsed.owner, parsed.d, viewKey, {
+          ...existing,
+          v: 2,
+          tags: cleanTags,
+          members: existing.members,
+        }, relays);
+      } else {
+        await saveDocMetadata(address, newMeta, relays);
+      }
+    }
     setMetadataMap((prev) => {
       const next = new Map(prev);
       next.set(address, newMeta);
@@ -148,7 +184,20 @@ export const DocMetadataProvider: React.FC<{ children: React.ReactNode }> = ({
   const setDocTitle = async (address: string, title: string) => {
     const existing = metadataMap.get(address) ?? { tags: [] };
     const newMeta: DocMetadata = { ...existing, title: title || undefined };
-    if (!metadataEqual(existing, newMeta)) await saveDocMetadata(address, newMeta, relays);
+    if (!metadataEqual(existing, newMeta)) {
+      const viewKey = existing.viewKey ?? viewKeysRef.current.get(address);
+      const parsed = parseRootAddress(address);
+      if (existing.members && viewKey && parsed) {
+        await saveRoster(parsed.owner, parsed.d, viewKey, {
+          ...existing,
+          v: 2,
+          title: title || undefined,
+          members: existing.members,
+        }, relays);
+      } else {
+        await saveDocMetadata(address, newMeta, relays);
+      }
+    }
     setMetadataMap((prev) => {
       const next = new Map(prev);
       next.set(address, newMeta);

@@ -36,6 +36,13 @@ type DocumentVersion = {
 
 type DocumentHistory = {
   versions: DocumentVersion[]; // sorted oldest → newest
+  /**
+   * Root pubkey that owns the document. For legacy single-author docs this is
+   * the author's own pubkey (derived from the event when absent); for v2 group
+   * docs it is the owner from the root address, which may differ from the
+   * pubkey of any individual version.
+   */
+  owner?: string;
 };
 
 interface DocumentContextValue {
@@ -50,6 +57,7 @@ interface DocumentContextValue {
   addDocument: (
     document: Event,
     keys?: { viewKey?: string; editKey?: string },
+    ref?: { documentId?: string; owner?: string },
   ) => Promise<void>;
 
   /**
@@ -211,7 +219,7 @@ export const DocumentProvider: React.FC<{ children: React.ReactNode }> = ({
       [...documents.entries()]
         .filter(([address, history]) => {
           if (deletedEventIds.has(address)) return false;
-          const pubkey = history.versions[0]?.event.pubkey;
+          const pubkey = history.owner ?? history.versions[0]?.event.pubkey;
           if (userPubkey) {
             return pubkey === userPubkey;
           }
@@ -220,6 +228,7 @@ export const DocumentProvider: React.FC<{ children: React.ReactNode }> = ({
         .map(([address, history]): [string, DocumentHistory] => [
           address,
           {
+            owner: history.owner,
             versions: history.versions.filter(
               (v) => !deletedEventIds.has(v.event.id),
             ),
@@ -235,12 +244,13 @@ export const DocumentProvider: React.FC<{ children: React.ReactNode }> = ({
         .filter(([address, history]) => {
           if (!sessionVisited.has(address)) return false;
           if (deletedEventIds.has(address)) return false;
-          const pubkey = history.versions[0]?.event.pubkey;
+          const pubkey = history.owner ?? history.versions[0]?.event.pubkey;
           return !userPubkey || pubkey !== userPubkey;
         })
         .map(([address, history]): [string, DocumentHistory] => [
           address,
           {
+            owner: history.owner,
             versions: history.versions.filter(
               (v) => !deletedEventIds.has(v.event.id),
             ),
@@ -254,21 +264,28 @@ export const DocumentProvider: React.FC<{ children: React.ReactNode }> = ({
     async (
       document: Event,
       keys?: { viewKey?: string; editKey?: string },
+      ref?: { documentId?: string; owner?: string },
     ) => {
-      const address = getEventAddress(document);
-      if (!address) return;
+      const authorAddress = getEventAddress(document);
+      if (!authorAddress) return;
 
-      const cachedEntry = address ? localEntriesRef.current.get(address) : undefined;
+      // v2 group docs are keyed by their root address so every author's version
+      // lives under one document. Legacy single-author docs keep keying by the
+      // author address (documentId === authorAddress), so behavior is unchanged.
+      const documentId = ref?.documentId ?? authorAddress;
+      const owner = ref?.owner ?? document.pubkey;
+
+      const cachedEntry = localEntriesRef.current.get(documentId);
       const viewKey = keys?.viewKey ?? cachedEntry?.viewKey;
 
-      if (address && (keys?.viewKey || keys?.editKey)) {
-        const existing = localEntriesRef.current.get(address);
+      if (keys?.viewKey || keys?.editKey) {
+        const existing = localEntriesRef.current.get(documentId);
         if (existing) {
           existing.viewKey = keys.viewKey ?? existing.viewKey;
           existing.editKey = keys.editKey ?? existing.editKey;
         } else {
-          localEntriesRef.current.set(address, {
-            address,
+          localEntriesRef.current.set(documentId, {
+            address: documentId,
             event: document,
             viewKey: keys.viewKey,
             editKey: keys.editKey,
@@ -283,10 +300,13 @@ export const DocumentProvider: React.FC<{ children: React.ReactNode }> = ({
 
       setDocuments((prev) => {
         const next = new Map(prev);
-        const history = next.get(address) ?? {
-          address,
+        const history = next.get(documentId) ?? {
+          address: documentId,
           versions: [],
+          owner,
         };
+
+        if (!history.owner) history.owner = owner;
 
         const alreadyPresent = history.versions.some(
           (v) => v.event.id === document.id,
@@ -306,7 +326,7 @@ export const DocumentProvider: React.FC<{ children: React.ReactNode }> = ({
           },
         ].sort((a, b) => a.event.created_at - b.event.created_at);
 
-        next.set(address, history);
+        next.set(documentId, history);
         return next;
       });
     },

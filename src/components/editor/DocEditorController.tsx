@@ -253,7 +253,8 @@ export function DocumentEditorController({
   // viewKey present but no editKey = shared read-only link
   const { user } = useUser();
   const history = selectedDocumentId ? documents.get(selectedDocumentId) : null;
-  const isOwner = !!user?.pubkey && !!history?.versions[0]?.event.pubkey && user.pubkey === history.versions[0].event.pubkey;
+  const docOwner = history?.owner ?? history?.versions[0]?.event.pubkey;
+  const isOwner = !!user?.pubkey && !!docOwner && user.pubkey === docOwner;
   const sharedAsAddress = selectedDocumentId ? (docSharedAs.get(selectedDocumentId) ?? null) : null;
   const isViewOnly = (!!viewKey && !editKey && !isOwner) || !!sharedAsAddress;
   const commentsEnabled = !!viewKey && !!selectedDocumentId;
