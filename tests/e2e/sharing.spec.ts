@@ -66,6 +66,15 @@ test("open share: a collaborator edits and the owner sees it", async ({
     timeout: 20_000,
   });
 
+  // Collaboration is intentional: the editor is read-only until the Yjs session
+  // finishes its initial sync, so wait for the "connecting" notice to clear.
+  await expect(editor.getByText("Connecting to collaborators…")).toBeVisible({
+    timeout: 20_000,
+  });
+  await expect(editor.getByText("Connecting to collaborators…")).toBeHidden({
+    timeout: 20_000,
+  });
+
   // 4. Switch to the visual editor and append text.
   await editor.getByRole("button", { name: "More actions" }).click();
   await editor.getByRole("menuitem", { name: "Visual editor" }).click();
