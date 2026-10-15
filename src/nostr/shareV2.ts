@@ -70,9 +70,10 @@ export async function enableGroupSharing(
   members: DocMember[] = [],
   mode: DocMode = "restricted",
   createdAt?: number,
-): Promise<void> {
-  await publishOwnerContent(owner, d, viewKey, content, relays, createdAt);
+): Promise<Event> {
+  const event = await publishOwnerContent(owner, d, viewKey, content, relays, createdAt);
   await saveRoster(owner, d, viewKey, { v: 2, mode, tags: [], members }, relays);
+  return event;
 }
 
 /**

@@ -831,9 +831,10 @@ export function DocumentEditorController({
     // Collab docs get their content from the Yjs doc (via Collaboration), not
     // from the markdown snapshot.
     content: isCollabReady ? undefined : initialContent,
-    // Block editing while a collab session is still connecting so nothing typed
-    // into the pre-collab editor is discarded when it's recreated.
-    editable: mode !== "preview" && !(isCollabDoc && !isCollabReady),
+    // Editing is never blocked. While a collab session is still connecting the
+    // user edits the plain-markdown editor; those keystrokes live in mdRef and
+    // are carried into the shared doc by the seed effect when it becomes ready.
+    editable: mode !== "preview",
     onUpdate: ({ editor }) => {
       // Only trust TipTap as the source of truth in WYSIWYG mode. Spurious
       // onUpdate calls fire during mode transitions (EditorContent remount,
@@ -897,8 +898,10 @@ export function DocumentEditorController({
   // A brand-new collab session's Y.Doc starts empty and the Collaboration
   // extension can't know the pre-collab markdown snapshot. Give the initial
   // sync-step round-trip a chance to pull a peer's history first (the
-  // isCollabReady grace period); only seed if the doc is still empty. Runs at
-  // most once per editor instance so it never clobbers collaborators' content.
+  // isCollabReady grace period); only seed if the doc is still empty. The seed
+  // uses mdRef (the live editor markdown) rather than the original snapshot, so
+  // anything the user typed while the session was connecting is preserved. Runs
+  // at most once per editor instance so it never clobbers collaborators' content.
   const seededCollabDocRef = useRef(false);
   useEffect(() => {
     seededCollabDocRef.current = false;
@@ -906,8 +909,10 @@ export function DocumentEditorController({
   useEffect(() => {
     if (!isCollabReady || !editor || seededCollabDocRef.current) return;
     seededCollabDocRef.current = true;
-    if (!editor.getText().trim() && initialContent.trim()) {
-      editor.commands.setContent(initialContent);
+    if (editor.getText().trim()) return;
+    const seedSource = mdRef.current.trim() ? mdRef.current : initialContent;
+    if (seedSource.trim()) {
+      editor.commands.setContent(seedSource);
     }
   }, [isCollabReady, editor, initialContent]);
 
@@ -2201,7 +2206,7 @@ export function DocumentEditorController({
               // owner's last version (relays drop equal-or-older replaceables).
               const lastAt = history?.versions.at(-1)?.event.created_at ?? 0;
               const createdAt = nextContentCreatedAt(lastAt);
-              await enableGroupSharing(
+              const sharedEvent = await enableGroupSharing(
                 target.owner,
                 target.d,
                 vk,
@@ -2210,6 +2215,14 @@ export function DocumentEditorController({
                 open ? [] : shareMembers,
                 mode,
                 createdAt,
+              );
+              // Register the viewKey+version locally right away so this session's
+              // live/hydration paths decrypt the owner's own viewKey-encrypted
+              // events instead of attempting a self-decrypt.
+              await addDocument(
+                sharedEvent,
+                { viewKey: vk },
+                { documentId: selectedDocumentId, owner: target.owner },
               );
               setShareMode(mode);
               // Adopt the viewKey so this session keeps encrypting with it.

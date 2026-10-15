@@ -278,7 +278,22 @@ export const DocumentProvider: React.FC<{ children: React.ReactNode }> = ({
       const owner = ref?.owner ?? document.pubkey;
 
       const cachedEntry = localEntriesRef.current.get(documentId);
-      const viewKey = keys?.viewKey ?? cachedEntry?.viewKey;
+      let viewKey = keys?.viewKey ?? cachedEntry?.viewKey;
+      if (!viewKey) {
+        // A v2 event carries ["a", root]; if we already hold that document's
+        // viewKey in the local store (e.g. the owner's own re-published event),
+        // use it instead of wrongly attempting a self-decrypt.
+        const eventRoot = document.tags.find((t) => t[0] === "a")?.[1];
+        const wantAddress = eventRoot ?? documentId;
+        const wantD = wantAddress.split(":").slice(2).join(":");
+        for (const [addr, e] of localEntriesRef.current.entries()) {
+          if (!e.viewKey) continue;
+          if (addr === wantAddress || addr.split(":").slice(2).join(":") === wantD) {
+            viewKey = e.viewKey;
+            break;
+          }
+        }
+      }
 
       if (keys?.viewKey || keys?.editKey) {
         const existing = localEntriesRef.current.get(documentId);
