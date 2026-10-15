@@ -33,6 +33,7 @@ export async function publishOwnerContent(
   viewKey: string,
   content: string,
   relays: string[],
+  createdAt?: number,
 ): Promise<Event> {
   const signer = await signerManager.getSigner();
   if (!signer) throw new Error("No signer");
@@ -47,7 +48,7 @@ export async function publishOwnerContent(
     kind: KIND_FILE,
     tags: [["d", d], ["a", rootAddress(owner, d)]],
     content: encrypted,
-    created_at: Math.floor(Date.now() / 1000),
+    created_at: createdAt ?? Math.floor(Date.now() / 1000),
   });
 
   await publishEvent(signed, relays);
@@ -68,8 +69,9 @@ export async function enableGroupSharing(
   relays: string[],
   members: DocMember[] = [],
   mode: DocMode = "restricted",
+  createdAt?: number,
 ): Promise<void> {
-  await publishOwnerContent(owner, d, viewKey, content, relays);
+  await publishOwnerContent(owner, d, viewKey, content, relays, createdAt);
   await saveRoster(owner, d, viewKey, { v: 2, mode, tags: [], members }, relays);
 }
 

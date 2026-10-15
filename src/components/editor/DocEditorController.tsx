@@ -284,7 +284,9 @@ export function DocumentEditorController({
   }, [selectedDocumentId, viewKey, isOwner, editKey, user?.pubkey, relays]);
 
   const canWrite = isOwner || !!editKey || groupCanWrite;
-  const isViewOnly = !canWrite || !!sharedAsAddress;
+  // Only shared documents (a viewKey or a legacy backup link) can be view-only;
+  // drafts and personal docs must keep their editing UI (the original rule).
+  const isViewOnly = (!!viewKey && !canWrite) || !!sharedAsAddress;
   const commentsEnabled = !!viewKey && !!selectedDocumentId;
 
   const sharedAsUrl = sharedAsAddress ? buildSharedDocPath(sharedAsAddress, getKeys) : null;
@@ -1223,6 +1225,12 @@ export function DocumentEditorController({
     // can be found without enumerating authors (`#a`) and so two documents sharing
     // a `d` never collide. Legacy readers ignore the extra tag.
     const eventTags = [["d", dTag], ["a", address]];
+    // Relays drop replaceable events whose created_at is not strictly newer, and
+    // created_at has 1s granularity — so two saves in the same second (or a
+    // re-publish right after a save, e.g. sharing) would be silently discarded.
+    // Keep the timestamp strictly above this document's newest known version.
+    const prevAt = documents.get(address)?.versions.at(-1)?.event.created_at ?? 0;
+    const createdAt = Math.max(Math.floor(Date.now() / 1000), prevAt + 1);
     const encryptedContent = await encryptContent(content, viewKey);
     if (!encryptedContent) throw new Error("Encryption failed");
 
@@ -1241,7 +1249,7 @@ export function DocumentEditorController({
         kind: KIND_FILE,
         tags: eventTags,
         content: encryptedContent,
-        created_at: Math.floor(Date.now() / 1000),
+        created_at: createdAt,
         pubkey,
       };
       stored = { ...template, id: getEventHash(template), sig: "" };
@@ -1251,7 +1259,7 @@ export function DocumentEditorController({
           kind: KIND_FILE,
           tags: eventTags,
           content: encryptedContent,
-          created_at: Math.floor(Date.now() / 1000),
+          created_at: createdAt,
         },
         hexToBytes(editKey),
       );
@@ -1262,7 +1270,7 @@ export function DocumentEditorController({
         kind: KIND_FILE,
         tags: eventTags,
         content: encryptedContent,
-        created_at: Math.floor(Date.now() / 1000),
+        created_at: createdAt,
       });
     }
 
@@ -2024,6 +2032,10 @@ export function DocumentEditorController({
             if (target) {
               const vk = viewKey ?? bytesToHex(generateSecretKey());
               const mode: DocMode = open ? "open" : "restricted";
+              // Make sure the viewKey-encrypted re-publish strictly supersedes the
+              // owner's last version (relays drop equal-or-older replaceables).
+              const lastAt = history?.versions.at(-1)?.event.created_at ?? 0;
+              const createdAt = Math.max(Math.floor(Date.now() / 1000), lastAt + 1);
               await enableGroupSharing(
                 target.owner,
                 target.d,
@@ -2032,6 +2044,7 @@ export function DocumentEditorController({
                 relays,
                 open ? [] : shareMembers,
                 mode,
+                createdAt,
               );
               setShareMode(mode);
               // Adopt the viewKey so this session keeps encrypting with it.

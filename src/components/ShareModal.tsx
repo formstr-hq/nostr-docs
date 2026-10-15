@@ -154,6 +154,7 @@ export default function ShareModal({ open, onClose, onPrivateLink, onPublish, ex
                   setError("");
                 }}
                 color="secondary"
+                slotProps={{ input: { "aria-label": "Can edit" } }}
               />
               <Typography color="text.secondary">Can edit</Typography>
             </Box>
@@ -179,6 +180,7 @@ export default function ShareModal({ open, onClose, onPrivateLink, onPublish, ex
                   }}
                   color="secondary"
                   size="small"
+                  slotProps={{ input: { "aria-label": "Anyone with the link can edit" } }}
                 />
                 <Typography color="text.secondary" sx={{ fontSize: "0.8rem" }}>Anyone with the link</Typography>
               </Box>
