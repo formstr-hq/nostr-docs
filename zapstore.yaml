@@ -25,9 +25,12 @@ tags:
 license: MIT
 website: https://pages.formstr.app
 images:
-  - Screenshots/1.png
-  - Screenshots/2.png
-  - Screenshots/3.png
+  - Screenshots/1-home.png
+  - Screenshots/2-editor.png
+  - Screenshots/3-actions.png
+  - Screenshots/4-share.png
+  - Screenshots/5-workspaces.png
+  - Screenshots/6-signin.png
 release_notes: ./CHANGELOG.md
 release_source: ./android/app/build/outputs/apk/release/app-release.apk
 metadata_sources:
