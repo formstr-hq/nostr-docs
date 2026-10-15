@@ -447,6 +447,10 @@ export default function AllPagesView() {
         width: "100%",
         height: "100%",
         overflowY: "auto",
+        // Never scroll horizontally — a card with a long unbreakable title/tag
+        // must wrap/clip, not widen the page (the mobile WebView showed an
+        // unwanted horizontal scroll otherwise).
+        overflowX: "hidden",
         pt: { xs: 0, md: 6 },
         px: { xs: 2.5, sm: 3, md: 4 },
         pb: { xs: 12, md: 5 },
@@ -855,6 +859,11 @@ export default function AllPagesView() {
                 borderColor: "divider",
                 p: { xs: 2.25, sm: 2.5 },
                 minHeight: { xs: 160, sm: 190 },
+                // Let the grid track shrink below the card's content width, so a
+                // long title/tag can't force horizontal overflow.
+                minWidth: 0,
+                maxWidth: "100%",
+                overflow: "hidden",
                 display: "flex",
                 flexDirection: "column",
                 justifyContent: "space-between",
@@ -951,7 +960,7 @@ export default function AllPagesView() {
               </Box>
 
               {/* Card Middle: Title & Tags */}
-              <Box sx={{ my: 1.5 }}>
+              <Box sx={{ my: 1.5, minWidth: 0 }}>
                 <Typography
                   variant="subtitle1"
                   sx={{
@@ -963,6 +972,7 @@ export default function AllPagesView() {
                     WebkitLineClamp: 2,
                     WebkitBoxOrient: "vertical",
                     overflow: "hidden",
+                    overflowWrap: "anywhere",
                     mb: 1,
                   }}
                 >
@@ -970,7 +980,7 @@ export default function AllPagesView() {
                 </Typography>
 
                 {itemTags.length > 0 && (
-                  <Box sx={{ display: "flex", gap: 0.5, flexWrap: "wrap" }}>
+                  <Box sx={{ display: "flex", gap: 0.5, flexWrap: "wrap", minWidth: 0, overflow: "hidden" }}>
                     {itemTags.slice(0, 3).map((t) => {
                       const normT = t.trim().toLowerCase().replace(/^#/, "");
                       const isTagActive = selectedTag?.toLowerCase() === normT;
