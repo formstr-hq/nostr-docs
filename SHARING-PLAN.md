@@ -160,27 +160,26 @@ and legacy tags/titles are unaffected.
 **Done when:** a v2 doc with two editors shows the newest author's version to all
 of them; a legacy edit-key link still opens and edits.
 
-### Phase 4 — share flow v2 + modes
+### Phase 4 — share flow v2 + modes ✅ (done)
 - Data layer ✅: `shareV2.ts` — `enableGroupSharing` (re-publish owner content
-  under viewKey + roster), `updateRosterMembers` / `upsertMember` / `removeMember`.
-- **`a` tag**: stamp `["a", rootAddress]` on every v2 content event (save + share)
-  so open mode can resolve by `#a`. Backward compatible — legacy readers ignore it.
-- **Mode**: the control event gains `mode: "restricted" | "open"`. Restricted →
-  member UI (npub input ✅). Open → no member UI; resolution queries `#a` and
-  accepts any viewKey-decryptable version.
-- **UI**: share dialog gets an access selector — View only / Anyone with the link
-  can edit (open) / Invited editors only (restricted). URL stays
-  `#nkeys({viewKey})`. Legacy edit-key path kept; never rotate.
+  under viewKey + roster), `updateRosterMembers` / `upsertMember` / `removeMember`
+  / `setDocMode`.
+- **`a` tag** ✅: every v2 content event carries `["a", rootAddress]`; open mode
+  resolves by `#a`.
+- **Mode** ✅: the control event carries `mode: "restricted" | "open"`; the share
+  dialog has the View / Anyone-with-the-link / Invited-editors selector.
+- **UI** ✅: editors list (add/remove by npub or hex); owner v2 share path.
+- **Editor write path** ✅: non-owners may edit when open mode or a roster editor;
+  their version is keyed under the root document.
 
-**Done when:** the owner picks a mode, adds an editor (restricted) or shares an
-open link, the counterpart opens/edits, and all see the tip under the mode's
-resolution.
+**Done:** owner shares (either mode), the counterpart opens/edits, and all see the
+tip; legacy links are untouched. e2e: `tests/e2e/sharing.spec.ts` (open mode).
 
-### Phase 5 — shared-with-me list
-- Participant entries add `role` and the doc `mode`; the owner's roster is the
-  owner's own entry.
-- `SharedDocsContext` list continues to work for legacy entries; open-mode docs
-  resolve by `#a` instead of a roster author set.
+### Phase 5 — shared-with-me list (works; minor polish left)
+- Participant entries store `viewKey` (self-encrypted, kind 34579) and resolve
+  the roster on demand; the list works for legacy and v2 entries.
+- Optional polish: surface the owner's roster title/tags to participants (they
+  currently read only their own metadata) and store `role`/`mode` on the entry.
 
 ### Phase 6 — CRDT merge (compatibility-first)
 The storage is already CRDT-shaped (see **CRDT compatibility**); this phase adds
