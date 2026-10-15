@@ -17,14 +17,14 @@ import {
 import ContentCopyIcon from "@mui/icons-material/ContentCopy";
 import ArticleIcon from "@mui/icons-material/Article";
 import DescriptionIcon from "@mui/icons-material/Description";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 type Props = {
   open: boolean;
   onClose: () => void;
   onPublicPost?: () => void;
   onPublish?: (target: "longform" | "communityNip") => void;
-  onPrivateLink?: (canEdit: boolean, rotate?: boolean) => Promise<string | void>;
+  onPrivateLink?: (canEdit: boolean, rotate?: boolean, open?: boolean) => Promise<string | void>;
   existingViewLink?: string;
   existingEditLink?: string;
   /** v2 group share: current editors (owner-managed). */
@@ -34,14 +34,17 @@ type Props = {
   onRemoveEditor?: (pubkey: string) => Promise<void>;
   /** True when the selected doc is a v2 group document (tweaks copy). */
   v2?: boolean;
+  /** Current v2 write mode, if any. */
+  mode?: "restricted" | "open";
 };
 
 function shortPubkey(pubkey: string): string {
   return pubkey.length > 16 ? `${pubkey.slice(0, 10)}…${pubkey.slice(-6)}` : pubkey;
 }
 
-export default function ShareModal({ open, onClose, onPrivateLink, onPublish, existingViewLink = "", existingEditLink = "", members = [], onAddEditor, onRemoveEditor, v2 = false }: Props) {
+export default function ShareModal({ open, onClose, onPrivateLink, onPublish, existingViewLink = "", existingEditLink = "", members = [], onAddEditor, onRemoveEditor, v2 = false, mode }: Props) {
   const [canEdit, setCanEdit] = useState(false);
+  const [openEdit, setOpenEdit] = useState(mode === "open");
   const [generatedLink, setGeneratedLink] = useState<string>("");
   const [loading, setLoading] = useState(false);
   const [toastOpen, setToastOpen] = useState(false);
@@ -49,6 +52,11 @@ export default function ShareModal({ open, onClose, onPrivateLink, onPublish, ex
   const [editorInput, setEditorInput] = useState("");
   const [editorBusy, setEditorBusy] = useState(false);
   const [editorError, setEditorError] = useState("");
+
+  // Reflect the document's current mode each time the dialog opens.
+  useEffect(() => {
+    if (open) setOpenEdit(mode === "open");
+  }, [open, mode]);
 
   const handleAddEditor = async () => {
     if (!onAddEditor) return;
@@ -91,7 +99,7 @@ export default function ShareModal({ open, onClose, onPrivateLink, onPublish, ex
     setError("");
     try {
       const isRotate = !canEdit && !!existingViewLink;
-      const url = await onPrivateLink(canEdit, isRotate);
+      const url = await onPrivateLink(canEdit, isRotate, openEdit);
       if (typeof url === "string") {
         setGeneratedLink(url);
       } else {
@@ -159,6 +167,23 @@ export default function ShareModal({ open, onClose, onPrivateLink, onPublish, ex
                 : "Anyone with the link can read this page. Generating again rotates access — previously shared view links stop working."}
             </Typography>
 
+            {canEdit && (
+              <Box sx={{ display: "flex", alignItems: "center", gap: 1, mt: 1 }}>
+                <Typography color="text.secondary" sx={{ fontSize: "0.8rem" }}>Invited editors only</Typography>
+                <Switch
+                  checked={openEdit}
+                  onChange={() => {
+                    setOpenEdit((v) => !v);
+                    setGeneratedLink("");
+                    setError("");
+                  }}
+                  color="secondary"
+                  size="small"
+                />
+                <Typography color="text.secondary" sx={{ fontSize: "0.8rem" }}>Anyone with the link</Typography>
+              </Box>
+            )}
+
             {!(canEdit && !!existingEditLink) && (
               <Button
                 variant="contained"
@@ -204,8 +229,8 @@ export default function ShareModal({ open, onClose, onPrivateLink, onPublish, ex
             )}
           </Box>
 
-          {/* EDITORS (v2 group share) */}
-          {onAddEditor && (
+          {/* EDITORS (v2 group share, restricted mode) */}
+          {onAddEditor && canEdit && !openEdit && (
             <Box sx={{ bgcolor: (theme) => `${theme.palette.primary.main}08`, borderRadius: 0.75, border: '1px solid rgba(255,255,255,0.06)', p: 2 }}>
               <Typography sx={{ textTransform: 'uppercase', fontSize: '0.7rem', letterSpacing: '1px', color: 'text.secondary', fontWeight: 700, mb: 1 }}>EDITORS</Typography>
               <Typography color="text.secondary" sx={{ mb: 1 }}>

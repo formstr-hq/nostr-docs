@@ -27,6 +27,14 @@ export const MAX_CLOCK_SKEW_SEC = 5 * 60;
 
 export type DocRole = "editor" | "viewer";
 
+/**
+ * How write access is granted:
+ * - `restricted` — only listed `editor` members (and the owner) may author.
+ * - `open` — capability model: any holder of the viewKey may author.
+ * Control metadata (roster/mode/title/tags) is always owner-authored either way.
+ */
+export type DocMode = "restricted" | "open";
+
 export interface DocMember {
   pubkey: string;
   role: DocRole;
@@ -38,6 +46,7 @@ export interface DocMember {
  */
 export interface DocRoster {
   v: 2;
+  mode: DocMode;
   title?: string;
   tags: string[];
   members: DocMember[];
@@ -115,6 +124,7 @@ export function parseRosterPayload(payload: string): DocRoster | null {
       .map((m) => ({ pubkey: m.pubkey, role: m.role }));
     return {
       v: 2,
+      mode: parsed.mode === "open" ? "open" : "restricted",
       title: typeof parsed.title === "string" ? parsed.title : undefined,
       tags: Array.isArray(parsed.tags)
         ? parsed.tags.filter((t): t is string => typeof t === "string")
@@ -136,8 +146,9 @@ export function decodeRosterEvent(event: Event, viewKey: string): DocRoster | nu
 }
 
 /**
- * The set of pubkeys authorized to author content: the owner plus every member
- * with the `editor` role. `viewer` entries are excluded.
+ * The set of pubkeys authorized to author content in `restricted` mode: the
+ * owner plus every member with the `editor` role. Meaningless in `open` mode,
+ * where any viewKey holder may author (see `isOpenRoster`).
  */
 export function authorSet(owner: string, roster: DocRoster | null): string[] {
   const set = new Set<string>([owner]);
@@ -147,6 +158,11 @@ export function authorSet(owner: string, roster: DocRoster | null): string[] {
     }
   }
   return [...set];
+}
+
+/** True when write access is by capability (viewKey) rather than a roster. */
+export function isOpenRoster(roster: DocRoster | null): boolean {
+  return roster?.mode === "open";
 }
 
 /**
@@ -194,7 +210,11 @@ export function selectTip(events: Event[], now = Date.now()): Event | null {
 
 /**
  * Fetch the newest content event for every authorized author of a document.
- * One filter; relays return the latest replaceable event per (author, d).
+ *
+ * - `open` mode: query by `["a", root]` (no author filter) so versions by
+ *   unknown authors are discoverable; callers must decrypt-filter.
+ * - `restricted`/legacy: one `authors + #d` filter; relays return the latest
+ *   replaceable event per author.
  */
 export async function fetchGroupEvents(
   owner: string,
@@ -202,6 +222,12 @@ export async function fetchGroupEvents(
   roster: DocRoster | null,
   relays?: string[],
 ): Promise<Event[]> {
+  if (isOpenRoster(roster)) {
+    return fetchMany(
+      [{ kinds: [KIND_FILE], "#a": [rootAddress(owner, d)] }],
+      relays,
+    );
+  }
   const authors = authorSet(owner, roster);
   return fetchMany(
     [{ kinds: [KIND_FILE], authors, "#d": [d] }],
@@ -219,9 +245,11 @@ export interface ResolvedDocument {
 }
 
 /**
- * Full group resolution: fetch the roster, derive the author set, fetch every
- * author's newest content event, and pick the tip. When the roster is absent the
- * group degenerates to a single-author document owned by `owner`.
+ * Full group resolution: fetch the roster, derive the query rule from its mode,
+ * fetch the matching content events, and pick the tip. Only events that decrypt
+ * with the viewKey are returned, so `open` mode cannot inject undecryptable
+ * spam into the document. When the roster is absent the group degenerates to a
+ * single-author document owned by `owner`.
  */
 export async function resolveSharedDocument(
   owner: string,
@@ -231,7 +259,17 @@ export async function resolveSharedDocument(
 ): Promise<ResolvedDocument> {
   const roster = await fetchRoster(owner, d, viewKey, relays);
   const authors = authorSet(owner, roster);
-  const events = await fetchGroupEvents(owner, d, roster, relays);
+  const fetched = await fetchGroupEvents(owner, d, roster, relays);
+
+  const events = fetched.filter((e) => {
+    try {
+      decryptWithViewKey(e.content, viewKey);
+      return true;
+    } catch {
+      return false;
+    }
+  });
+
   return {
     owner,
     d,

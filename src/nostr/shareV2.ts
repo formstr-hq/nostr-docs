@@ -16,7 +16,7 @@ import { signerManager } from "../signer";
 import { publishEvent } from "./publish";
 import { KIND_FILE } from "./kinds";
 import { cacheLocalEvents } from "../dataLayer";
-import { encryptWithViewKey, fetchRoster, rootAddress, type DocMember, type DocRole } from "./sharedDoc";
+import { encryptWithViewKey, fetchRoster, rootAddress, type DocMember, type DocMode, type DocRole } from "./sharedDoc";
 import {
   saveRoster,
   type DocMetadata,
@@ -57,8 +57,8 @@ export async function publishOwnerContent(
 
 /**
  * Turn the owner's document into a v2 group document: publish the owner's
- * content under the viewKey and an (initially empty) roster. `members` may seed
- * editors immediately.
+ * content under the viewKey and a roster. `members` seeds editors (restricted
+ * mode); `mode` selects capability ("open") vs roster ("restricted") writes.
  */
 export async function enableGroupSharing(
   owner: string,
@@ -67,14 +67,16 @@ export async function enableGroupSharing(
   content: string,
   relays: string[],
   members: DocMember[] = [],
+  mode: DocMode = "restricted",
 ): Promise<void> {
   await publishOwnerContent(owner, d, viewKey, content, relays);
-  await saveRoster(owner, d, viewKey, { v: 2, tags: [], members }, relays);
+  await saveRoster(owner, d, viewKey, { v: 2, mode, tags: [], members }, relays);
 }
 
 /**
  * Replace the roster's member list, preserving any title/tags already stored on
- * the owner's roster metadata. Owner-only.
+ * the owner's roster metadata (and the current mode unless `mode` is given).
+ * Owner-only.
  */
 export async function updateRosterMembers(
   owner: string,
@@ -82,15 +84,35 @@ export async function updateRosterMembers(
   viewKey: string,
   members: DocMember[],
   relays: string[],
+  mode?: DocMode,
 ): Promise<void> {
   const current = await fetchRoster(owner, d, viewKey, relays);
   const roster: DocMetadata = {
     v: 2,
+    mode: mode ?? current?.mode ?? "restricted",
     tags: current?.tags ?? [],
     title: current?.title,
     members,
   };
   await saveRoster(owner, d, viewKey, roster, relays);
+}
+
+/** Switch the document's write-authorization mode, preserving everything else. */
+export async function setDocMode(
+  owner: string,
+  d: string,
+  viewKey: string,
+  mode: DocMode,
+  relays: string[],
+): Promise<void> {
+  const current = await fetchRoster(owner, d, viewKey, relays);
+  await saveRoster(owner, d, viewKey, {
+    v: 2,
+    mode,
+    tags: current?.tags ?? [],
+    title: current?.title,
+    members: current?.members ?? [],
+  }, relays);
 }
 
 /** Insert or update a member (idempotent by pubkey). */

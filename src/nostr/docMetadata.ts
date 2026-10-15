@@ -8,6 +8,7 @@ import {
   encryptWithViewKey,
   rosterDTag,
   type DocMember,
+  type DocMode,
 } from "./sharedDoc";
 
 export interface DocMetadata {
@@ -18,6 +19,8 @@ export interface DocMetadata {
   sharedAs?: string; // address of the shared (editKey-signed) copy
   /** Present (2) only on the owner's viewKey-encrypted roster for a group doc. */
   v?: number;
+  /** v2 access mode for content versions. */
+  mode?: DocMode;
   /** v2 group-doc roster: authorized authors and roles. */
   members?: DocMember[];
 }
@@ -117,6 +120,7 @@ export function metadataEqual(a: DocMetadata | undefined, b: DocMetadata | undef
   if (a.editKey !== b.editKey) return false;
   if (a.sharedAs !== b.sharedAs) return false;
   if (a.v !== b.v) return false;
+  if (a.mode !== b.mode) return false;
   const am = a.members ?? [];
   const bm = b.members ?? [];
   if (am.length !== bm.length) return false;

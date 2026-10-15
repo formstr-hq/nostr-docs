@@ -96,10 +96,11 @@ export const SharedPagesProvider: React.FC<{ children: React.ReactNode }> = ({
       d: string;
       viewKey: string;
       editKey?: string;
+      open: boolean;
       authors: Set<string>;
     };
     const entries: Entry[] = [];
-    const filters: { kinds: number[]; "#d": string[]; authors?: string[] }[] = [];
+    const filters: { kinds: number[]; "#d"?: string[]; "#a"?: string[]; authors?: string[] }[] = [];
 
     for (const t of sharedDocs) {
       const [addr, viewKey, editKey] = t;
@@ -114,6 +115,7 @@ export const SharedPagesProvider: React.FC<{ children: React.ReactNode }> = ({
         roster = null;
       }
 
+      const open = roster?.mode === "open";
       const authorsList = authorSet(parsed.owner, roster);
       entries.push({
         root: addr,
@@ -121,9 +123,16 @@ export const SharedPagesProvider: React.FC<{ children: React.ReactNode }> = ({
         d: parsed.d,
         viewKey,
         editKey,
+        open,
         authors: new Set(authorsList),
       });
-      filters.push({ kinds: [KIND_FILE], authors: authorsList, "#d": [parsed.d] });
+      // `open` mode has no author set to filter on: discover versions by the
+      // root `a` tag instead. Restricted/legacy keeps the bounded author filter.
+      if (open) {
+        filters.push({ kinds: [KIND_FILE], "#a": [addr] });
+      } else {
+        filters.push({ kinds: [KIND_FILE], authors: authorsList, "#d": [parsed.d] });
+      }
     }
 
     if (filters.length === 0) return;
@@ -135,7 +144,12 @@ export const SharedPagesProvider: React.FC<{ children: React.ReactNode }> = ({
           const dTag = event.tags.find((t) => t[0] === "d")?.[1];
           if (!dTag) return;
 
-          const entry = entries.find((e) => e.d === dTag && e.authors.has(event.pubkey));
+          const eventRoot = event.tags.find((t) => t[0] === "a")?.[1];
+          const entry = entries.find((e) =>
+            e.open
+              ? eventRoot === e.root || dTag === e.d
+              : e.d === dTag && e.authors.has(event.pubkey),
+          );
           if (!entry) return;
 
           const conversationKey = nip44.getConversationKey(

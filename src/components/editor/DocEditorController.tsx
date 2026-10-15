@@ -99,7 +99,7 @@ import { useBlossomServers } from "../../contexts/BlossomContext";
 import { KIND_FILE } from "../../nostr/kinds";
 import { getLatestVersion } from "../../utils/helpers";
 import { enableGroupSharing, updateRosterMembers, upsertMember, removeMember } from "../../nostr/shareV2";
-import { fetchRoster, type DocMember } from "../../nostr/sharedDoc";
+import { fetchRoster, type DocMember, type DocMode } from "../../nostr/sharedDoc";
 import { encodeNKeys } from "../../utils/nkeys";
 import {
   exportAsMarkdown,
@@ -346,12 +346,14 @@ export function DocumentEditorController({
   }>({ open: false, message: "", severity: "success" });
   const [shareOpen, setShareOpen] = useState(false);
   const [shareMembers, setShareMembers] = useState<DocMember[]>([]);
+  const [shareMode, setShareMode] = useState<DocMode | undefined>(undefined);
 
-  // Load the v2 roster's member list for the share dialog (owner only). Reuses
-  // the viewKey the owner already holds; no-ops for legacy/personal docs.
+  // Load the v2 roster (members + mode) for the share dialog (owner only).
+  // Reuses the viewKey the owner already holds; no-ops for legacy/personal docs.
   useEffect(() => {
     if (!shareOpen || !isOwner || !viewKey || !selectedDocumentId) {
       setShareMembers([]);
+      setShareMode(undefined);
       return;
     }
     const parsed = selectedDocumentId.split(":");
@@ -361,7 +363,10 @@ export function DocumentEditorController({
     let cancelled = false;
     (async () => {
       const roster = await fetchRoster(owner, d, viewKey, relays).catch(() => null);
-      if (!cancelled) setShareMembers(roster?.members ?? []);
+      if (!cancelled) {
+        setShareMembers(roster?.members ?? []);
+        setShareMode(roster?.mode);
+      }
     })();
     return () => {
       cancelled = true;
@@ -392,8 +397,9 @@ export function DocumentEditorController({
     }
     if (!hex) throw new Error("Enter a valid npub or 64-character hex pubkey.");
     const next = upsertMember(shareMembers, hex, "editor");
-    await updateRosterMembers(target.owner, target.d, viewKey, next, relays);
+    await updateRosterMembers(target.owner, target.d, viewKey, next, relays, "restricted");
     setShareMembers(next);
+    setShareMode("restricted");
     setToast({ open: true, message: "Editor added.", severity: "success" });
   };
 
@@ -1960,7 +1966,8 @@ export function DocumentEditorController({
         onAddEditor={isOwner && viewKey ? handleAddEditor : undefined}
         onRemoveEditor={isOwner && viewKey ? handleRemoveEditor : undefined}
         v2={isOwner}
-        onPrivateLink={async (canEdit, rotate) => {
+        mode={shareMode}
+        onPrivateLink={async (canEdit, rotate, open) => {
           // Edit-access re-share: reuse the existing keys and skip publishing.
           // Republishing would push our stale local copy over any edits the
           // collaborator has made through the live shared link.
@@ -1985,7 +1992,17 @@ export function DocumentEditorController({
             const target = parseShareTarget();
             if (target) {
               const vk = viewKey ?? bytesToHex(generateSecretKey());
-              await enableGroupSharing(target.owner, target.d, vk, md, relays, shareMembers);
+              const mode: DocMode = open ? "open" : "restricted";
+              await enableGroupSharing(
+                target.owner,
+                target.d,
+                vk,
+                md,
+                relays,
+                open ? [] : shareMembers,
+                mode,
+              );
+              setShareMode(mode);
               // Adopt the viewKey so this session keeps encrypting with it.
               // Mark the snapshot saved so the unsaved-changes blocker doesn't
               // intercept the navigation.
