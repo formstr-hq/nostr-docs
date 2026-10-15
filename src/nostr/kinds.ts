@@ -20,24 +20,6 @@ export const KIND_CRDT_OP = 22457;
 export const KIND_DOC_METADATA = 34579;
 
 /**
- * Ephemeral presence/awareness events (cursor position, active collaborators).
- * Content is NIP-44 encrypted (viewKey conversation key) base64-encoded
- * y-protocols/awareness updates. Signed by a per-tab session key. Uses
- * tag: ["a", <root address>].
- */
-export const KIND_PRESENCE = 24578;
-
-/**
- * Binds a per-tab collaboration session key to the real pubkey behind it, so
- * collaborators can be identified despite live ops being signed by the session
- * key. Addressable (must remain discoverable). Signed by the real signer.
- * Uses tag: ["d", "<root address>:<sessionPubkey>"]
- * Content is NIP-44 encrypted (viewKey conversation key) JSON:
- * { realPubkey: string, expiresAt: number }
- */
-export const KIND_SESSION_ATTESTATION = 34581;
-
-/**
  * Private encrypted inline comment anchored to a document.
  * Non-replaceable: comments accumulate.
  * Content is NIP-44 encrypted (viewKey conversation key) flat tag array.
