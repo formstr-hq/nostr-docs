@@ -74,7 +74,6 @@ export function useTrustedCollaborators(
         pending.push(
           (async () => {
             const resolved = await resolveSession(
-              docAddress,
               sessionPubkey,
               viewKey,
               relays,

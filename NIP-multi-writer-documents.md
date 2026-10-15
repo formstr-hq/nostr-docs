@@ -238,6 +238,33 @@ and why `open` is the mode that most needs the CRDT merge: LWW there degrades in
 - A future revision MAY add a `keyEpoch` field so old and new ciphertexts coexist
   and only current members can read new content.
 
+## Metadata and privacy
+
+NIP-44 encrypts only `content`. `kind`, `pubkey`, `created_at`, tags and sizes
+are public, so the following is deliberately recorded as known behaviour:
+
+- **Document identity and owner** — v2 content events are addressed by the root
+  (`33457:<owner>:<d>`) and carry `["a", <root>]`, so the document id and owner
+  are public, and (because each writer's slot is signed by their real key) the
+  set of writers sharing a `d` is discoverable. This is inherent to per-author
+  replaceable slots and is accepted in v1.
+- **Collaboration bus is de-linked** — CRDT ops (22457), presence (24578),
+  session attestations (34581) and Yjs checkpoints (34582) are tagged with a
+  **capability-derived room id** (`getPublicKey(viewKey)`) rather than the root.
+  Only viewKey holders can compute it, so a third party cannot find or link the
+  live collaboration stream from the public root. Relays still observe the live
+  traffic and its timing.
+- **Live activity is visible to relays** — ops fire on document changes and
+  presence sends a periodic heartbeat while the document is open, so a relay (or
+  any live subscriber) can tell that a document is being edited, by which
+  session key, and how often. Content and sizes are encrypted; timing is not.
+  Future mitigations: constant-rate/padded presence (cover traffic) and
+  debounced ops.
+- **Authorship** — content/checkpoints are signed by real keys; ops/presence use
+  short-lived session keys bound to a real key via a viewKey-encrypted
+  attestation, so identities are hidden from non-holders but the session↔doc
+  linkage (via the room) is observable.
+
 ## Security considerations
 
 - **viewKey compromise** exposes all content, past and future. There is no forward

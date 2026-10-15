@@ -4,7 +4,7 @@ import { signerManager } from "../signer";
 import { publishEventStrict } from "../nostr/publish";
 import { fetchOne } from "../dataLayer";
 import { encryptContent } from "../utils/encryption";
-import { decryptWithViewKey } from "../nostr/sharedDoc";
+import { decryptWithViewKey, collabRoom } from "../nostr/sharedDoc";
 import { KIND_SESSION_ATTESTATION } from "../nostr/kinds";
 
 // How long a session key's attestation is valid before another signer prompt is
@@ -112,7 +112,7 @@ export async function getOrCreateSession(
 
   const signed = await signer.signEvent({
     kind: KIND_SESSION_ATTESTATION,
-    tags: [["d", `${docAddress}:${sessionPubkey}`]],
+    tags: [["d", `${collabRoom(viewKey)}:${sessionPubkey}`]],
     content,
     created_at: Math.floor(Date.now() / 1000),
   });
@@ -145,12 +145,11 @@ const resolveCache = new Map<string, ResolveCacheEntry>();
  * unexpired attestation.
  */
 export async function resolveSession(
-  docAddress: string,
   sessionPubkey: string,
   viewKey: string,
   relays: string[],
 ): Promise<{ realPubkey: string } | null> {
-  const cacheKey = `${docAddress}:${sessionPubkey}`;
+  const cacheKey = `${collabRoom(viewKey)}:${sessionPubkey}`;
   const now = Date.now();
   const cached = resolveCache.get(cacheKey);
   if (cached) {

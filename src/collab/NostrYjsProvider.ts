@@ -12,7 +12,7 @@ import { finalizeEvent, nip44, type Event } from "nostr-tools";
 import { publishEvent } from "../nostr/publish";
 import { subscribe, type Subscription } from "../dataLayer";
 import { KIND_CRDT_OP, KIND_PRESENCE } from "../nostr/kinds";
-import { viewKeyConversationKey } from "../nostr/sharedDoc";
+import { viewKeyConversationKey, collabRoom } from "../nostr/sharedDoc";
 import type { Session } from "./sessionKeys";
 import { uint8ToBase64, base64ToUint8 } from "../utils/base64";
 
@@ -46,7 +46,7 @@ export class NostrYjsProvider {
   readonly sessionPubkey: string;
   lastSyncRequestAt: number | null = null;
 
-  private readonly docAddress: string;
+  private readonly room: string;
   private readonly ydoc: Y.Doc;
   private readonly relays: string[];
   private readonly session: Session;
@@ -91,7 +91,7 @@ export class NostrYjsProvider {
   };
 
   constructor(options: NostrYjsProviderOptions) {
-    this.docAddress = options.docAddress;
+    this.room = collabRoom(options.viewKey);
     this.ydoc = options.ydoc;
     this.relays = options.relays;
     this.session = options.session;
@@ -110,7 +110,7 @@ export class NostrYjsProvider {
     this.awareness.on("update", this.onAwarenessUpdate);
 
     this.sub = subscribe(
-      [{ kinds: [KIND_CRDT_OP, KIND_PRESENCE], "#a": [this.docAddress] }],
+      [{ kinds: [KIND_CRDT_OP, KIND_PRESENCE], "#a": [this.room] }],
       { onEvent: (event) => void this.handleIncoming(event) },
       this.relays,
     );
@@ -188,7 +188,7 @@ export class NostrYjsProvider {
     const event = finalizeEvent(
       {
         kind,
-        tags: [["a", this.docAddress]],
+        tags: [["a", this.room]],
         content,
         created_at: Math.floor(Date.now() / 1000),
       },

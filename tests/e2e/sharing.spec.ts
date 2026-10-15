@@ -1,10 +1,12 @@
 import { test, expect } from "@playwright/test";
+import { nip19 } from "nostr-tools";
 import {
   loginAsGuest,
   typeIntoEditor,
   save,
   unlockAfterReload,
   editorSurface,
+  queryLocalRelay,
 } from "./helpers";
 
 /**
@@ -86,6 +88,28 @@ test("open share: a collaborator edits and the owner sees it", async ({
   await expect(editor.getByText("Saved", { exact: true })).toBeVisible({
     timeout: 20_000,
   });
+
+  // Privacy: the collaboration bus (CRDT ops, presence, session attestations,
+  // Yjs checkpoints) is tagged with the capability-derived room, never the
+  // public document root — an observer must not be able to link it to the doc.
+  const rootNaddr = new URL(shareLink).pathname.split("/doc/")[1].split("/")[0];
+  const decodedRoot = nip19.decode(rootNaddr);
+  expect(decodedRoot.type).toBe("naddr");
+  const p = decodedRoot.data as nip19.AddressPointer;
+  const rootAddr = `${p.kind}:${p.pubkey}:${p.identifier}`;
+  const collabEvents = [
+    ...(await queryLocalRelay({ kinds: [22457] })),
+    ...(await queryLocalRelay({ kinds: [24578] })),
+    ...(await queryLocalRelay({ kinds: [34581] })),
+    ...(await queryLocalRelay({ kinds: [34582] })),
+  ];
+  expect(collabEvents.length, "expected some collaboration events").toBeGreaterThan(0);
+  for (const e of collabEvents) {
+    expect(
+      e.tags.flat(),
+      `collaboration event leaked the document root: ${JSON.stringify(e.tags)}`,
+    ).not.toContain(rootAddr);
+  }
 
   // 5. Owner reloads; open-mode resolution by `#a` must surface the newest
   //    version across authors, i.e. the collaborator's edit.

@@ -16,7 +16,7 @@ import { signerManager } from "../signer";
 import { publishEvent } from "./publish";
 import { KIND_FILE, KIND_YJS_CHECKPOINT } from "./kinds";
 import { cacheLocalEvents } from "../dataLayer";
-import { encryptWithViewKey, fetchRoster, rootAddress, type DocMember, type DocMode, type DocRole } from "./sharedDoc";
+import { collabRoom, encryptWithViewKey, fetchRoster, rootAddress, type DocMember, type DocMode, type DocRole } from "./sharedDoc";
 import {
   saveRoster,
   type DocMetadata,
@@ -39,21 +39,21 @@ function nextCheckpointCreatedAt(root: string): number {
  * writer and viewKey-encrypted; replaceable per author so it stays bounded.
  */
 export async function publishCheckpoint(
-  owner: string,
-  d: string,
   viewKey: string,
   yjsState: string,
   relays: string[],
 ): Promise<void> {
   const signer = await signerManager.getSigner();
   if (!signer) return;
-  const root = rootAddress(owner, d);
+  // Tagged with the capability-derived room (not the root), so the checkpoint
+  // cannot be linked to the document/owner without the viewKey.
+  const room = collabRoom(viewKey);
   const encrypted = encryptWithViewKey(yjsState, viewKey);
   const signed = await signer.signEvent({
     kind: KIND_YJS_CHECKPOINT,
-    tags: [["d", root], ["a", root]],
+    tags: [["d", room], ["a", room]],
     content: encrypted,
-    created_at: nextCheckpointCreatedAt(root),
+    created_at: nextCheckpointCreatedAt(room),
   });
   await publishEvent(signed, relays);
   cacheLocalEvents([signed]);

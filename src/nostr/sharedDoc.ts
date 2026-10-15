@@ -98,6 +98,19 @@ export function viewKeyConversationKey(viewKey: string): Uint8Array {
   return nip44.getConversationKey(bytes, getPublicKey(bytes));
 }
 
+/**
+ * Capability-derived, opaque identifier for a document's collaboration channel.
+ *
+ * Derived from the viewKey's public key, so only viewKey holders can compute it.
+ * It reveals nothing about the viewKey (ECDLP) and keeps the document's root
+ * address / owner out of the tags of presence, CRDT ops, checkpoints and session
+ * attestations — so a third party cannot find or link the collaboration bus from
+ * the (public) document root.
+ */
+export function collabRoom(viewKey: string): string {
+  return getPublicKey(hexToBytes(viewKey));
+}
+
 export function decryptWithViewKey(ciphertext: string, viewKey: string): string {
   return nip44.decrypt(ciphertext, viewKeyConversationKey(viewKey));
 }
@@ -321,10 +334,12 @@ export async function fetchYjsCheckpoints(
   relays?: string[],
 ): Promise<string[]> {
   const roster = await fetchRoster(owner, d, viewKey, relays);
-  const root = rootAddress(owner, d);
+  // Checkpoints are tagged with the capability-derived room, not the root, so
+  // relays/observers cannot link them to the document or its owner.
+  const room = collabRoom(viewKey);
   const filters = isOpenRoster(roster)
-    ? [{ kinds: [KIND_YJS_CHECKPOINT], "#a": [root] }]
-    : [{ kinds: [KIND_YJS_CHECKPOINT], authors: authorSet(owner, roster), "#d": [root] }];
+    ? [{ kinds: [KIND_YJS_CHECKPOINT], "#a": [room] }]
+    : [{ kinds: [KIND_YJS_CHECKPOINT], authors: authorSet(owner, roster), "#d": [room] }];
 
   const events = await fetchMany(filters, relays);
   const states: string[] = [];

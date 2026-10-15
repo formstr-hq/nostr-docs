@@ -1448,9 +1448,7 @@ export function DocumentEditorController({
       // Durable Yjs checkpoint in its own kind, so a later load can merge every
       // author's state instead of trusting one last-write-wins markdown snapshot.
       if (isCollabDocRef.current && collabRef.current && viewKey) {
-        const owner = address.split(":")[1];
-        const d = address.split(":").slice(2).join(":");
-        publishCheckpoint(owner, d, viewKey, collabRef.current.encodeState(), relays).catch(
+        publishCheckpoint(viewKey, collabRef.current.encodeState(), relays).catch(
           (err) => console.warn("Checkpoint publish failed:", err),
         );
       }
