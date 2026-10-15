@@ -28,6 +28,7 @@ import { publishEvent } from "../nostr/publish";
 import { encryptContent } from "../utils/encryption";
 import { makeTag } from "../utils/makeTag";
 import { subscribe, fetchCachedMany, fetchCachedByAddresses, resolveEventsByAddress, cacheLocalEvents, type Subscription } from "../dataLayer";
+import { authorSet, fetchRoster, isOpenRoster, parseRootAddress } from "../nostr/sharedDoc";
 
 type DocumentVersion = {
   event: Event;
@@ -636,28 +637,83 @@ export const DocumentProvider: React.FC<{ children: React.ReactNode }> = ({
 
       // ── Phase 4: Live relay subscription ─────────────────
       if (isCancelled) return;
+
+      // Group documents the user owns: also subscribe to every authorized author
+      // so an editor's version lands in the owner's document live (previously
+      // only the owner's own slot was subscribed). Restored each session from the
+      // roster; open-mode docs subscribe by `#a`.
+      type GroupSub = { root: string; owner: string; viewKey: string; d: string };
+      const groupByRoot = new Map<string, GroupSub>();
+      const groupFilters: {
+        kinds: number[];
+        authors?: string[];
+        "#d"?: string[];
+        "#a"?: string[];
+      }[] = [];
+      for (const entry of localEntries) {
+        if (!entry.viewKey) continue;
+        const parsed = parseRootAddress(entry.address);
+        if (!parsed || parsed.owner !== pubkey) continue;
+        if (groupByRoot.has(entry.address)) continue;
+        let roster;
+        try {
+          roster = await fetchRoster(parsed.owner, parsed.d, entry.viewKey, relays);
+        } catch {
+          roster = null;
+        }
+        if (isCancelled) return;
+        if (!roster) continue; // not a v2 group document
+        groupByRoot.set(entry.address, {
+          root: entry.address,
+          owner: parsed.owner,
+          viewKey: entry.viewKey,
+          d: parsed.d,
+        });
+        if (isOpenRoster(roster)) {
+          groupFilters.push({ kinds: [KIND_FILE], "#a": [entry.address] });
+        } else {
+          groupFilters.push({
+            kinds: [KIND_FILE],
+            authors: authorSet(parsed.owner, roster),
+            "#d": [parsed.d],
+          });
+        }
+      }
+
       liveSub = subscribe(
-        [{ kinds: [KIND_FILE], authors: [pubkey] }],
+        [{ kinds: [KIND_FILE], authors: [pubkey] }, ...groupFilters],
         {
           onEvent: async (event: Event) => {
             if (isCancelled) return;
             const addr = getEventAddress(event);
-            if (addr) {
+            // v2 group versions carry ["a", root]; route them under the root so
+            // every author lands in the owner's single document.
+            const eventRoot = event.tags.find((t) => t[0] === "a")?.[1];
+            const group = eventRoot ? groupByRoot.get(eventRoot) : undefined;
+            const documentId = group?.root ?? addr;
+            if (documentId) {
               setLocalOnlyAddresses((prev) => {
-                if (!prev.has(addr)) return prev;
+                if (!prev.has(documentId)) return prev;
                 const next = new Set(prev);
-                next.delete(addr);
+                next.delete(documentId);
                 return next;
               });
             }
-            const localEntry = addr ? localEntriesRef.current.get(addr) : undefined;
-            const viewKey = localEntry?.viewKey;
+            const localEntry = documentId
+              ? localEntriesRef.current.get(documentId)
+              : undefined;
+            const viewKey = group?.viewKey ?? localEntry?.viewKey;
             const editKey = localEntry?.editKey;
+            const owner = group?.owner ?? event.pubkey;
 
-            await addDocument(event, { viewKey, editKey });
-            if (addr) {
+            await addDocument(
+              event,
+              { viewKey, editKey },
+              group ? { documentId: group.root, owner } : undefined,
+            );
+            if (documentId) {
               saveLocalDocState({
-                address: addr,
+                address: documentId,
                 viewKey,
                 editKey,
                 pendingBroadcast: false,

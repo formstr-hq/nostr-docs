@@ -99,7 +99,7 @@ import { useBlossomServers } from "../../contexts/BlossomContext";
 import { KIND_FILE } from "../../nostr/kinds";
 import { getLatestVersion } from "../../utils/helpers";
 import { enableGroupSharing, updateRosterMembers, upsertMember, removeMember } from "../../nostr/shareV2";
-import { fetchRoster, type DocMember, type DocMode } from "../../nostr/sharedDoc";
+import { fetchRoster, parseRootAddress, type DocMember, type DocMode } from "../../nostr/sharedDoc";
 import { encodeNKeys } from "../../utils/nkeys";
 import {
   exportAsMarkdown,
@@ -258,7 +258,33 @@ export function DocumentEditorController({
   const docOwner = history?.owner ?? history?.versions[0]?.event.pubkey;
   const isOwner = !!user?.pubkey && !!docOwner && user.pubkey === docOwner;
   const sharedAsAddress = selectedDocumentId ? (docSharedAs.get(selectedDocumentId) ?? null) : null;
-  const isViewOnly = (!!viewKey && !editKey && !isOwner) || !!sharedAsAddress;
+
+  // v2 write permission: a non-owner may edit a group document when the doc is
+  // in `open` mode or their pubkey is a roster `editor`. Fetched once per doc;
+  // legacy docs (editKey / no roster) keep their existing behavior.
+  const [groupCanWrite, setGroupCanWrite] = useState(false);
+  useEffect(() => {
+    setGroupCanWrite(false);
+    if (!selectedDocumentId || !viewKey || !user?.pubkey) return;
+    if (isOwner || editKey) return;
+    const target = parseRootAddress(selectedDocumentId);
+    if (!target) return;
+    let cancelled = false;
+    (async () => {
+      const roster = await fetchRoster(target.owner, target.d, viewKey, relays).catch(() => null);
+      if (cancelled || !roster) return;
+      setGroupCanWrite(
+        roster.mode === "open" ||
+          roster.members.some((m) => m.pubkey === user.pubkey && m.role === "editor"),
+      );
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedDocumentId, viewKey, isOwner, editKey, user?.pubkey, relays]);
+
+  const canWrite = isOwner || !!editKey || groupCanWrite;
+  const isViewOnly = !canWrite || !!sharedAsAddress;
   const commentsEnabled = !!viewKey && !!selectedDocumentId;
 
   const sharedAsUrl = sharedAsAddress ? buildSharedDocPath(sharedAsAddress, getKeys) : null;
@@ -1240,8 +1266,13 @@ export function DocumentEditorController({
       });
     }
 
-    // 1. Update React state (in-memory, for immediate UI)
-    addDocument(stored, { viewKey, editKey });
+    // 1. Update React state (in-memory, for immediate UI). v2 group versions are
+    //    keyed by the root address so every author lands under one document.
+    addDocument(
+      stored,
+      { viewKey, editKey },
+      { documentId: address, owner: address.split(":")[1] },
+    );
 
     // 2. Cache the event in the local relay — the single owner of event
     //    payloads. Covers device-only (unsigned) events too, which are never
@@ -1717,13 +1748,13 @@ export function DocumentEditorController({
               color: "info.main",
             }}
           >
-            {editKey ? (
+            {canWrite ? (
               <EditOutlinedIcon sx={{ fontSize: 12 }} />
             ) : (
               <VisibilityOutlinedIcon sx={{ fontSize: 12 }} />
             )}
             <Typography variant="caption" sx={{ fontWeight: 600 }}>
-              Shared page · {editKey ? "edit access" : "view only"}
+              Shared page · {canWrite ? "edit access" : "view only"}
             </Typography>
           </Box>
         )}
