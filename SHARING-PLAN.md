@@ -181,21 +181,21 @@ tip; legacy links are untouched. e2e: `tests/e2e/sharing.spec.ts` (open mode).
 - Optional polish: surface the owner's roster title/tags to participants (they
   currently read only their own metadata) and store `role`/`mode` on the entry.
 
-### Phase 6 — CRDT merge (compatibility-first)
-The storage is already CRDT-shaped (see **CRDT compatibility**); this phase adds
-the merge, not a migration.
+### Phase 6 — CRDT merge (compatibility-first) — live collab ✅, durable checkpoints pending
+The storage was already CRDT-shaped; this phase adds the merge.
 
-- Snapshot payload gains a versioned envelope and can carry a Yjs state alongside
-  raw Markdown.
-- Loading applies **every** author's state (`Y.applyUpdate`) so divergent branches
-  converge instead of racing to the LWW tip.
-- Live ops (kinds 22457 / 24578), tagged with the root address and
-  viewKey-encrypted, reconnect to the same durable per-author slots.
-- Lineage/revision lets a stale or rogue writer be detected and merged rather than
-  winning by wall clock — the missing piece that makes `open` mode safe.
-
-**Done when:** two authors editing offline and in parallel converge after sync
-without either branch being discarded from the rendered document.
+- ✅ **Live collaboration + presence**: Yjs ops (kind 22457) and awareness
+  (24578) over Nostr, viewKey-encrypted, tagged `["a", root]`; per-tab session
+  keys with a viewKey-encrypted attestation (34581); `useCollabSession`,
+  trusted-collaborator resolution, remote carets and presence avatars. Writers
+  on a shared doc edit live and merge via Yjs; solo/legacy paths untouched.
+- ⏳ **Durable Yjs checkpoints**: today a device with no local Yjs history waits
+  briefly before its session is "ready" so two clients don't each seed the empty
+  doc from the markdown snapshot (which Yjs would merge into a duplicated
+  document). Storing the Yjs state as a durable event removes that window and
+  makes cross-session merges exact.
+- ⏳ **Lineage/revision**: lets a stale or rogue writer be detected and merged
+  rather than winning by wall clock — the piece that makes `open` mode safe.
 
 ## Verification
 
