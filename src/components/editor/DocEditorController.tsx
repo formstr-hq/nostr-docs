@@ -102,8 +102,8 @@ import { uploadToBlossom } from "../../blossom/client";
 import { useBlossomServers } from "../../contexts/BlossomContext";
 import { KIND_FILE } from "../../nostr/kinds";
 import { getLatestVersion } from "../../utils/helpers";
-import { enableGroupSharing, updateRosterMembers, upsertMember, removeMember } from "../../nostr/shareV2";
-import { fetchRoster, parseRootAddress, encodeContentPayload, type DocMember, type DocMode } from "../../nostr/sharedDoc";
+import { enableGroupSharing, updateRosterMembers, upsertMember, removeMember, publishCheckpoint } from "../../nostr/shareV2";
+import { fetchRoster, parseRootAddress, type DocMember, type DocMode } from "../../nostr/sharedDoc";
 import { fetchProfile } from "../../nostr/fetchProfile";
 import { encodeNKeys } from "../../utils/nkeys";
 import {
@@ -1365,14 +1365,9 @@ export function DocumentEditorController({
     // Keep the timestamp strictly above this document's newest known version.
     const prevAt = documents.get(address)?.versions.at(-1)?.event.created_at ?? 0;
     const createdAt = nextContentCreatedAt(prevAt);
-    // Durable CRDT checkpoint: when a collab session is active, the save also
-    // carries the current Yjs state so a later load can merge authors' states
-    // instead of trusting a single last-write-wins markdown snapshot.
-    const payload =
-      isCollabDocRef.current && collabRef.current
-        ? encodeContentPayload(content, collabRef.current.encodeState())
-        : content;
-    const encryptedContent = await encryptContent(payload, viewKey);
+    // Kind-33457 content stays plain Markdown (no format change). The durable
+    // Yjs checkpoint is published separately, in its own kind (see below).
+    const encryptedContent = await encryptContent(content, viewKey);
     if (!encryptedContent) throw new Error("Encryption failed");
 
     let stored: Event;
@@ -1448,6 +1443,16 @@ export function DocumentEditorController({
         markLocalOnly(address, false);
       } catch (err) {
         console.warn("Relay broadcast failed (saved locally):", err);
+      }
+
+      // Durable Yjs checkpoint in its own kind, so a later load can merge every
+      // author's state instead of trusting one last-write-wins markdown snapshot.
+      if (isCollabDocRef.current && collabRef.current && viewKey) {
+        const owner = address.split(":")[1];
+        const d = address.split(":").slice(2).join(":");
+        publishCheckpoint(owner, d, viewKey, collabRef.current.encodeState(), relays).catch(
+          (err) => console.warn("Checkpoint publish failed:", err),
+        );
       }
     }
   };

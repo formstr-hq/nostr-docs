@@ -14,13 +14,50 @@
 import type { Event } from "nostr-tools";
 import { signerManager } from "../signer";
 import { publishEvent } from "./publish";
-import { KIND_FILE } from "./kinds";
+import { KIND_FILE, KIND_YJS_CHECKPOINT } from "./kinds";
 import { cacheLocalEvents } from "../dataLayer";
 import { encryptWithViewKey, fetchRoster, rootAddress, type DocMember, type DocMode, type DocRole } from "./sharedDoc";
 import {
   saveRoster,
   type DocMetadata,
 } from "./docMetadata";
+
+// High-water mark for checkpoint `created_at`, so two checkpoints in the same
+// second don't collide on the relay's parameterised-replaceable rule.
+const checkpointHighWater = new Map<string, number>();
+
+function nextCheckpointCreatedAt(root: string): number {
+  const now = Math.floor(Date.now() / 1000);
+  const next = Math.max(now, (checkpointHighWater.get(root) ?? 0) + 1);
+  checkpointHighWater.set(root, next);
+  return next;
+}
+
+/**
+ * Publish this author's durable Yjs checkpoint for a document (kind 34582, its
+ * own kind so kind-33457 content stays plain Markdown). Signed by the current
+ * writer and viewKey-encrypted; replaceable per author so it stays bounded.
+ */
+export async function publishCheckpoint(
+  owner: string,
+  d: string,
+  viewKey: string,
+  yjsState: string,
+  relays: string[],
+): Promise<void> {
+  const signer = await signerManager.getSigner();
+  if (!signer) return;
+  const root = rootAddress(owner, d);
+  const encrypted = encryptWithViewKey(yjsState, viewKey);
+  const signed = await signer.signEvent({
+    kind: KIND_YJS_CHECKPOINT,
+    tags: [["d", root], ["a", root]],
+    content: encrypted,
+    created_at: nextCheckpointCreatedAt(root),
+  });
+  await publishEvent(signed, relays);
+  cacheLocalEvents([signed]);
+}
 
 /**
  * Re-publish the owner's own version of a document, encrypted with the shared

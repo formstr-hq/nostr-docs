@@ -18,7 +18,7 @@ import {
   type Event,
 } from "nostr-tools";
 import { hexToBytes } from "nostr-tools/utils";
-import { KIND_DOC_METADATA, KIND_FILE } from "./kinds";
+import { KIND_DOC_METADATA, KIND_FILE, KIND_YJS_CHECKPOINT } from "./kinds";
 import { fetchMany, fetchOne } from "../dataLayer";
 
 /** How far in the future an event's `created_at` may be before we ignore the
@@ -115,10 +115,6 @@ export function encryptWithViewKey(plaintext: string, viewKey: string): string {
 export interface ContentPayload {
   md: string;
   yjs?: string;
-}
-
-export function encodeContentPayload(md: string, yjs?: string): string {
-  return JSON.stringify({ v: 2, md, ...(yjs ? { yjs } : {}) });
 }
 
 /** Parse a decrypted content payload, tolerating legacy raw-markdown content. */
@@ -312,11 +308,11 @@ export async function resolveSharedDocument(
 }
 
 /**
- * Collect the durable Yjs state updates authored for a document. Each writer's
- * latest content event may carry a `yjs` checkpoint (see `encodeContentPayload`);
- * applying all of them to a fresh Y.Doc reconstructs the merged document, so a
- * late joiner (or a reload with no peers online) never depends on which markdown
- * snapshot happened to win last-write-wins.
+ * Collect the durable Yjs state updates authored for a document. Each writer
+ * publishes a checkpoint in its own replaceable slot (kind 34582, `d`/`a` = the
+ * document root); applying all of them to a fresh Y.Doc reconstructs the merged
+ * document, so a late joiner (or a reload with no peers online) never depends on
+ * which markdown snapshot happened to win last-write-wins.
  */
 export async function fetchYjsCheckpoints(
   owner: string,
@@ -325,12 +321,17 @@ export async function fetchYjsCheckpoints(
   relays?: string[],
 ): Promise<string[]> {
   const roster = await fetchRoster(owner, d, viewKey, relays);
-  const events = await fetchGroupEvents(owner, d, roster, relays);
+  const root = rootAddress(owner, d);
+  const filters = isOpenRoster(roster)
+    ? [{ kinds: [KIND_YJS_CHECKPOINT], "#a": [root] }]
+    : [{ kinds: [KIND_YJS_CHECKPOINT], authors: authorSet(owner, roster), "#d": [root] }];
+
+  const events = await fetchMany(filters, relays);
   const states: string[] = [];
   for (const event of events) {
     try {
-      const { yjs } = decodeContentPayload(decryptWithViewKey(event.content, viewKey));
-      if (yjs) states.push(yjs);
+      const state = decryptWithViewKey(event.content, viewKey);
+      if (state) states.push(state);
     } catch {
       // undecryptable — skip
     }

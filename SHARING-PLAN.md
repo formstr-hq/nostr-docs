@@ -187,12 +187,13 @@ tip; legacy links are untouched. e2e: `tests/e2e/sharing.spec.ts` (open mode).
   keys with a viewKey-encrypted attestation (34581). Writers on a shared doc
   edit live and merge via Yjs; solo/legacy paths untouched. Re-syncs on
   reconnect (`online` event), not just the 60s periodic step.
-- ✅ **Durable checkpoints**: a save during a collab session stores the Yjs state
-  in a versioned content envelope (`{v:2, md, yjs}`); a loader applies every
-  author's checkpoint (`Y.applyUpdate`) so the merged document is reconstructed
-  regardless of which markdown snapshot won last-write-wins. This closes the
-  "someone saves in between" hole — a save by one client can no longer lose a
-  peer's concurrent edits after everyone disconnects.
+- ✅ **Durable checkpoints**: a save during a collab session also publishes the
+  author's Yjs state in a dedicated kind (**34582**, parameterised-replaceable on
+  `(author, root)`), viewKey-encrypted. Kind 33457 content stays plain Markdown
+  (no format change / no compatibility break). A loader applies every author's
+  checkpoint (`Y.applyUpdate`) so the merged document is reconstructed regardless
+  of which markdown snapshot won last-write-wins — closing the "someone saves in
+  between" hole.
 - Remaining: lineage/revision for the `open`-mode adversarial case, and removing
   the first-time seeding grace entirely once every doc has a checkpoint.
 
