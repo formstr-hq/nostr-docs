@@ -25,8 +25,8 @@ import CropFreeIcon from "@mui/icons-material/CropFree";
 import { useDocMetadata } from "../../contexts/DocMetadataContext";
 import { getDocumentTags } from "../AllPagesView";
 import { useNavigate, useBlocker } from "react-router-dom";
-import { finalizeEvent, getPublicKey, getEventHash, nip19, type Event } from "nostr-tools";
-import { hexToBytes } from "nostr-tools/utils";
+import { finalizeEvent, generateSecretKey, getPublicKey, getEventHash, nip19, type Event } from "nostr-tools";
+import { bytesToHex, hexToBytes } from "nostr-tools/utils";
 import { useEditor, type Editor } from "@tiptap/react";
 import {
   DOMParser as ProseMirrorDOMParser,
@@ -98,6 +98,8 @@ import { uploadToBlossom } from "../../blossom/client";
 import { useBlossomServers } from "../../contexts/BlossomContext";
 import { KIND_FILE } from "../../nostr/kinds";
 import { getLatestVersion } from "../../utils/helpers";
+import { enableGroupSharing, updateRosterMembers, upsertMember, removeMember } from "../../nostr/shareV2";
+import { fetchRoster, type DocMember } from "../../nostr/sharedDoc";
 import { encodeNKeys } from "../../utils/nkeys";
 import {
   exportAsMarkdown,
@@ -343,6 +345,66 @@ export function DocumentEditorController({
     severity: "success" | "error";
   }>({ open: false, message: "", severity: "success" });
   const [shareOpen, setShareOpen] = useState(false);
+  const [shareMembers, setShareMembers] = useState<DocMember[]>([]);
+
+  // Load the v2 roster's member list for the share dialog (owner only). Reuses
+  // the viewKey the owner already holds; no-ops for legacy/personal docs.
+  useEffect(() => {
+    if (!shareOpen || !isOwner || !viewKey || !selectedDocumentId) {
+      setShareMembers([]);
+      return;
+    }
+    const parsed = selectedDocumentId.split(":");
+    if (parsed.length < 3) return;
+    const owner = parsed[1];
+    const d = parsed.slice(2).join(":");
+    let cancelled = false;
+    (async () => {
+      const roster = await fetchRoster(owner, d, viewKey, relays).catch(() => null);
+      if (!cancelled) setShareMembers(roster?.members ?? []);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [shareOpen, isOwner, viewKey, selectedDocumentId, relays]);
+
+  const parseShareTarget = () => {
+    if (!selectedDocumentId) return null;
+    const [kindStr, owner, ...rest] = selectedDocumentId.split(":");
+    if (!owner || rest.length === 0) return null;
+    return { kind: Number(kindStr), owner, d: rest.join(":") };
+  };
+
+  const handleAddEditor = async (input: string) => {
+    const target = parseShareTarget();
+    if (!target || !viewKey) throw new Error("Share this page first, then add editors.");
+    const value = input.trim();
+    let hex: string | null = null;
+    if (/^[0-9a-f]{64}$/i.test(value)) {
+      hex = value.toLowerCase();
+    } else {
+      try {
+        const decoded = nip19.decode(value);
+        if (decoded.type === "npub") hex = decoded.data;
+      } catch {
+        hex = null;
+      }
+    }
+    if (!hex) throw new Error("Enter a valid npub or 64-character hex pubkey.");
+    const next = upsertMember(shareMembers, hex, "editor");
+    await updateRosterMembers(target.owner, target.d, viewKey, next, relays);
+    setShareMembers(next);
+    setToast({ open: true, message: "Editor added.", severity: "success" });
+  };
+
+  const handleRemoveEditor = async (pubkey: string) => {
+    const target = parseShareTarget();
+    if (!target || !viewKey) throw new Error("Share this page first.");
+    const next = removeMember(shareMembers, pubkey);
+    await updateRosterMembers(target.owner, target.d, viewKey, next, relays);
+    setShareMembers(next);
+    setToast({ open: true, message: "Editor removed.", severity: "success" });
+  };
   const [publishTarget, setPublishTarget] = useState<"longform" | "communityNip" | null>(null);
   const [savingToShared, setSavingToShared] = useState(false);
   // Device-only state: for drafts tracked locally; for saved docs derived from context
@@ -1125,6 +1187,10 @@ export function DocumentEditorController({
     localOnly = false,
   ) => {
     const dTag = address.split(":")?.[2];
+    // v2: every content event points at its root document address so its versions
+    // can be found without enumerating authors (`#a`) and so two documents sharing
+    // a `d` never collide. Legacy readers ignore the extra tag.
+    const eventTags = [["d", dTag], ["a", address]];
     const encryptedContent = await encryptContent(content, viewKey);
     if (!encryptedContent) throw new Error("Encryption failed");
 
@@ -1141,7 +1207,7 @@ export function DocumentEditorController({
         : await signer.getPublicKey();
       const template = {
         kind: KIND_FILE,
-        tags: [["d", dTag]],
+        tags: eventTags,
         content: encryptedContent,
         created_at: Math.floor(Date.now() / 1000),
         pubkey,
@@ -1151,7 +1217,7 @@ export function DocumentEditorController({
       stored = finalizeEvent(
         {
           kind: KIND_FILE,
-          tags: [["d", dTag]],
+          tags: eventTags,
           content: encryptedContent,
           created_at: Math.floor(Date.now() / 1000),
         },
@@ -1162,7 +1228,7 @@ export function DocumentEditorController({
       if (!signer) throw new Error("No signer available");
       stored = await signer.signEvent({
         kind: KIND_FILE,
-        tags: [["d", dTag]],
+        tags: eventTags,
         content: encryptedContent,
         created_at: Math.floor(Date.now() / 1000),
       });
@@ -1890,6 +1956,10 @@ export function DocumentEditorController({
         }}
         existingViewLink={existingViewLink}
         existingEditLink={existingEditLink}
+        members={shareMembers}
+        onAddEditor={isOwner && viewKey ? handleAddEditor : undefined}
+        onRemoveEditor={isOwner && viewKey ? handleRemoveEditor : undefined}
+        v2={isOwner}
         onPrivateLink={async (canEdit, rotate) => {
           // Edit-access re-share: reuse the existing keys and skip publishing.
           // Republishing would push our stale local copy over any edits the
@@ -1905,6 +1975,31 @@ export function DocumentEditorController({
             const existing = getKeys(selectedDocumentId);
             if (existing[0]) {
               return buildShareUrl(selectedDocumentId, existing[0]);
+            }
+          }
+
+          // v2 group share (owner): keep the owner's own address, re-publish the
+          // content under the document viewKey and a roster. No editKey and no
+          // separate backup copy; only people added as editors can write.
+          if (canEdit && isOwner && selectedDocumentId && user?.pubkey) {
+            const target = parseShareTarget();
+            if (target) {
+              const vk = viewKey ?? bytesToHex(generateSecretKey());
+              await enableGroupSharing(target.owner, target.d, vk, md, relays, shareMembers);
+              // Adopt the viewKey so this session keeps encrypting with it.
+              // Mark the snapshot saved so the unsaved-changes blocker doesn't
+              // intercept the navigation.
+              lastSavedMdRef.current = md;
+              setLastSavedAt(new Date());
+              const naddr = nip19.naddrEncode({
+                kind: KIND_FILE,
+                pubkey: target.owner,
+                identifier: target.d,
+              });
+              navigate(`/doc/${naddr}#${encodeNKeys({ viewKey: vk })}`, {
+                replace: true,
+              });
+              return buildShareUrl(selectedDocumentId, vk);
             }
           }
 

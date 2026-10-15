@@ -31,6 +31,68 @@ address and `event.pubkey`, so behavior is byte-for-byte unchanged. A v2 group d
 is keyed by its **root** address (`33457:<owner>:<d>`) while its `versions[]` hold
 events from every author.
 
+### Content-event addressing (v2)
+
+Every content event carries **both**:
+
+- `["d", d]` — the document id.
+- `["a", rootAddress]` — the document (root address) this version "forks from" /
+  belongs to.
+
+The `a` tag is what lets any version be found **without enumerating authors** —
+query `{kinds:[33457], "#a":[root]}` — and makes a document's versions unambiguous
+even if two documents ever pick the same `d`. Legacy events simply lack it, so
+they resolve through the existing address/`d` paths.
+
+## Write-authorization modes
+
+The owner's control event (kind 34579, viewKey-encrypted) declares the mode:
+
+- **`mode: "restricted"`** (default) — `members[]` lists editor pubkeys.
+  Resolution: roster → authors → `{kinds:[33457], authors, "#d":[d]}`. Bounded,
+  revocable (remove a pubkey), routable (NIP-65 outboxes).
+- **`mode: "open"`** — anyone holding the viewKey may write (capability model).
+  Resolution: `{kinds:[33457], "#a":[root]}`, accepting any version that decrypts
+  with the viewKey. This preserves the old "anyone with the link can edit" UX,
+  but each writer still signs with their **own** key, so slots never clobber.
+
+Control events (roster, mode, title, tags) are always **owner-authored**; only the
+owner may change membership or the mode. "Open" applies to content versions only.
+
+Trade-offs of `open` (why it is not the default): unbounded author set →
+spam/DoS surface; any link-holder can win the LWW tip (denial-of-view); no
+per-writer revocation except rotating the viewKey; and unknown authors cannot be
+routed to their outboxes, so readers on different relay sets can disagree.
+Restricted mode avoids all of these. Open mode is the mode that most needs the
+CRDT merge below.
+
+## CRDT compatibility
+
+The on-relay shape is chosen so a CRDT merge can be layered on later **without
+migration**. Invariants to preserve from day one:
+
+1. **Per-author cells.** Storage is an LWW-map keyed by author: each author's
+   replaceable slot only advances, and no author's write destroys another's. This
+   is precisely the structure a CRDT merge needs — the concurrent inputs survive.
+2. **Stable origin.** Every version is signed by its author's own key, giving each
+   event a replica identity. (The old shared editKey collapsed all origins into
+   one, which is why it could never be merged.)
+3. **Mergeable payload.** Content is app-defined and versioned, so a snapshot can
+   later carry a Yjs/CRDT state instead of raw Markdown. A client then loads by
+   applying **every** author's state, not just the tip.
+4. **Addressed ops.** Live CRDT ops (kind 22457) and presence are tagged with the
+   root address and encrypted with the viewKey, so they attach to the same
+   document for every author in either mode.
+5. **Lineage hooks.** Reserve a parent reference (`["e", <base-tip-id>]`) on content
+   events so divergent branches can be detected and later merged. v1 does **not**
+   gate UX on it; a later revision may store a revision/state-vector.
+
+Migration (Phase 6): keep today's LWW tip as the fallback renderer; add a merge
+layer that, when more than one author has a concurrent version, applies all of
+them through the CRDT and writes the merged result back into the author's own
+slot. Because storage already retains every author's branch, this is purely
+additive.
+
 ## Backwards-compatibility contract
 
 | Shape | Address | Content key | Signer | v2 handling |
@@ -98,26 +160,43 @@ and legacy tags/titles are unaffected.
 **Done when:** a v2 doc with two editors shows the newest author's version to all
 of them; a legacy edit-key link still opens and edits.
 
-### Phase 4 — share flow v2
+### Phase 4 — share flow v2 + modes
 - Data layer ✅: `shareV2.ts` — `enableGroupSharing` (re-publish owner content
-  under viewKey + empty roster), `updateRosterMembers` / `upsertMember` /
-  `removeMember`.
-- Remaining: UI. New private share generates only `viewKey`, keeps the owner's
-  own slot, publishes the roster, URL `#nkeys({viewKey})`; member management adds
-  or removes an editor by pubkey/npub (owner only). Legacy edit-key path stays for
-  docs already shared that way; never rotate.
+  under viewKey + roster), `updateRosterMembers` / `upsertMember` / `removeMember`.
+- **`a` tag**: stamp `["a", rootAddress]` on every v2 content event (save + share)
+  so open mode can resolve by `#a`. Backward compatible — legacy readers ignore it.
+- **Mode**: the control event gains `mode: "restricted" | "open"`. Restricted →
+  member UI (npub input ✅). Open → no member UI; resolution queries `#a` and
+  accepts any viewKey-decryptable version.
+- **UI**: share dialog gets an access selector — View only / Anyone with the link
+  can edit (open) / Invited editors only (restricted). URL stays
+  `#nkeys({viewKey})`. Legacy edit-key path kept; never rotate.
 
-**Done when:** the owner shares, adds an editor, the editor opens/edits, and both
-see the tip; existing legacy links are untouched.
+**Done when:** the owner picks a mode, adds an editor (restricted) or shares an
+open link, the counterpart opens/edits, and all see the tip under the mode's
+resolution.
 
 ### Phase 5 — shared-with-me list
-- Participant entries add `role`; the owner's roster is the owner's own entry.
-- `SharedDocsContext` list continues to work for legacy entries.
+- Participant entries add `role` and the doc `mode`; the owner's roster is the
+  owner's own entry.
+- `SharedDocsContext` list continues to work for legacy entries; open-mode docs
+  resolve by `#a` instead of a roster author set.
 
-### Phase 6 — realtime CRDT (later)
-Per-author slots let each author's durable snapshot be a Yjs state; loading
-applies every author's state (`Y.applyUpdate`) instead of only the winner. Same
-relay shape, no migration.
+### Phase 6 — CRDT merge (compatibility-first)
+The storage is already CRDT-shaped (see **CRDT compatibility**); this phase adds
+the merge, not a migration.
+
+- Snapshot payload gains a versioned envelope and can carry a Yjs state alongside
+  raw Markdown.
+- Loading applies **every** author's state (`Y.applyUpdate`) so divergent branches
+  converge instead of racing to the LWW tip.
+- Live ops (kinds 22457 / 24578), tagged with the root address and
+  viewKey-encrypted, reconnect to the same durable per-author slots.
+- Lineage/revision lets a stale or rogue writer be detected and merged rather than
+  winning by wall clock — the missing piece that makes `open` mode safe.
+
+**Done when:** two authors editing offline and in parallel converge after sync
+without either branch being discarded from the rendered document.
 
 ## Verification
 
@@ -132,8 +211,15 @@ relay shape, no migration.
   consumers; mitigated by the legacy-default invariant and type-checking.
 - **Metadata dual-encryption.** Must never discard the self-encrypted path; read
   self first, viewKey second.
-- **Realtime ephemeral vs durable.** Snapshots are LWW in v1; CRDT merge is Phase
-  6 and needs durable ops/state to fully cover same-author multi-device.
+- **Open-mode conflicts.** LWW rendering degrades under many writers: a link-holder
+  can win the tip by writing last (denial-of-view), there is no per-writer
+  revocation, and unknown authors cannot be routed to their outboxes. Mitigations:
+  keep `restricted` the default, stamp `["a", root]` for discovery, cap author
+  counts, and only honor the **owner's** kind-5 tombstone. Full fix is the CRDT
+  merge (Phase 6).
+- **Realtime ephemeral vs durable.** Snapshots are LWW in v1; the CRDT merge
+  (Phase 6) needs durable ops/state to fully cover same-author multi-device, but
+  the storage shape already retains per-author branches so no migration is needed.
 
 ## Out of scope (v1)
 

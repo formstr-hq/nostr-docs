@@ -79,12 +79,17 @@ never replaces an editor's version with the owner's, or vice versa.
 - `d` = document id.
 - `content` = NIP-44(viewKey) of the app payload (Markdown, or app-defined JSON).
 - signed by the author's own key.
-- Optional tags:
-  - `["e", <parent-event-id>]` — lineage to the version this was based on.
-    **Deferred to the CRDT phase**; not required in v1.
+- Tags:
+  - `["d", <document id>]` (required).
+  - `["a", <root address>]` (v2) — the document this version belongs to. Lets any
+    version be discovered **without enumerating authors** (query `#a`) and
+    disambiguates documents that happen to share a `d`.
+  - `["e", <parent-event-id>]` (reserved) — lineage to the version this was based
+    on, for future CRDT merge / divergence detection. Not required in v1.
 
 An event is only considered if:
-1. its author is the owner or a roster `editor`, and
+1. its author passes the mode's authorization rule (roster `editor`, or — in
+   `open` mode — any author), and
 2. it decrypts with viewKey, and
 3. the author's slot is not tombstoned.
 
@@ -108,6 +113,7 @@ distinct roles, separated by author:
 ```json
 {
   "v": 2,
+  "mode": "restricted",
   "title": "…",
   "tags": ["…"],
   "members": [
@@ -117,7 +123,13 @@ distinct roles, separated by author:
 }
 ```
 
+- `mode` is `restricted` (default) or `open`:
+  - `restricted` — only `editor` members (and the owner) may author content.
+  - `open` — anyone holding viewKey may author content (capability model); the
+    roster is not consulted for authorization.
 - `role` is `editor` (may author content) or `viewer` (read-only).
+- Control events (roster, mode, title, tags) are always owner-authored; only the
+  owner may change membership or the mode. "Open" applies to content only.
 - The owner is implicitly a member.
 - Latest by `created_at` wins (parameterized replaceable on owner + `d`).
 - Clients **must** read the roster from the owner's address only, never from a
@@ -144,10 +156,14 @@ document owned by `owner`.
 1. From the pointer, decode `(owner, d)`.
 2. Fetch the latest roster: `{kinds:[34579], authors:[owner], "#d":[d]}` and
    decrypt it with viewKey.
-3. Author set = `{owner} ∪ { m : role = editor }`. If no roster, `{owner}`.
-4. Fetch content `{kinds:[33457], authors: authorSet, "#d":[d]}`, live-subscribe
-   to the same filter.
-5. Drop events that do not decrypt with viewKey or whose author is not in the set.
+3. Choose the author/query rule from the roster's `mode`:
+   - `restricted`: author set = `{owner} ∪ { m : role = editor }`; fetch
+     `{kinds:[33457], authors: authorSet, "#d":[d]}`.
+   - `open`: fetch `{kinds:[33457], "#a":[<root address>]}` with no author filter.
+   - No roster: author set = `{owner}` (legacy single-author document).
+4. Live-subscribe to the same filter.
+5. Drop events that do not decrypt with viewKey or fail the mode's authorization
+   (in `restricted`, authors outside the roster; in `open`, only non-decrypting).
 6. **Tip** = newest by `(created_at desc, id asc)`; clamp `created_at` to
    `min(created_at, now + MAX_SKEW)`.
 7. Render the tip. Keep each author's latest snapshot for the version-history
@@ -195,6 +211,14 @@ v1 therefore takes **no automatic conflict action and shows no blocking prompt**
 Lineage/detection tags are deferred; a future revision adds CRDT checkpoints for
 automatic cross-session merge. (Detection without merge is not a durability
 mechanism and is intentionally not shipped.)
+
+**`open` mode amplifies these conflicts.** With an unbounded author set, any
+viewKey holder can win the rendered tip by writing last (a denial-of-view), there
+is no per-writer revocation short of rotating viewKey, and readers on different
+relay sets may not see the same authors. This is why `restricted` is the default
+and why `open` is the mode that most needs the CRDT merge: LWW there degrades into
+"last writer wins" in the adversarial sense. Clients must also only honor the
+**owner's** kind-5 tombstone, never a link-holder's.
 
 ## Deletion
 
