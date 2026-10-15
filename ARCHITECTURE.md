@@ -1,6 +1,6 @@
 # Architecture: nostr-docs (Formstr Pages)
 
-Nostr-docs is a Nostr-based encrypted Markdown note editor. Users write private documents that are NIP-44 encrypted before being published as Nostr events. Documents can optionally be shared via URL-embedded view/edit keys.
+Nostr-docs is a Nostr-based encrypted Markdown note editor. Users write private documents that are NIP-44 encrypted before being published as Nostr events. Documents can be shared via URL-embedded view keys. A shared document can have **multiple writers** (v2): each writer owns their own replaceable slot, all encrypted with the shared view key, and the owner controls write access with a roster. See `NIP-multi-writer-documents.md` and `SHARING-PLAN.md`.
 
 ---
 
@@ -27,10 +27,10 @@ ThemeProvider
 | **0** | NIP-01 User metadata | Fetched on login to populate name/avatar. Closed after first event received or EOSE. |
 | **5** | NIP-09 Deletion request | Fetched on startup with `#k: [33457]` filter so deleted documents are hidden. |
 | **10002** | NIP-65 Relay list | Fetched per-user to switch from default relays to user-preferred relays. |
-| **11234** | Shared documents list | App-specific replaceable event. Content is NIP-44 encrypted JSON array of `[address, viewKey, editKey?]` tags representing documents shared with this user. |
-| **22457** | CRDT op (ephemeral) | App-specific. Contains base64-encoded Yjs binary update. Used for real-time collaborative editing. Subscriptions are long-lived and must be closed by callers via the returned `SubCloser`. |
-| **33457** | Encrypted document (replaceable) | App-specific. Content is NIP-44 encrypted Markdown. Tag `["d", <uuid>]` identifies the document. Multiple versions accumulate in `DocumentHistory`; the latest `created_at` wins for display. |
-| **34579** | Per-document metadata | App-specific. Tag `["d", "<33457 address>"]`. Content is NIP-44 encrypted JSON (`tags`, `title`, `viewKey`, `editKey`, `sharedAs`). Parameterised-replaceable — writes go through `nextCreatedAt()` so consecutive edits never collide on the 1-second `created_at` granularity. |
+| **11234** | _(removed)_ | Was never implemented; the "shared with me" store is kind 34579 metadata carrying `viewKey` (see below). |
+| **22457** | CRDT op (planned) | App-specific, ephemeral. Encrypted with the view key, tagged with the root address, signed by an author (or session key). Reserved for the CRDT phase. |
+| **33457** | Encrypted document (replaceable) | Content is NIP-44 encrypted. Tags `["d", <document id>]` and `["a", <root address>]`. For personal docs the author is the owner; for v2 shared docs **each author publishes to their own address** `33457:<author>:<d>` (no shared signing key) and the newest valid version across the roster renders. |
+| **34579** | Per-document metadata / roster | Encrypted JSON. Authored by each user for their own view (`{tags, title, viewKey, editKey?, sharedAs?}`) **and**, for a v2 shared doc, by the **owner** as the shareable roster `{v:2, mode, title, tags, members[]}` encrypted with the document view key. Writes go through `nextCreatedAt()` so consecutive edits never collide on the 1-second `created_at` granularity. |
 
 ---
 
@@ -72,7 +72,7 @@ a live relay fetch (`resolveEventsByAddress`) when a page isn't on disk yet.
 
 ## Encryption Model
 
-### Document content (kind 33457 and 11234)
+### Document content (kind 33457)
 
 All document content is NIP-44 encrypted **before** being sent to relays. Relays only ever see ciphertext.
 
@@ -80,16 +80,20 @@ Two encryption modes:
 
 1. **Owner encryption** (personal documents): The signer's own pubkey is used as both sender and recipient. The NIP-44 conversation key is derived from `(privkey, pubkey)` where both sides are the same key.
 
-2. **ViewKey encryption** (shared documents): A randomly generated 32-byte key is used as the NIP-44 private key. The corresponding public key is derived and used to compute the conversation key. The viewKey (hex) is embedded in the URL hash fragment (`#nkeys=...`) and **never stored** on relays or in localStorage.
+2. **viewKey encryption** (shared documents): A randomly generated 32-byte key is used as the NIP-44 private key, and its pubkey as the recipient. The viewKey (hex) is embedded in the URL hash fragment (`#nkeys=...`) and **never stored** on relays or in localStorage.
 
-### EditKey
+### Multi-writer documents (v2)
 
-An editKey is also a random 32-byte key. Its private key is used to `finalizeEvent` (sign) the shared document, so the event pubkey matches the editKey pubkey. This lets a recipient publish updates on behalf of the shared document's address without using the owner's signing key.
+A shared document is a set of per-author replaceable events: every author publishes `33457:<their-pubkey>:<document-id>`, all encrypted with the same viewKey, each carrying `["a", <root address>]`. There is **no shared signing key**, so writers never overwrite each other. The document is resolved by fetching the versions (by roster author set, or by `["a", root]` in `open` mode) and rendering the newest valid one. The owner publishes a viewKey-encrypted **roster** (kind 34579) declaring the write `mode` (`restricted` = listed editors, `open` = any viewKey holder) and `members`. Only the owner's roster is authoritative; control metadata is always owner-authored.
+
+### EditKey (legacy)
+
+Older shares used an editKey: a random 32-byte key used to `finalizeEvent` (sign) the shared document, so all editors wrote to **one** replaceable slot. New shares no longer use an editKey; legacy links still decode and work (a doc with no roster resolves to a single author).
 
 ### URL format
 
 ```
-/doc/<naddr>#<base64url-encoded JSON of {viewKey, editKey}>
+/doc/<naddr>#<base64url-encoded JSON of {viewKey}>        (v2; legacy may also carry editKey)
 ```
 
 The hash fragment (`#`) is never sent to the server, so keys are client-only.
@@ -127,7 +131,7 @@ App mounts
       → UserContext fetches kind-0 profile, sets user state
         → RelayProvider fetches kind-10002, switches to user relays
           → DocumentList useEffect fetches kind-33457 documents + kind-5 deletions
-          → SharedPagesProvider fetches kind-11234 shared list
+          → SharedPagesProvider fetches kind-34579 metadata (viewKey entries) for the shared list
 ```
 
 ### Write / Save
@@ -141,15 +145,17 @@ User edits Markdown in DocEditorSurface
     → addDocument(signed, keys) → decrypt + add to DocumentContext
 ```
 
-### Share
+### Share (v2)
 
 ```
-handleGeneratePrivateLink(canEdit)
-  → generateSecretKey() → viewKey (and optionally editKey)
-  → encryptContent(md, viewKey) → saves new event signed with editKey or owner key
-  → URL = /doc/<naddr>#<{viewKey, editKey}>
-  → addSharedDoc([address, viewKey, editKey?]) → publishes kind-11234 event
-    → fetchSharedDocuments(updatedDocs) → subscribes to shared doc's relay stream
+ShareModal → onPrivateLink(canEdit, rotate, open)
+  → shareV2.enableGroupSharing(owner, d, viewKey, md, relays, members, mode)
+      → publishOwnerContent(): encrypt md with viewKey, sign with the owner, publish at 33457:<owner>:<d>
+      → saveRoster(): publish kind-34579 roster {v:2, mode, tags, members} encrypted with viewKey
+  → URL = /doc/<naddr>#<{viewKey}>
+  → member management: updateRosterMembers() add/remove editors (restricted mode)
+
+Legacy edit-key shares: no roster → resolves as a single-author document; unchanged.
 ```
 
 ### Delete
@@ -175,10 +181,11 @@ handleDelete()
 | `src/contexts/DocumentContext.tsx` | Personal document store + decrypt |
 | `src/contexts/SharedDocsContext.tsx` | Shared-with-me document store |
 | `src/nostr/kinds.ts` | Event kind constants |
+| `src/nostr/sharedDoc.ts` | Multi-writer model: roster, author set, tip selection, group resolution |
+| `src/nostr/shareV2.ts` | v2 share mechanics: enable group sharing, roster members, mode |
 | `src/nostr/fetchFile.ts` | Fetch kind-33457 documents |
 | `src/nostr/fetchProfile.ts` | Fetch kind-0 profile |
 | `src/nostr/fetchDelete.ts` | Fetch kind-5 deletion requests |
-| `src/nostr/crdt.ts` | Subscribe to kind-22457 CRDT ops |
 | `src/nostr/publish.ts` | Publish events to relays (through the local relay) |
 | `src/dataLayer/index.ts` | App data layer — worker bootstrap, subscribe/one-shot helpers, fallback |
 | `src/dataLayer/relay.worker.ts` | Local-relay worker entry (IndexedDB namespace + prune policy) |
