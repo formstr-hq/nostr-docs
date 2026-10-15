@@ -1,3 +1,7 @@
+# 0.10.1
+- Fix: the home screen no longer scrolls sideways on phones — long page titles and tags wrap instead of widening the page
+- Fix: the Android back gesture now returns to the previous screen (for example, from a page back to your pages) instead of closing the app
+
 # 0.10.0
 - A fresh look: the app has been redesigned end to end — pages grid, editor and settings
 - New app logo
