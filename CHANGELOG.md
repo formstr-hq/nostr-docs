@@ -1,3 +1,10 @@
+# 0.10.0
+- A fresh look: the app has been redesigned end to end — pages grid, editor and settings
+- New app logo
+- Faster, more reliable syncing: notes are cached on your device first and synced through your relays, so the app opens instantly and keeps working offline
+- Back up all your pages to a single .zip of Markdown files, and import .md files or a .zip back in — with the option to keep imported pages on this device only
+- See which relays hold each page (from its card or the editor) and re-broadcast with one tap when none of them do
+
 # 0.9.8
 - Add multi-account support with NIP-49 encrypted key login and QR sign-in
 - Add inline comments — comment on selected text, resolve threads, with highlight anchoring and outdated-comment detection

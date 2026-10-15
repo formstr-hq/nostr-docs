@@ -56,6 +56,8 @@ CAPTURE_SCREENSHOTS=1 npx playwright test backup-import.screenshots
 - `backup-import.screenshots` → `Screenshots/backup-import/` (backup dialog,
   import dialog, imported pages). Pins the `Corpo Docs` theme so the captures are
   byte-stable — a fresh profile otherwise picks a random theme.
+- `release.screenshots` → `Screenshots/1.png … 3.png` (store images referenced by
+  `zapstore.yaml`: editor light, editor dark, signer modal). Phone viewport.
 - `relay-presence.screenshots` → `Screenshots/relay-presence/` (relay coverage
   popover, missing-everywhere warning).
 - `local-relay.screenshots` → `Screenshots/local-relay/` (local-relay tag flow).
