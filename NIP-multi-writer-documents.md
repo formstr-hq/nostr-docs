@@ -3,8 +3,9 @@
 `draft` `optional`
 
 A document is a set of per-author replaceable events, all encrypted with one
-shared key; the newest version across the authorized authors is the document.
-The owner controls who may write through an encrypted roster.
+shared key. Its canonical state is a Yjs CRDT merged across the authorized
+authors' checkpoints; the Markdown events are point-in-time snapshots (a portable
+fallback/export). The owner controls who may write through an encrypted roster.
 
 ## Conventions
 
@@ -30,7 +31,8 @@ The owner controls who may write through an encrypted roster.
 ### Content — kind `33457` (parameterised replaceable on `d`)
 
 - tags: `["d", <document id>]`, `["a", <room>]`
-- content: the document Markdown
+- content: a point-in-time Markdown snapshot of the document (portable fallback;
+  the canonical state is the Yjs checkpoints — see Resolution)
 - signed by the author
 - one event per author (their own replaceable slot)
 
