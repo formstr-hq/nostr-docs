@@ -112,7 +112,11 @@ export async function getOrCreateSession(
 
   const signed = await signer.signEvent({
     kind: KIND_SESSION_ATTESTATION,
-    tags: [["d", `${collabRoom(viewKey)}:${sessionPubkey}`]],
+    tags: [
+      ["d", `${collabRoom(viewKey)}:${sessionPubkey}`],
+      // NIP-40: lets relays reclaim the row once the session has expired.
+      ["expiration", String(expiresAt)],
+    ],
     content,
     created_at: Math.floor(Date.now() / 1000),
   });

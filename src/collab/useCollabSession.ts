@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type * as YType from "yjs";
 import type { IndexeddbPersistence as IndexeddbPersistenceType } from "y-indexeddb";
 import type { Awareness } from "y-protocols/awareness";
@@ -46,10 +46,14 @@ export function useCollabSession(
   docAddress: string | null,
   viewKey: string | undefined,
   relays: string[],
+  markdownCreatedAt = 0,
 ): CollabSession | null {
   const [session, setSession] = useState<InternalSession | null>(null);
   const [ready, setReady] = useState(false);
   const enabled = !!docAddress && !!viewKey;
+  // Newest Markdown snapshot time, read once per session for the freshness guard.
+  const markdownAtRef = useRef(markdownCreatedAt);
+  markdownAtRef.current = markdownCreatedAt;
 
   useEffect(() => {
     if (!enabled || !docAddress || !viewKey) return;
@@ -99,14 +103,22 @@ export function useCollabSession(
             parsed.d,
             viewKey,
             relays,
-          ).catch(() => [] as string[]);
+          ).catch(() => ({ states: [] as string[], newestCreatedAt: 0 }));
           if (cancelled) return;
-          for (const state of checkpoints) {
-            try {
-              YjsModule.applyUpdate(ydoc, base64ToUint8(state));
-              appliedCheckpoint = true;
-            } catch {
-              /* skip malformed checkpoint */
+          // Freshness guard: never render a CRDT state older than the freshest
+          // Markdown snapshot, or a stale checkpoint would regress the document.
+          const mdAt = markdownAtRef.current;
+          const useCheckpoints =
+            checkpoints.newestCreatedAt > 0 &&
+            (mdAt === 0 || checkpoints.newestCreatedAt >= mdAt);
+          if (useCheckpoints) {
+            for (const state of checkpoints.states) {
+              try {
+                YjsModule.applyUpdate(ydoc, base64ToUint8(state));
+                appliedCheckpoint = true;
+              } catch {
+                /* skip malformed checkpoint */
+              }
             }
           }
         }

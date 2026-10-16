@@ -323,19 +323,26 @@ export async function resolveSharedDocument(
   };
 }
 
+export interface YjsCheckpoints {
+  /** base64 Yjs state updates, newest author state per author. */
+  states: string[];
+  /** Newest `created_at` among the decryptable checkpoints (0 if none). */
+  newestCreatedAt: number;
+}
+
 /**
  * Collect the durable Yjs state updates authored for a document. Each writer
  * publishes a checkpoint in its own replaceable slot (kind 34582, `d`/`a` = the
  * document root); applying all of them to a fresh Y.Doc reconstructs the merged
- * document, so a late joiner (or a reload with no peers online) never depends on
- * which markdown snapshot happened to win last-write-wins.
+ * document. `newestCreatedAt` lets a caller compare the CRDT state against the
+ * newest Markdown snapshot (see the Resolution precedence guard).
  */
 export async function fetchYjsCheckpoints(
   owner: string,
   d: string,
   viewKey: string,
   relays?: string[],
-): Promise<string[]> {
+): Promise<YjsCheckpoints> {
   const roster = await fetchRoster(owner, d, viewKey, relays);
   // Checkpoints are tagged with the capability-derived room, not the root, so
   // relays/observers cannot link them to the document or its owner.
@@ -346,13 +353,17 @@ export async function fetchYjsCheckpoints(
 
   const events = await fetchMany(filters, relays);
   const states: string[] = [];
+  let newestCreatedAt = 0;
   for (const event of events) {
     try {
       const state = decryptWithViewKey(event.content, viewKey);
-      if (state) states.push(state);
+      if (state) {
+        states.push(state);
+        newestCreatedAt = Math.max(newestCreatedAt, event.created_at);
+      }
     } catch {
       // undecryptable — skip
     }
   }
-  return states;
+  return { states, newestCreatedAt };
 }

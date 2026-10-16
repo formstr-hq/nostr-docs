@@ -323,6 +323,7 @@ export function DocumentEditorController({
     isCollabDoc ? selectedDocumentId : null,
     isCollabDoc ? viewKey : undefined,
     relays,
+    activeVersion?.event.created_at ?? 0,
   );
   const isCollabReady = isCollabDoc && !!collab?.ready;
   const { collaborators, collaboratorsRef } = useTrustedCollaborators(

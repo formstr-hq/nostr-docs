@@ -31,8 +31,10 @@ fallback/export). The owner controls who may write through an encrypted roster.
 ### Content — kind `33457` (parameterised replaceable on `d`)
 
 - tags: `["d", <document id>]`, `["a", <room>]`
-- content: a point-in-time Markdown snapshot of the document (portable fallback;
-  the canonical state is the Yjs checkpoints — see Resolution)
+- content: an optional point-in-time Markdown snapshot/export of the document
+  (portable fallback only; the canonical, durable state is the Yjs checkpoints —
+  see Resolution). Clients SHOULD NOT publish one on every save; for shared v2
+  documents it MAY be omitted entirely.
 - signed by the author
 - one event per author (their own replaceable slot)
 
@@ -71,13 +73,15 @@ key, so the event `pubkey` is an unlinkable per-document pseudonym.
   message, NIP‑44 encrypted with the viewKey; tag `["a", <room>]`; signed by a
   session key.
 - `34581` session attestation: `d` = `<room>:<sessionPubkey>`; plaintext =
-  `{ "realPubkey": "<hex>", "expiresAt": <unix> }`; signed by the author's real key.
-  Binds the ephemeral session key (which signs ops/presence so no signer prompt is
-  needed per keystroke) to the real pubkey, for presence attribution and
-  restricted-mode authorisation.
+  `{ "realPubkey": "<hex>", "expiresAt": <unix> }`; includes
+  `["expiration", <expiresAt>]` (NIP‑40) so relays reclaim it once expired; signed
+  by the author's real key. Binds the ephemeral session key (which signs
+  ops/presence so no signer prompt is needed per keystroke) to the real pubkey,
+  for presence attribution and restricted-mode authorisation.
 - `34582` durable Yjs checkpoint (parameterised replaceable on `d`): `d` and `a`
   = room; plaintext = base64 `Y.encodeStateAsUpdate` (the **full** state, not a
-  diff); one per author.
+  diff); one per author. Clients SHOULD debounce writes — replaceability keeps it
+  one stored event per author, but each publish is churn.
 
 Realtime is **capability-authorized**: any viewKey holder may send ops/presence.
 In `restricted` mode this is weaker than the content rule, so a client that
@@ -98,9 +102,10 @@ attestation (`34581`) does not resolve to a roster `editor`.
 4. Discard events that do not decrypt with the viewKey. Clamp `created_at` to
    `now + 300s` (relays do not validate timestamps); the Markdown **tip** is the
    greatest `(created_at, id)`.
-5. **Precedence:** if any checkpoint (`34582`) decrypts, the merged Y.Doc (all
-   checkpoints applied) is the document; the Markdown tip is only a fallback for
-   clients that do not implement Yjs.
+5. **Precedence:** when checkpoints (`34582`) decrypt, the document is the merged
+   Y.Doc (all applied) — **but only if the newest checkpoint is at least as new as
+   the newest Markdown snapshot** (`created_at`). If the Markdown tip is newer, use
+   it, so a stale checkpoint can never regress the document.
 6. For realtime, subscribe live to `{kinds:[22457,24578], "#a":[room]}`.
 
 ## Examples
