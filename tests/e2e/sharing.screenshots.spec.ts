@@ -8,34 +8,31 @@ import {
 } from "./helpers";
 
 /**
- * Capture of realtime sharing for marketing. Skipped in normal runs; run with:
+ * Marketing captures for realtime sharing. Skipped in normal runs; run with:
  *
  *   CAPTURE_SCREENSHOTS=1 npx playwright test sharing.screenshots
  *
- * Produces a screen recording of the owner's view (`Screenshots/sharing/*.webm`)
- * while a second, independent identity edits the same document live, plus a
- * still (`Screenshots/sharing/realtime-owner-view.png`).
+ * Records BOTH sides (owner + a second identity) of a live co-editing session
+ * into `Screenshots/sharing/owner/` and `Screenshots/sharing/editor/`, plus a
+ * still from each. The repo's capture script composites them side by side.
  */
 
 const CAPTURE = process.env.CAPTURE_SCREENSHOTS;
 const DIR = "Screenshots/sharing";
+const VIEWPORT = { width: 1000, height: 700 };
 
-test("capture realtime sharing", async ({ browser }) => {
+test("capture realtime sharing (both sides)", async ({ browser }) => {
   test.skip(!CAPTURE, "set CAPTURE_SCREENSHOTS=1 to record");
   test.setTimeout(180_000);
 
-  // The owner's context is the "screen" we record.
   const ownerCtx = await browser.newContext({
-    viewport: { width: 1100, height: 720 },
-    recordVideo: { dir: DIR, size: { width: 1100, height: 720 } },
+    viewport: VIEWPORT,
+    recordVideo: { dir: `${DIR}/owner`, size: VIEWPORT },
   });
   const owner = await ownerCtx.newPage();
 
   await loginAsGuest(owner);
-  await typeIntoEditor(
-    owner,
-    "# Product sync notes\n\n- ship the editor\n- review the sharing model\n",
-  );
+  await typeIntoEditor(owner, "# Product sync\n\n- ship the editor\n");
   await save(owner);
 
   await owner.getByRole("button", { name: "Share", exact: true }).click();
@@ -46,8 +43,10 @@ test("capture realtime sharing", async ({ browser }) => {
   await expect(owner).toHaveURL(/#nkeys1/, { timeout: 20_000 });
   const shareLink = owner.url();
 
-  // A second identity joins and both are in edit mode so remote carets render.
-  const editorCtx = await browser.newContext({ viewport: { width: 1100, height: 720 } });
+  const editorCtx = await browser.newContext({
+    viewport: VIEWPORT,
+    recordVideo: { dir: `${DIR}/editor`, size: VIEWPORT },
+  });
   const editor = await editorCtx.newPage();
   await loginAsGuest(editor);
   await editor.goto(shareLink);
@@ -56,34 +55,37 @@ test("capture realtime sharing", async ({ browser }) => {
     timeout: 20_000,
   });
   await expect(editor.getByText(/Connecting/)).toBeHidden({ timeout: 20_000 });
-  await editor.getByRole("button", { name: "More actions" }).click();
-  await editor.getByRole("menuitem", { name: "Visual editor" }).click();
 
-  await owner.getByRole("button", { name: "More actions" }).click();
-  await owner.getByRole("menuitem", { name: "Visual editor" }).click();
+  for (const p of [owner, editor]) {
+    await p.getByRole("button", { name: "More actions" }).click();
+    await p.getByRole("menuitem", { name: "Visual editor" }).click();
+  }
 
-  // Collaborator types; the owner sees it appear live (with a remote caret).
+  // Both sides edit live, then keep the cursors moving so presence stays fresh.
   await editorSurface(editor).click();
   await editor.keyboard.press("End");
   await editor.keyboard.press("Enter");
-  await editor.keyboard.type("Realtime notes from the collaborator — typing live.");
-  await expect(
-    owner.getByText("Realtime notes from the collaborator"),
-  ).toBeVisible({ timeout: 15_000 });
+  await editor.keyboard.type("Realtime note from the collaborator.");
 
-  // Keep the collaborator "active" (cursor movement → awareness updates) so the
-  // owner's view reflects live presence and the resolved caret label.
+  await editorSurface(owner).click();
+  await owner.keyboard.press("End");
+  await owner.keyboard.press("Enter");
+  await owner.keyboard.type("Owner reply — we are both editing the same page.");
+
+  await expect(owner.getByText("Realtime note from the collaborator")).toBeVisible({
+    timeout: 15_000,
+  });
+  await expect(editor.getByText("Owner reply")).toBeVisible({ timeout: 15_000 });
+
   for (let i = 0; i < 6; i++) {
-    await editor.keyboard.press("ArrowLeft");
-    await editor.waitForTimeout(150);
     await editor.keyboard.press("ArrowRight");
-    await editor.waitForTimeout(150);
+    await owner.keyboard.press("ArrowLeft");
+    await editor.waitForTimeout(160);
   }
 
-  // Hold on the live state so the recording captures it, then a still.
-  await owner.waitForTimeout(3_000);
-  await owner.screenshot({ path: `${DIR}/realtime-owner-view.png` });
+  await owner.screenshot({ path: `${DIR}/owner.png` });
+  await editor.screenshot({ path: `${DIR}/editor.png` });
 
-  await ownerCtx.close(); // finalises the recording
+  await ownerCtx.close();
   await editorCtx.close();
 });
