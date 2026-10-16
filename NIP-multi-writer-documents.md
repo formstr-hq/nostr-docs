@@ -15,6 +15,16 @@ The owner controls who may write through an encrypted roster.
   channel (computable only by viewKey holders).
 - All `content` is NIP-44 encrypted with the viewKey.
 
+## Link
+
+```
+/doc/<naddr>#<nkeys>
+```
+
+- `<naddr>`: NIP-19 address of the root (`kind=33457`, `pubkey=owner`, `identifier=d`).
+- `<nkeys>`: `bech32` string, prefix `nkeys`, over TLV pairs (`0` = field name,
+  `1` = value). Fields: `viewKey` (hex, required); `editKey` (hex, legacy only).
+
 ## Events
 
 ### Content — kind `33457` (parameterised replaceable on `d`)
@@ -29,13 +39,15 @@ The owner controls who may write through an encrypted roster.
 - `d` = root address; authored by the owner
 - content: JSON
   ```json
-  { "v": 2, "mode": "restricted" | "open",
+  { "v": 2, "epoch": 1, "mode": "restricted" | "open",
     "members": [{ "pubkey": "<hex>",
                   "author": "<optional author-key pubkey, see below>",
                   "role": "editor" | "viewer" }],
     "title": "<optional>", "tags": ["<optional>"] }
   ```
-- latest by `created_at` wins; only the owner's roster is authoritative
+- Clients use the roster with the greatest `epoch`, then `created_at`, then `id`.
+  The owner MAY rotate the viewKey and increment `epoch` to revoke prior readers;
+  a client MUST NOT use a roster with a lower `epoch` than one it has seen.
 
 ### Author keys (recommended)
 
@@ -60,6 +72,11 @@ key, so the event `pubkey` is an unlinkable per-document pseudonym.
 - `34582` durable Yjs checkpoint (parameterised replaceable on `d`): `d` and `a`
   = room; content = base64 `Y.encodeStateAsUpdate`. One per author.
 
+Realtime is **capability-authorized**: any viewKey holder may send ops/presence.
+In `restricted` mode this is weaker than the content rule, so a client that
+requires restricted semantics MUST ignore an op/presence whose session
+attestation (`34581`) does not resolve to a roster `editor`.
+
 ## Resolution
 
 1. From the pointer (root address, viewKey, and — if present — the owner's author
@@ -71,10 +88,13 @@ key, so the event `pubkey` is an unlinkable per-document pseudonym.
    - `open`: `{kinds:[33457], "#a":[room]}`
    where the roster author set is the owner plus every `editor` member, each as
    their `author` pubkey (or their `pubkey` when absent).
-4. Discard events that do not decrypt with the viewKey. The **tip** is the
+4. Discard events that do not decrypt with the viewKey. Clamp `created_at` to
+   `now + 300s` (relays do not validate timestamps); the Markdown **tip** is the
    greatest `(created_at, id)`.
-5. For realtime, apply every author's checkpoint (`34582`, `#d`/`#a` = room) to a
-   Y.Doc; subscribe live to `{kinds:[22457,24578], "#a":[room]}`.
+5. **Precedence:** if any checkpoint (`34582`) decrypts, the merged Y.Doc (all
+   checkpoints applied) is the document; the Markdown tip is only a fallback for
+   clients that do not implement Yjs.
+6. For realtime, subscribe live to `{kinds:[22457,24578], "#a":[room]}`.
 
 ## Deletion
 
