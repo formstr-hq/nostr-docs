@@ -1,4 +1,5 @@
 import { test, expect } from "@playwright/test";
+import { writeFileSync } from "node:fs";
 import {
   loginAsGuest,
   typeIntoEditor,
@@ -12,9 +13,9 @@ import {
  *
  *   CAPTURE_SCREENSHOTS=1 npx playwright test sharing.screenshots
  *
- * Records BOTH sides (owner + a second identity) of a live co-editing session
- * into `Screenshots/sharing/owner/` and `Screenshots/sharing/editor/`, plus a
- * still from each. The repo's capture script composites them side by side.
+ * Both contexts start recording at the same instant so the two sides stay
+ * frame-aligned; the co-editing window's start offset is written to
+ * `Screenshots/sharing/.edit-offset` for the compositing script to trim from.
  */
 
 const CAPTURE = process.env.CAPTURE_SCREENSHOTS;
@@ -25,16 +26,23 @@ test("capture realtime sharing (both sides)", async ({ browser }) => {
   test.skip(!CAPTURE, "set CAPTURE_SCREENSHOTS=1 to record");
   test.setTimeout(180_000);
 
+  const t0 = Date.now();
+
+  // Both recordings begin now so the sides are frame-aligned.
   const ownerCtx = await browser.newContext({
     viewport: VIEWPORT,
     recordVideo: { dir: `${DIR}/owner`, size: VIEWPORT },
   });
   const owner = await ownerCtx.newPage();
+  const editorCtx = await browser.newContext({
+    viewport: VIEWPORT,
+    recordVideo: { dir: `${DIR}/editor`, size: VIEWPORT },
+  });
+  const editor = await editorCtx.newPage();
 
   await loginAsGuest(owner);
   await typeIntoEditor(owner, "# Product sync\n\n- ship the editor\n");
   await save(owner);
-
   await owner.getByRole("button", { name: "Share", exact: true }).click();
   const dialog = owner.getByRole("dialog").filter({ hasText: "Share Page" });
   await dialog.getByRole("switch", { name: "Can edit" }).click();
@@ -43,11 +51,6 @@ test("capture realtime sharing (both sides)", async ({ browser }) => {
   await expect(owner).toHaveURL(/#nkeys1/, { timeout: 20_000 });
   const shareLink = owner.url();
 
-  const editorCtx = await browser.newContext({
-    viewport: VIEWPORT,
-    recordVideo: { dir: `${DIR}/editor`, size: VIEWPORT },
-  });
-  const editor = await editorCtx.newPage();
   await loginAsGuest(editor);
   await editor.goto(shareLink);
   await unlockAfterReload(editor);
@@ -61,7 +64,10 @@ test("capture realtime sharing (both sides)", async ({ browser }) => {
     await p.getByRole("menuitem", { name: "Visual editor" }).click();
   }
 
-  // Both sides edit live, then keep the cursors moving so presence stays fresh.
+  // Mark the start of the co-editing window so compositing can trim to it.
+  writeFileSync(`${DIR}/.edit-offset`, String((Date.now() - t0) / 1000));
+
+  // Both sides edit live, then keep cursors moving so presence stays fresh.
   await editorSurface(editor).click();
   await editor.keyboard.press("End");
   await editor.keyboard.press("Enter");
@@ -77,7 +83,7 @@ test("capture realtime sharing (both sides)", async ({ browser }) => {
   });
   await expect(editor.getByText("Owner reply")).toBeVisible({ timeout: 15_000 });
 
-  for (let i = 0; i < 6; i++) {
+  for (let i = 0; i < 10; i++) {
     await editor.keyboard.press("ArrowRight");
     await owner.keyboard.press("ArrowLeft");
     await editor.waitForTimeout(160);
