@@ -35,6 +35,3 @@ test-results
 playwright-report
 blob-report
 playwright/.cache
-
-# Local-only marketing captures (not committed)
-Screenshots/sharing/
