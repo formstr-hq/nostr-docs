@@ -851,6 +851,11 @@ export function DocumentEditorController({
       const newMd = getEditorMarkdown(editor);
       mdRef.current = newMd;
       setMd(newMd);
+      if (modeRef.current !== "edit") {
+        // Remote-driven change while in preview: the user made no local edit, so
+        // don't flag the document as having unsaved changes (or block navigation).
+        lastSavedMdRef.current = newMd;
+      }
       setWordCount(editor.storage.characterCount.words());
       setCharCount(editor.storage.characterCount.characters());
 

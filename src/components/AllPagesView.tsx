@@ -39,9 +39,8 @@ import { useDocMetadata } from "../contexts/DocMetadataContext";
 import { useRelays } from "../contexts/RelayContext";
 import { useUser } from "../contexts/UserContext";
 import { useLocation, useNavigate } from "react-router-dom";
-import { nip19, type Event } from "nostr-tools";
+import { nip19 } from "nostr-tools";
 import { encodeNKeys } from "../utils/nkeys";
-import { getEventAddress } from "../utils/helpers";
 import RelayPresenceIndicator from "./RelayPresenceIndicator";
 import {
   heuristicTitle,
@@ -230,28 +229,28 @@ export default function AllPagesView() {
     return next;
   }, [visitedDocuments, sharedDocuments]);
 
-  const handleDocumentSelect = (doc: Event) => {
-    const dTag = doc.tags.find((t) => t[0] === "d")?.[1];
-    const address = getEventAddress(doc);
-    if (!address) {
+  const handleDocumentSelect = (address: string) => {
+    // Use the document key (its own address), not a version's event: for a v2
+    // group doc the newest version may be a collaborator's, whose pubkey is not
+    // the document's root.
+    const [kindStr, pubkey, ...rest] = address.split(":");
+    const dTag = rest.join(":");
+    const kind = Number(kindStr);
+    if (!pubkey || !dTag || !Number.isFinite(kind)) {
       alert("Invalid Doc");
       return;
     }
 
-    const naddr = nip19.naddrEncode({
-      identifier: dTag!,
-      pubkey: doc.pubkey,
-      kind: doc.kind,
-    });
+    const naddr = nip19.naddrEncode({ identifier: dTag, pubkey, kind });
 
-    if (doc.kind === KIND_LONGFORM || doc.kind === KIND_COMMUNITY_NIP) {
+    if (kind === KIND_LONGFORM || kind === KIND_COMMUNITY_NIP) {
       navigate(`/article/${naddr}`);
       return;
     }
 
     const sharedAsAddress = docSharedAs.get(address) || (dTag ? docSharedAs.get(dTag) : undefined);
     const sharedAsKeys = sharedAsAddress ? getKeys(sharedAsAddress) : [];
-    const sharedKeys = getKeys(`${doc.kind}:${doc.pubkey}:${dTag}`);
+    const sharedKeys = getKeys(address);
     const localKeys = getDocumentKeys(address);
     const viewKey = sharedKeys[0] || sharedAsKeys[0] || localKeys?.viewKey;
     const editKey = sharedKeys[1] || sharedAsKeys[1] || localKeys?.editKey;
@@ -851,7 +850,7 @@ export default function AllPagesView() {
           return (
             <Box
               key={address}
-              onClick={() => handleDocumentSelect(event)}
+              onClick={() => handleDocumentSelect(address)}
               sx={{
                 borderRadius: 2,
                 bgcolor: "background.paper",
@@ -1029,7 +1028,7 @@ export default function AllPagesView() {
               >
                 <span>{formatRelativeTime(event.created_at)}</span>
                 {isRelaySynced &&
-                  (event.pubkey === user?.pubkey ? (
+                  (address.split(":")[1] === user?.pubkey ? (
                     <RelayPresenceIndicator event={event} relays={relays} />
                   ) : (
                     <Tooltip title="Synced to relays">
