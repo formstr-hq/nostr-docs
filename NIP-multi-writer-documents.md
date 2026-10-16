@@ -65,12 +65,13 @@ key, so the event `pubkey` is an unlinkable per-document pseudonym.
 
 ### Realtime (optional)
 
-- `22457` CRDT op / `24578` presence: content = base64 Yjs sync/awareness
-  message, tag `["a", <room>]`, signed by a session key.
-- `34581` session attestation: `d` = `<room>:<sessionPubkey>`, content
-  `{ "realPubkey": "<hex>", "expiresAt": <unix> }`, signed by the author's real key.
+- `22457` CRDT op / `24578` presence: plaintext = base64 Yjs sync/awareness
+  message, NIP‑44 encrypted with the viewKey; tag `["a", <room>]`; signed by a
+  session key.
+- `34581` session attestation: `d` = `<room>:<sessionPubkey>`; plaintext =
+  `{ "realPubkey": "<hex>", "expiresAt": <unix> }`; signed by the author's real key.
 - `34582` durable Yjs checkpoint (parameterised replaceable on `d`): `d` and `a`
-  = room; content = base64 `Y.encodeStateAsUpdate`. One per author.
+  = room; plaintext = base64 `Y.encodeStateAsUpdate`; one per author.
 
 Realtime is **capability-authorized**: any viewKey holder may send ops/presence.
 In `restricted` mode this is weaker than the content rule, so a client that
@@ -95,6 +96,47 @@ attestation (`34581`) does not resolve to a roster `editor`.
    checkpoints applied) is the document; the Markdown tip is only a fallback for
    clients that do not implement Yjs.
 6. For realtime, subscribe live to `{kinds:[22457,24578], "#a":[room]}`.
+
+## Examples
+
+`content` below is ciphertext (`<nip44: …>` shows the plaintext that was
+encrypted). In the realtime events the *plaintext* is itself a base64 string of
+the Yjs payload, which is then NIP‑44 encrypted with the viewKey.
+
+Content — kind `33457`:
+```json
+{ "kind": 33457, "pubkey": "<author>", "created_at": 1700000000,
+  "tags": [["d", "<d>"], ["a", "<room>"]],
+  "content": "<nip44: # Title\n\nMarkdown body>" }
+```
+
+Roster — kind `34579`, owner-signed:
+```json
+{ "kind": 34579, "pubkey": "<owner>", "created_at": 1700000000,
+  "tags": [["d", "33457:<owner>:<d>"]],
+  "content": "<nip44: {\"v\":2,\"epoch\":1,\"mode\":\"restricted\",\"members\":[{\"pubkey\":\"<editor>\",\"role\":\"editor\"}],\"tags\":[]}>" }
+```
+
+CRDT op — kind `22457` (presence `24578` is identical with an awareness update):
+```json
+{ "kind": 22457, "pubkey": "<sessionPubkey>", "created_at": 1700000000,
+  "tags": [["a", "<room>"]],
+  "content": "<nip44: <base64 of the Yjs sync message>>" }
+```
+
+Session attestation — kind `34581`, signed by the real key:
+```json
+{ "kind": 34581, "pubkey": "<realPubkey>", "created_at": 1700000000,
+  "tags": [["d", "<room>:<sessionPubkey>"]],
+  "content": "<nip44: {\"realPubkey\":\"<realPubkey>\",\"expiresAt\":1700432000}>" }
+```
+
+Durable checkpoint — kind `34582`:
+```json
+{ "kind": 34582, "pubkey": "<author>", "created_at": 1700000000,
+  "tags": [["d", "<room>"], ["a", "<room>"]],
+  "content": "<nip44: <base64 of Y.encodeStateAsUpdate(ydoc)>>" }
+```
 
 ## Deletion
 
