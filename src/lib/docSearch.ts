@@ -30,7 +30,7 @@ type IndexEntry = {
 
 export const heuristicTitle = (content: string, maxLength = 120): string => {
   const firstLine = content.split("\n").find((l) => l.trim()) ?? "";
-  return firstLine.replace(/^#+\s*/, "").slice(0, maxLength).trim();
+  return firstLine.replace(/^#+\s*/, "").replace(/\\\s*$/, "").slice(0, maxLength).trim();
 };
 
 const buildIndex = (
