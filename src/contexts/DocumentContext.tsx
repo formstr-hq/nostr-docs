@@ -28,7 +28,7 @@ import { publishEvent } from "../nostr/publish";
 import { encryptContent } from "../utils/encryption";
 import { makeTag } from "../utils/makeTag";
 import { subscribe, fetchCachedMany, fetchCachedByAddresses, resolveEventsByAddress, cacheLocalEvents, type Subscription } from "../dataLayer";
-import { authorSet, decodeContentPayload, fetchRoster, isOpenRoster, parseRootAddress } from "../nostr/sharedDoc";
+import { authorSet, collabRoom, decodeContentPayload, fetchRoster, isOpenRoster, parseRootAddress } from "../nostr/sharedDoc";
 
 type DocumentVersion = {
   event: Event;
@@ -280,15 +280,17 @@ export const DocumentProvider: React.FC<{ children: React.ReactNode }> = ({
       const cachedEntry = localEntriesRef.current.get(documentId);
       let viewKey = keys?.viewKey ?? cachedEntry?.viewKey;
       if (!viewKey) {
-        // A v2 event carries ["a", root]; if we already hold that document's
-        // viewKey in the local store (e.g. the owner's own re-published event),
-        // use it instead of wrongly attempting a self-decrypt.
-        const eventRoot = document.tags.find((t) => t[0] === "a")?.[1];
-        const wantAddress = eventRoot ?? documentId;
-        const wantD = wantAddress.split(":").slice(2).join(":");
+        // A v2 event carries ["a", room] (a capability id, not the root). If we
+        // already hold that document's viewKey locally (e.g. the owner's own
+        // re-published event), use it instead of wrongly attempting a self-decrypt.
+        const eventRoom = document.tags.find((t) => t[0] === "a")?.[1];
+        const wantD = (eventRoom ?? documentId).split(":").slice(2).join(":");
         for (const [addr, e] of localEntriesRef.current.entries()) {
           if (!e.viewKey) continue;
-          if (addr === wantAddress || addr.split(":").slice(2).join(":") === wantD) {
+          if (
+            (eventRoom && collabRoom(e.viewKey) === eventRoom) ||
+            addr.split(":").slice(2).join(":") === wantD
+          ) {
             viewKey = e.viewKey;
             break;
           }
@@ -658,8 +660,8 @@ export const DocumentProvider: React.FC<{ children: React.ReactNode }> = ({
       // so an editor's version lands in the owner's document live (previously
       // only the owner's own slot was subscribed). Restored each session from the
       // roster; open-mode docs subscribe by `#a`.
-      type GroupSub = { root: string; owner: string; viewKey: string; d: string };
-      const groupByRoot = new Map<string, GroupSub>();
+      type GroupSub = { root: string; owner: string; viewKey: string; d: string; room: string };
+      const groupByRoom = new Map<string, GroupSub>();
       const groupFilters: {
         kinds: number[];
         authors?: string[];
@@ -670,7 +672,8 @@ export const DocumentProvider: React.FC<{ children: React.ReactNode }> = ({
         if (!entry.viewKey) continue;
         const parsed = parseRootAddress(entry.address);
         if (!parsed || parsed.owner !== pubkey) continue;
-        if (groupByRoot.has(entry.address)) continue;
+        const room = collabRoom(entry.viewKey);
+        if (groupByRoom.has(room)) continue;
         let roster;
         try {
           roster = await fetchRoster(parsed.owner, parsed.d, entry.viewKey, relays);
@@ -679,14 +682,15 @@ export const DocumentProvider: React.FC<{ children: React.ReactNode }> = ({
         }
         if (isCancelled) return;
         if (!roster) continue; // not a v2 group document
-        groupByRoot.set(entry.address, {
+        groupByRoom.set(room, {
           root: entry.address,
           owner: parsed.owner,
           viewKey: entry.viewKey,
           d: parsed.d,
+          room,
         });
         if (isOpenRoster(roster)) {
-          groupFilters.push({ kinds: [KIND_FILE], "#a": [entry.address] });
+          groupFilters.push({ kinds: [KIND_FILE], "#a": [room] });
         } else {
           groupFilters.push({
             kinds: [KIND_FILE],
@@ -702,10 +706,10 @@ export const DocumentProvider: React.FC<{ children: React.ReactNode }> = ({
           onEvent: async (event: Event) => {
             if (isCancelled) return;
             const addr = getEventAddress(event);
-            // v2 group versions carry ["a", root]; route them under the root so
+            // v2 group versions carry ["a", room]; route them under the root so
             // every author lands in the owner's single document.
-            const eventRoot = event.tags.find((t) => t[0] === "a")?.[1];
-            const group = eventRoot ? groupByRoot.get(eventRoot) : undefined;
+            const eventRoom = event.tags.find((t) => t[0] === "a")?.[1];
+            const group = eventRoom ? groupByRoom.get(eventRoom) : undefined;
             const documentId = group?.root ?? addr;
             if (documentId) {
               setLocalOnlyAddresses((prev) => {

@@ -98,6 +98,7 @@ test("open share: a collaborator edits and the owner sees it", async ({
   const p = decodedRoot.data as nip19.AddressPointer;
   const rootAddr = `${p.kind}:${p.pubkey}:${p.identifier}`;
   const collabEvents = [
+    ...(await queryLocalRelay({ kinds: [33457] })),
     ...(await queryLocalRelay({ kinds: [22457] })),
     ...(await queryLocalRelay({ kinds: [24578] })),
     ...(await queryLocalRelay({ kinds: [34581] })),

@@ -20,7 +20,7 @@ import { KIND_FILE } from "../nostr/kinds";
 import { fetchAllDocMetadata, saveDocMetadata } from "../nostr/docMetadata";
 import { subscribe, resolveEventsByAddress, cacheLocalEvents, type Subscription } from "../dataLayer";
 import { getEventAddress } from "../utils/helpers";
-import { authorSet, decodeContentPayload, fetchRoster, parseRootAddress } from "../nostr/sharedDoc";
+import { authorSet, collabRoom, decodeContentPayload, fetchRoster, parseRootAddress } from "../nostr/sharedDoc";
 
 type DocumentVersion = {
   event: Event;
@@ -96,6 +96,7 @@ export const SharedPagesProvider: React.FC<{ children: React.ReactNode }> = ({
       d: string;
       viewKey: string;
       editKey?: string;
+      room: string;
       open: boolean;
       authors: Set<string>;
     };
@@ -116,6 +117,7 @@ export const SharedPagesProvider: React.FC<{ children: React.ReactNode }> = ({
       }
 
       const open = roster?.mode === "open";
+      const room = collabRoom(viewKey);
       const authorsList = authorSet(parsed.owner, roster);
       entries.push({
         root: addr,
@@ -123,13 +125,14 @@ export const SharedPagesProvider: React.FC<{ children: React.ReactNode }> = ({
         d: parsed.d,
         viewKey,
         editKey,
+        room,
         open,
         authors: new Set(authorsList),
       });
       // `open` mode has no author set to filter on: discover versions by the
-      // root `a` tag instead. Restricted/legacy keeps the bounded author filter.
+      // capability-derived room tag. Restricted/legacy keeps the author filter.
       if (open) {
-        filters.push({ kinds: [KIND_FILE], "#a": [addr] });
+        filters.push({ kinds: [KIND_FILE], "#a": [room] });
       } else {
         filters.push({ kinds: [KIND_FILE], authors: authorsList, "#d": [parsed.d] });
       }
@@ -147,7 +150,7 @@ export const SharedPagesProvider: React.FC<{ children: React.ReactNode }> = ({
           const eventRoot = event.tags.find((t) => t[0] === "a")?.[1];
           const entry = entries.find((e) =>
             e.open
-              ? eventRoot === e.root || dTag === e.d
+              ? eventRoot === e.room || dTag === e.d
               : e.d === dTag && e.authors.has(event.pubkey),
           );
           if (!entry) return;

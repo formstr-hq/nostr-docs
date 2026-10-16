@@ -16,7 +16,7 @@ import { signerManager } from "../signer";
 import { publishEvent } from "./publish";
 import { KIND_FILE, KIND_YJS_CHECKPOINT } from "./kinds";
 import { cacheLocalEvents } from "../dataLayer";
-import { collabRoom, encryptWithViewKey, fetchRoster, rootAddress, type DocMember, type DocMode, type DocRole } from "./sharedDoc";
+import { collabRoom, encryptWithViewKey, fetchRoster, type DocMember, type DocMode, type DocRole } from "./sharedDoc";
 import {
   saveRoster,
   type DocMetadata,
@@ -83,7 +83,7 @@ export async function publishOwnerContent(
   const encrypted = encryptWithViewKey(content, viewKey);
   const signed = await signer.signEvent({
     kind: KIND_FILE,
-    tags: [["d", d], ["a", rootAddress(owner, d)]],
+    tags: [["d", d], ["a", collabRoom(viewKey)]],
     content: encrypted,
     created_at: createdAt ?? Math.floor(Date.now() / 1000),
   });

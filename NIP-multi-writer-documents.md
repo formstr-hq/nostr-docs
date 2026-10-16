@@ -19,7 +19,7 @@ The owner controls who may write through an encrypted roster.
 
 ### Content — kind `33457` (parameterised replaceable on `d`)
 
-- tags: `["d", <document id>]`, `["a", <root address>]`
+- tags: `["d", <document id>]`, `["a", <room>]`
 - content: the document Markdown
 - signed by the author
 - one event per author (their own replaceable slot)
@@ -30,10 +30,26 @@ The owner controls who may write through an encrypted roster.
 - content: JSON
   ```json
   { "v": 2, "mode": "restricted" | "open",
-    "members": [{ "pubkey": "<hex>", "role": "editor" | "viewer" }],
+    "members": [{ "pubkey": "<hex>",
+                  "author": "<optional author-key pubkey, see below>",
+                  "role": "editor" | "viewer" }],
     "title": "<optional>", "tags": ["<optional>"] }
   ```
 - latest by `created_at` wins; only the owner's roster is authoritative
+
+### Author keys (recommended)
+
+To keep authorship off relays, writers SHOULD sign document events (content,
+checkpoints) with a **per-document keypair** ("author key") instead of their real
+key, so the event `pubkey` is an unlinkable per-document pseudonym.
+
+- Generate one author key per (user, document) and persist its secret alongside
+  the viewKey in the user's private list, so all of that user's devices reuse it.
+- The roster carries each member's author pubkey in its `author` field.
+- The roster is itself signed by the owner's author key; the share link carries
+  the owner's author pubkey so clients know which roster is authoritative.
+- The **author set used in resolution is each member's `author`**, falling back
+  to `pubkey` for members (or clients) that predate this extension.
 
 ### Realtime (optional)
 
@@ -46,12 +62,15 @@ The owner controls who may write through an encrypted roster.
 
 ## Resolution
 
-1. From the pointer (root address + viewKey), compute the room.
-2. Fetch the roster `{kinds:[34579], authors:[owner], "#d":[root]}`, decrypt with
-   the viewKey. Absent roster ⇒ the document has a single author (the owner).
+1. From the pointer (root address, viewKey, and — if present — the owner's author
+   pubkey), compute the room.
+2. Fetch the roster `{kinds:[34579], authors:[<owner author pubkey, else owner>],
+   "#d":[root]}`, decrypt with the viewKey. Absent roster ⇒ single author (owner).
 3. Fetch content:
-   - `restricted`: `{kinds:[33457], authors:[owner, ...editor members], "#d":[d]}`
-   - `open`: `{kinds:[33457], "#a":[root]}`
+   - `restricted`: `{kinds:[33457], authors:[<roster author set>], "#d":[d]}`
+   - `open`: `{kinds:[33457], "#a":[room]}`
+   where the roster author set is the owner plus every `editor` member, each as
+   their `author` pubkey (or their `pubkey` when absent).
 4. Discard events that do not decrypt with the viewKey. The **tip** is the
    greatest `(created_at, id)`.
 5. For realtime, apply every author's checkpoint (`34582`, `#d`/`#a` = room) to a

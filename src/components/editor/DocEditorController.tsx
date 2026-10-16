@@ -103,7 +103,7 @@ import { useBlossomServers } from "../../contexts/BlossomContext";
 import { KIND_FILE } from "../../nostr/kinds";
 import { getLatestVersion } from "../../utils/helpers";
 import { enableGroupSharing, updateRosterMembers, upsertMember, removeMember, publishCheckpoint } from "../../nostr/shareV2";
-import { fetchRoster, parseRootAddress, type DocMember, type DocMode } from "../../nostr/sharedDoc";
+import { fetchRoster, parseRootAddress, collabRoom, type DocMember, type DocMode } from "../../nostr/sharedDoc";
 import { fetchProfile } from "../../nostr/fetchProfile";
 import { encodeNKeys } from "../../utils/nkeys";
 import {
@@ -1355,10 +1355,11 @@ export function DocumentEditorController({
     localOnly = false,
   ) => {
     const dTag = address.split(":")?.[2];
-    // v2: every content event points at its root document address so its versions
-    // can be found without enumerating authors (`#a`) and so two documents sharing
-    // a `d` never collide. Legacy readers ignore the extra tag.
-    const eventTags = [["d", dTag], ["a", address]];
+    // v2: the content event's `a` tag is the capability-derived room (not the
+    // root), so the owner is not named in the public footprint; it still lets a
+    // client find all versions (`#a`). Legacy readers ignore the extra tag.
+    const aTag = viewKey ? collabRoom(viewKey) : address;
+    const eventTags = [["d", dTag], ["a", aTag]];
     // Relays drop replaceable events whose created_at is not strictly newer, and
     // created_at has 1s granularity — so two saves in the same second (or a
     // re-publish right after a save, e.g. sharing) would be silently discarded.

@@ -260,11 +260,14 @@ export async function fetchGroupEvents(
   owner: string,
   d: string,
   roster: DocRoster | null,
+  viewKey: string,
   relays?: string[],
 ): Promise<Event[]> {
   if (isOpenRoster(roster)) {
+    // Content events are tagged with the capability-derived room (not the root),
+    // so the document owner is not named in the public footprint.
     return fetchMany(
-      [{ kinds: [KIND_FILE], "#a": [rootAddress(owner, d)] }],
+      [{ kinds: [KIND_FILE], "#a": [collabRoom(viewKey)] }],
       relays,
     );
   }
@@ -299,7 +302,7 @@ export async function resolveSharedDocument(
 ): Promise<ResolvedDocument> {
   const roster = await fetchRoster(owner, d, viewKey, relays);
   const authors = authorSet(owner, roster);
-  const fetched = await fetchGroupEvents(owner, d, roster, relays);
+  const fetched = await fetchGroupEvents(owner, d, roster, viewKey, relays);
 
   const events = fetched.filter((e) => {
     try {
