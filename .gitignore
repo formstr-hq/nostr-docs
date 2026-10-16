@@ -36,5 +36,5 @@ playwright-report
 blob-report
 playwright/.cache
 
-# Local marketing capture (regenerate with CAPTURE_SCREENSHOTS=1)
-Screenshots/**/*.webm
+# Local-only marketing captures (not committed)
+Screenshots/sharing/
