@@ -181,25 +181,24 @@ tip; legacy links are untouched. e2e: `tests/e2e/sharing.spec.ts` (open mode).
 - Optional polish: surface the owner's roster title/tags to participants (they
   currently read only their own metadata) and store `role`/`mode` on the entry.
 
-### Phase 6 — CRDT merge (compatibility-first) ✅ live + durable checkpoints
+### Phase 6 — live collaboration (ephemeral) ✅
 - ✅ **Live collaboration + presence**: Yjs ops (kind 22457) and awareness
-  (24578) over Nostr, viewKey-encrypted, tagged `["a", root]`; per-tab session
-  keys with a viewKey-encrypted attestation (34581). Writers on a shared doc
-  edit live and merge via Yjs; solo/legacy paths untouched. Re-syncs on
-  reconnect (`online` event), not just the 60s periodic step.
-- ✅ **Durable checkpoints**: a save during a collab session also publishes the
-  author's Yjs state in a dedicated kind (**34582**, parameterised-replaceable on
-  `(author, root)`), viewKey-encrypted. Kind 33457 content stays plain Markdown
-  (no format change / no compatibility break). A loader applies every author's
-  checkpoint (`Y.applyUpdate`) so the merged document is reconstructed regardless
-  of which markdown snapshot won last-write-wins — closing the "someone saves in
-  between" hole.
-- Remaining: lineage/revision for the `open`-mode adversarial case, and removing
-  the first-time seeding grace entirely once every doc has a checkpoint.
+  (24578) over Nostr, viewKey-encrypted, tagged `["a", room]`; per-tab session
+  keys with an **embedded** attestation token (kind 34581, never published).
+  Writers on a shared doc edit live and merge via Yjs; solo/legacy paths
+  untouched. Re-syncs on reconnect (`online` event), not just the 60s step.
+- **Yjs is ephemeral**: the document's durable store is the Markdown snapshots
+  (33457). Each session seeds from the Markdown tip and merges live. Cross-session
+  / offline conflict is therefore last-write-wins on the Markdown tip (accepted
+  for v1).
+- **Durable CRDT checkpoints were removed** (kind 34582) — they bloated relays
+  (full Yjs state per author) and were unnecessary while the Markdown baseline is
+  authoritative. Revisit only if cross-session offline merge is needed.
+- Remaining: lineage/revision for the `open`-mode adversarial case.
 
 **Tests** (`tests/e2e/sharing.spec.ts`): open-share round-trip, live reflection
-without saving, save-in-between durability with the peer gone, and a
-flaky-network reconnect convergence.
+without saving, concurrent writers, an offline writer merging on reconnect, and
+a three-party convergence.
 
 ## Verification
 

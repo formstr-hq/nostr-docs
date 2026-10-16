@@ -28,20 +28,12 @@ export const KIND_DOC_METADATA = 34579;
 export const KIND_PRESENCE = 24578;
 
 /**
- * Per-author durable Yjs checkpoint for a v2 shared document. Parameterised
- * replaceable on (author, d) where d = the document's root address.
- * Content is NIP-44 encrypted (viewKey) base64 of a Yjs state update. Kept in a
- * dedicated kind so kind 33457 content stays plain Markdown (no format change).
- */
-export const KIND_YJS_CHECKPOINT = 34582;
-
-/**
- * Binds a per-tab collaboration session key to the real pubkey behind it, so
- * collaborators can be identified despite live ops being signed by the session
- * key. Addressable (must remain discoverable). Signed by the real signer.
- * Uses tag: ["d", "<root address>:<sessionPubkey>"]
- * Content is NIP-44 encrypted (viewKey conversation key) JSON:
- * { realPubkey: string, expiresAt: number }
+ * Binds a per-tab collaboration session key to the real pubkey behind it. This
+ * event is NOT published; it is the token embedded in the (viewKey-encrypted)
+ * payload of each CRDT op / presence event, so relays never see the real key.
+ * Uses tag: ["d", "<room>:<sessionPubkey>"]
+ * Content is plaintext JSON { realPubkey, expiresAt } (it is already inside an
+ * encrypted payload).
  */
 export const KIND_SESSION_ATTESTATION = 34581;
 

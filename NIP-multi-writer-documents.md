@@ -3,9 +3,9 @@
 `draft` `optional`
 
 A document is a set of per-author replaceable events, all encrypted with one
-shared key. Its canonical state is a Yjs CRDT merged across the authorized
-authors' checkpoints; the Markdown events are point-in-time snapshots (a portable
-fallback/export). The owner controls who may write through an encrypted roster.
+shared key; the newest version across the authorized authors is the document.
+Yjs is used only for live, in-session merging — it is not a durable store. The
+owner controls who may write through an encrypted roster.
 
 ## Conventions
 
@@ -31,12 +31,10 @@ fallback/export). The owner controls who may write through an encrypted roster.
 ### Content — kind `33457` (parameterised replaceable on `d`)
 
 - tags: `["d", <document id>]`, `["a", <room>]`
-- content: an optional point-in-time Markdown snapshot/export of the document
-  (portable fallback only; the canonical, durable state is the Yjs checkpoints —
-  see Resolution). Clients SHOULD NOT publish one on every save; for shared v2
-  documents it MAY be omitted entirely.
+- content: the document Markdown
 - signed by the author
-- one event per author (their own replaceable slot)
+- one event per author (their own replaceable slot); the newest across authors is
+  the document
 
 ### Roster — kind `34579` (parameterised replaceable on `d`)
 
@@ -55,9 +53,9 @@ fallback/export). The owner controls who may write through an encrypted roster.
 
 ### Author keys (recommended)
 
-To keep authorship off relays, writers SHOULD sign document events (content,
-checkpoints) with a **per-document keypair** ("author key") instead of their real
-key, so the event `pubkey` is an unlinkable per-document pseudonym.
+To keep authorship off relays, writers SHOULD sign document events (content)
+with a **per-document keypair** ("author key") instead of their real key, so the
+event `pubkey` is an unlinkable per-document pseudonym.
 
 - Generate one author key per (user, document) and persist its secret alongside
   the viewKey in the user's private list, so all of that user's devices reuse it.
@@ -69,19 +67,15 @@ key, so the event `pubkey` is an unlinkable per-document pseudonym.
 
 ### Realtime (optional)
 
-- `22457` CRDT op / `24578` presence: plaintext = base64 Yjs sync/awareness
-  message, NIP‑44 encrypted with the viewKey; tag `["a", <room>]`; signed by a
-  session key.
-- `34581` session attestation: `d` = `<room>:<sessionPubkey>`; plaintext =
-  `{ "realPubkey": "<hex>", "expiresAt": <unix> }`; includes
-  `["expiration", <expiresAt>]` (NIP‑40) so relays reclaim it once expired; signed
-  by the author's real key. Binds the ephemeral session key (which signs
-  ops/presence so no signer prompt is needed per keystroke) to the real pubkey,
-  for presence attribution and restricted-mode authorisation.
-- `34582` durable Yjs checkpoint (parameterised replaceable on `d`): `d` and `a`
-  = room; plaintext = base64 `Y.encodeStateAsUpdate` (the **full** state, not a
-  diff); one per author. Clients SHOULD debounce writes — replaceability keeps it
-  one stored event per author, but each publish is churn.
+- `22457` CRDT op / `24578` presence: NIP‑44(viewKey) of the JSON envelope
+  `{ "a": <attestation token | null>, "m": "<base64 Yjs sync/awareness message>" }`;
+  tag `["a", <room>]`; signed by a session key.
+- The **attestation token** (`a`) is a real-key-signed event (kind `34581`),
+  plaintext content `{ "realPubkey": "<hex>", "expiresAt": <unix> }`, tag
+  `["d", "<room>:<sessionPubkey>"]`. It is **not published** — it rides inside each
+  op/presence, so a peer can resolve `session → realPubkey` (for presence
+  attribution and restricted-mode authorisation) and relays never see the real
+  key. Signed once per session (one signer prompt).
 
 Realtime is **capability-authorized**: any viewKey holder may send ops/presence.
 In `restricted` mode this is weaker than the content rule, so a client that
@@ -100,19 +94,16 @@ attestation (`34581`) does not resolve to a roster `editor`.
    where the roster author set is the owner plus every `editor` member, each as
    their `author` pubkey (or their `pubkey` when absent).
 4. Discard events that do not decrypt with the viewKey. Clamp `created_at` to
-   `now + 300s` (relays do not validate timestamps); the Markdown **tip** is the
-   greatest `(created_at, id)`.
-5. **Precedence:** when checkpoints (`34582`) decrypt, the document is the merged
-   Y.Doc (all applied) — **but only if the newest checkpoint is at least as new as
-   the newest Markdown snapshot** (`created_at`). If the Markdown tip is newer, use
-   it, so a stale checkpoint can never regress the document.
-6. For realtime, subscribe live to `{kinds:[22457,24578], "#a":[room]}`.
+   `now + 300s` (relays do not validate timestamps); the document is the Markdown
+   **tip**, the greatest `(created_at, id)` across the authorized authors.
+5. For realtime, subscribe live to `{kinds:[22457,24578], "#a":[room]}` and merge
+   incoming ops into an in-memory Y.Doc. Yjs is not persisted to relays: on a new
+   session a client seeds its Y.Doc from the Markdown tip.
 
 ## Examples
 
 `content` below is ciphertext (`<nip44: …>` shows the plaintext that was
-encrypted). In the realtime events the *plaintext* is itself a base64 string of
-the Yjs payload, which is then NIP‑44 encrypted with the viewKey.
+encrypted). For the realtime events the plaintext is the JSON envelope shown.
 
 Content — kind `33457`:
 ```json
@@ -132,21 +123,15 @@ CRDT op — kind `22457` (presence `24578` is identical with an awareness update
 ```json
 { "kind": 22457, "pubkey": "<sessionPubkey>", "created_at": 1700000000,
   "tags": [["a", "<room>"]],
-  "content": "<nip44: <base64 of the Yjs sync message>>" }
+  "content": "<nip44: {\"a\": <token or null>, \"m\": \"<base64 of the Yjs message>\"}>" }
 ```
 
-Session attestation — kind `34581`, signed by the real key:
+The embedded `a` token (not published) is a normal signed event:
 ```json
 { "kind": 34581, "pubkey": "<realPubkey>", "created_at": 1700000000,
   "tags": [["d", "<room>:<sessionPubkey>"]],
-  "content": "<nip44: {\"realPubkey\":\"<realPubkey>\",\"expiresAt\":1700432000}>" }
-```
-
-Durable checkpoint — kind `34582`:
-```json
-{ "kind": 34582, "pubkey": "<author>", "created_at": 1700000000,
-  "tags": [["d", "<room>"], ["a", "<room>"]],
-  "content": "<nip44: <base64 of Y.encodeStateAsUpdate(ydoc)>>" }
+  "content": "{\"realPubkey\":\"<realPubkey>\",\"expiresAt\":1700432000}",
+  "id": "<…>", "sig": "<…>" }
 ```
 
 ## Deletion

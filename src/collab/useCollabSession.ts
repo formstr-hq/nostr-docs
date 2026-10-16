@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import type * as YType from "yjs";
 import type { IndexeddbPersistence as IndexeddbPersistenceType } from "y-indexeddb";
 import type { Awareness } from "y-protocols/awareness";
@@ -6,13 +6,12 @@ import type { NostrYjsProvider as NostrYjsProviderType } from "./NostrYjsProvide
 import type { Collaboration as CollaborationType } from "@tiptap/extension-collaboration";
 import type { CollaborationCaret as CollaborationCaretType } from "@tiptap/extension-collaboration-caret";
 import { getOrCreateSession } from "./sessionKeys";
-import { fetchYjsCheckpoints, parseRootAddress } from "../nostr/sharedDoc";
-import { base64ToUint8, uint8ToBase64 } from "../utils/base64";
 
-// Grace period for the initial sync-step round-trip so the editor doesn't flash
-// empty content before any online peer replies. Only used when this device has
-// NO local Yjs history yet (i.e. the document has never been collaborated on
-// from here) — a returning client loads instantly with no "connecting" state.
+// Grace period for the initial sync-step round-trip, so a client doesn't seed the
+// empty Y.Doc from the Markdown snapshot before a peer's live state arrives.
+// (Two clients seeding the same Markdown would make Yjs merge it into a
+// duplicated document. The Markdown snapshot is the durable baseline; Yjs is an
+// ephemeral, live-session layer.)
 const READY_GRACE_MS = 1_500;
 
 export interface CollabSession {
@@ -22,8 +21,6 @@ export interface CollabSession {
   ready: boolean;
   CollaborationExt: typeof CollaborationType;
   CollaborationCaretExt: typeof CollaborationCaretType;
-  /** Encode the current Yjs state as a base64 update for a durable checkpoint. */
-  encodeState: () => string;
 }
 
 interface InternalSession {
@@ -31,13 +28,13 @@ interface InternalSession {
   provider: NostrYjsProviderType;
   CollaborationExt: typeof CollaborationType;
   CollaborationCaretExt: typeof CollaborationCaretType;
-  encodeState: () => string;
 }
 
 /**
- * Sets up (and tears down) a Yjs + Nostr collaboration session for a document.
- * Returns null with zero overhead when there's no viewKey or the caller can't
- * write; solo/private docs never touch this.
+ * Sets up (and tears down) a Yjs + Nostr live-collaboration session for a shared
+ * document. Returns null with zero overhead when there's no viewKey. The
+ * document's durable state is the Markdown snapshots (kind 33457); Yjs carries
+ * only in-session merges and is not persisted to relays.
  *
  * Yjs, y-indexeddb, the provider, and the TipTap collaboration extensions are
  * dynamically imported so only collab docs pay the bundle weight.
@@ -46,14 +43,10 @@ export function useCollabSession(
   docAddress: string | null,
   viewKey: string | undefined,
   relays: string[],
-  markdownCreatedAt = 0,
 ): CollabSession | null {
   const [session, setSession] = useState<InternalSession | null>(null);
   const [ready, setReady] = useState(false);
   const enabled = !!docAddress && !!viewKey;
-  // Newest Markdown snapshot time, read once per session for the freshness guard.
-  const markdownAtRef = useRef(markdownCreatedAt);
-  markdownAtRef.current = markdownCreatedAt;
 
   useEffect(() => {
     if (!enabled || !docAddress || !viewKey) return;
@@ -86,45 +79,11 @@ export function useCollabSession(
       ydoc = new YjsModule.Doc();
       idb = new IndexeddbPersistence(docAddress, ydoc);
 
-      // Local durability first: hydrate from IndexedDB before the network.
+      // Local hydration first (this device's in-progress session), then connect.
       await idb.whenSynced;
       if (cancelled) return;
 
-      // Durable CRDT checkpoint: if this device has no local Yjs history, apply
-      // the state updates every author left on relays. Yjs merges them, so the
-      // result is the merged document regardless of which markdown snapshot won
-      // last-write-wins (and without the empty-doc seeding race).
-      let appliedCheckpoint = false;
-      if (ydoc.getXmlFragment("default").length === 0) {
-        const parsed = parseRootAddress(docAddress);
-        if (parsed) {
-          const checkpoints = await fetchYjsCheckpoints(
-            parsed.owner,
-            parsed.d,
-            viewKey,
-            relays,
-          ).catch(() => ({ states: [] as string[], newestCreatedAt: 0 }));
-          if (cancelled) return;
-          // Freshness guard: never render a CRDT state older than the freshest
-          // Markdown snapshot, or a stale checkpoint would regress the document.
-          const mdAt = markdownAtRef.current;
-          const useCheckpoints =
-            checkpoints.newestCreatedAt > 0 &&
-            (mdAt === 0 || checkpoints.newestCreatedAt >= mdAt);
-          if (useCheckpoints) {
-            for (const state of checkpoints.states) {
-              try {
-                YjsModule.applyUpdate(ydoc, base64ToUint8(state));
-                appliedCheckpoint = true;
-              } catch {
-                /* skip malformed checkpoint */
-              }
-            }
-          }
-        }
-      }
-
-      const collabSession = await getOrCreateSession(docAddress, viewKey, relays);
+      const collabSession = await getOrCreateSession(docAddress, viewKey);
       if (cancelled) return;
 
       provider = new NostrYjsProvider({
@@ -135,22 +94,17 @@ export function useCollabSession(
         session: collabSession,
       });
       provider.connect();
-      const encodeState = () =>
-        uint8ToBase64(YjsModule.encodeStateAsUpdate(ydoc as YType.Doc));
       setSession({
         ydoc: ydoc!,
         provider,
         CollaborationExt: Collaboration,
         CollaborationCaretExt: CollaborationCaret,
-        encodeState,
       });
 
-      // Ready immediately if the doc already has content (from local IndexedDB
-      // or an applied checkpoint). Only a doc with no history anywhere needs the
-      // grace period, to avoid two clients each seeding it from the markdown
-      // snapshot (which Yjs would merge into a duplicated document).
-      const hasLocalHistory =
-        appliedCheckpoint || ydoc!.getXmlFragment("default").length > 0;
+      // Ready immediately if this device already has content (a reload of an
+      // in-progress session). A truly empty doc waits the grace so a peer's live
+      // state can arrive before we seed from the Markdown snapshot.
+      const hasLocalHistory = ydoc!.getXmlFragment("default").length > 0;
       if (hasLocalHistory) {
         setReady(true);
       } else {
@@ -179,6 +133,5 @@ export function useCollabSession(
     ready,
     CollaborationExt: session.CollaborationExt,
     CollaborationCaretExt: session.CollaborationCaretExt,
-    encodeState: session.encodeState,
   };
 }

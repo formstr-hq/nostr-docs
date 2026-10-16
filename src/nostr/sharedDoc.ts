@@ -18,7 +18,7 @@ import {
   type Event,
 } from "nostr-tools";
 import { hexToBytes } from "nostr-tools/utils";
-import { KIND_DOC_METADATA, KIND_FILE, KIND_YJS_CHECKPOINT } from "./kinds";
+import { KIND_DOC_METADATA, KIND_FILE } from "./kinds";
 import { fetchMany, fetchOne } from "../dataLayer";
 
 /** How far in the future an event's `created_at` may be before we ignore the
@@ -103,9 +103,9 @@ export function viewKeyConversationKey(viewKey: string): Uint8Array {
  *
  * Derived from the viewKey's public key, so only viewKey holders can compute it.
  * It reveals nothing about the viewKey (ECDLP) and keeps the document's root
- * address / owner out of the tags of presence, CRDT ops, checkpoints and session
- * attestations — so a third party cannot find or link the collaboration bus from
- * the (public) document root.
+ * address / owner out of the tags of presence, CRDT ops and session attestations
+ * — so a third party cannot find or link the collaboration bus from the (public)
+ * document root.
  */
 export function collabRoom(viewKey: string): string {
   return getPublicKey(hexToBytes(viewKey));
@@ -119,18 +119,17 @@ export function encryptWithViewKey(plaintext: string, viewKey: string): string {
   return nip44.encrypt(plaintext, viewKeyConversationKey(viewKey));
 }
 
-/**
- * v2 content payload. `md` is always present (readable by any client); `yjs` is
- * an optional base64 Yjs state update used for durable CRDT checkpoints. The
- * envelope lets a save carry the merged CRDT state so a later load can apply it
- * instead of trusting a single last-write-wins markdown snapshot.
- */
+/** Content value parsed from a decrypted document event. */
 export interface ContentPayload {
   md: string;
   yjs?: string;
 }
 
-/** Parse a decrypted content payload, tolerating legacy raw-markdown content. */
+/**
+ * Parse a decrypted content value. Document content is Markdown; this tolerates
+ * a JSON `{ v: 2, md }` envelope (written by an earlier draft) and returns the
+ * Markdown either way.
+ */
 export function decodeContentPayload(plaintext: string): ContentPayload {
   try {
     const parsed = JSON.parse(plaintext) as { v?: number; md?: unknown; yjs?: unknown };
@@ -321,49 +320,4 @@ export async function resolveSharedDocument(
     events,
     tip: selectTip(events),
   };
-}
-
-export interface YjsCheckpoints {
-  /** base64 Yjs state updates, newest author state per author. */
-  states: string[];
-  /** Newest `created_at` among the decryptable checkpoints (0 if none). */
-  newestCreatedAt: number;
-}
-
-/**
- * Collect the durable Yjs state updates authored for a document. Each writer
- * publishes a checkpoint in its own replaceable slot (kind 34582, `d`/`a` = the
- * document root); applying all of them to a fresh Y.Doc reconstructs the merged
- * document. `newestCreatedAt` lets a caller compare the CRDT state against the
- * newest Markdown snapshot (see the Resolution precedence guard).
- */
-export async function fetchYjsCheckpoints(
-  owner: string,
-  d: string,
-  viewKey: string,
-  relays?: string[],
-): Promise<YjsCheckpoints> {
-  const roster = await fetchRoster(owner, d, viewKey, relays);
-  // Checkpoints are tagged with the capability-derived room, not the root, so
-  // relays/observers cannot link them to the document or its owner.
-  const room = collabRoom(viewKey);
-  const filters = isOpenRoster(roster)
-    ? [{ kinds: [KIND_YJS_CHECKPOINT], "#a": [room] }]
-    : [{ kinds: [KIND_YJS_CHECKPOINT], authors: authorSet(owner, roster), "#d": [room] }];
-
-  const events = await fetchMany(filters, relays);
-  const states: string[] = [];
-  let newestCreatedAt = 0;
-  for (const event of events) {
-    try {
-      const state = decryptWithViewKey(event.content, viewKey);
-      if (state) {
-        states.push(state);
-        newestCreatedAt = Math.max(newestCreatedAt, event.created_at);
-      }
-    } catch {
-      // undecryptable — skip
-    }
-  }
-  return { states, newestCreatedAt };
 }

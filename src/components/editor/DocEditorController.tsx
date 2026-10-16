@@ -104,7 +104,7 @@ import { uploadToBlossom } from "../../blossom/client";
 import { useBlossomServers } from "../../contexts/BlossomContext";
 import { KIND_FILE } from "../../nostr/kinds";
 import { getLatestVersion } from "../../utils/helpers";
-import { enableGroupSharing, updateRosterMembers, upsertMember, removeMember, publishCheckpoint } from "../../nostr/shareV2";
+import { enableGroupSharing, updateRosterMembers, upsertMember, removeMember } from "../../nostr/shareV2";
 import { fetchRoster, parseRootAddress, collabRoom, type DocMember, type DocMode } from "../../nostr/sharedDoc";
 import { fetchProfile } from "../../nostr/fetchProfile";
 import { encodeNKeys } from "../../utils/nkeys";
@@ -119,7 +119,7 @@ import {
 // Delay after the last edit before auto-save fires (ms)
 const AUTO_SAVE_DELAY_MS = 30_000;
 // How long a collab session's last sync-step round-trip is trusted as "still
-// connected" for the autosave-checkpoint gate below.
+// connected" for the autosave gate below.
 const RESYNC_FRESHNESS_MS = 2 * 60_000;
 
 /** Wall-clock seconds. Extracted to module scope so the React Compiler does not
@@ -323,7 +323,6 @@ export function DocumentEditorController({
     isCollabDoc ? selectedDocumentId : null,
     isCollabDoc ? viewKey : undefined,
     relays,
-    activeVersion?.event.created_at ?? 0,
   );
   const isCollabReady = isCollabDoc && !!collab?.ready;
   const { collaborators, collaboratorsRef } = useTrustedCollaborators(
@@ -1231,9 +1230,9 @@ export function DocumentEditorController({
       if (!mdRef.current.trim()) return;   // don't save blank content
       if (selectedDocIdRef.current !== armedDocId) return; // doc switched — abort
       if (isCollabDocRef.current) {
-        // A partitioned/stale collab client shouldn't overwrite the shared
-        // checkpoint with a regressed snapshot: only checkpoint when recently
-        // sync-stepped (kept fresh by the provider's periodic re-broadcast).
+        // A partitioned/stale collab client shouldn't snapshot a regressed view
+        // over the others' work: only save when recently sync-stepped (kept fresh
+        // by the provider's periodic re-broadcast).
         const provider = collabRef.current?.provider;
         const synced =
           !!provider?.lastSyncRequestAt &&
@@ -1254,7 +1253,7 @@ export function DocumentEditorController({
     }
     // Collab docs get remote content via live Yjs merge, not via activeVersion
     // changes — running this would clobber live-merged content with a lagging
-    // checkpoint snapshot.
+    // Markdown snapshot.
     if (isCollabDocRef.current) return;
     if (!activeVersion) return;
     // Never clobber unsaved changes the user is currently editing
@@ -1371,8 +1370,7 @@ export function DocumentEditorController({
     // Keep the timestamp strictly above this document's newest known version.
     const prevAt = documents.get(address)?.versions.at(-1)?.event.created_at ?? 0;
     const createdAt = nextContentCreatedAt(prevAt);
-    // Kind-33457 content stays plain Markdown (no format change). The durable
-    // Yjs checkpoint is published separately, in its own kind (see below).
+    // Kind-33457 content is plain Markdown; Yjs is a live-only layer (not stored).
     const encryptedContent = await encryptContent(content, viewKey);
     if (!encryptedContent) throw new Error("Encryption failed");
 
@@ -1449,14 +1447,6 @@ export function DocumentEditorController({
         markLocalOnly(address, false);
       } catch (err) {
         console.warn("Relay broadcast failed (saved locally):", err);
-      }
-
-      // Durable Yjs checkpoint in its own kind, so a later load can merge every
-      // author's state instead of trusting one last-write-wins markdown snapshot.
-      if (isCollabDocRef.current && collabRef.current && viewKey) {
-        publishCheckpoint(viewKey, collabRef.current.encodeState(), relays).catch(
-          (err) => console.warn("Checkpoint publish failed:", err),
-        );
       }
     }
   };

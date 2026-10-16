@@ -1,27 +1,27 @@
-import { generateSecretKey, getPublicKey, verifyEvent } from "nostr-tools";
+import { generateSecretKey, getPublicKey, verifyEvent, type Event } from "nostr-tools";
 import { bytesToHex, hexToBytes } from "nostr-tools/utils";
 import { signerManager } from "../signer";
-import { publishEventStrict } from "../nostr/publish";
-import { fetchOne } from "../dataLayer";
-import { encryptContent } from "../utils/encryption";
-import { decryptWithViewKey, collabRoom } from "../nostr/sharedDoc";
+import { collabRoom } from "../nostr/sharedDoc";
 import { KIND_SESSION_ATTESTATION } from "../nostr/kinds";
 
-// How long a session key's attestation is valid before another signer prompt is
-// required.
+// How long a session key's attestation is valid before a fresh signer prompt.
 const SESSION_TTL_SEC = 12 * 60 * 60;
-// How long a *failed* resolution is cached, so a flood of ops signed by an
-// unknown key doesn't repeatedly hit relays.
-const NEGATIVE_CACHE_TTL_MS = 60_000;
 
 const SESSION_STORAGE_PREFIX = "nostr-docs-collab-session:";
 
+/**
+ * A per-tab collaboration session. `attestation` is a real-key-signed event that
+ * binds `sessionPubkey` to `realPubkey`; it is *embedded* in each op/presence
+ * payload (not published), so relays never see the real key and there is no
+ * separate event to store.
+ */
 export interface Session {
   docAddress: string;
   sessionSecretKey: Uint8Array;
   sessionPubkey: string;
   realPubkey: string | null;
   expiresAt: number; // unix seconds
+  attestation: Event | null;
 }
 
 interface StoredSession {
@@ -29,6 +29,7 @@ interface StoredSession {
   sessionPubkey: string;
   realPubkey: string | null;
   expiresAt: number;
+  attestation: Event | null;
 }
 
 const sessionCache = new Map<string, Session>();
@@ -45,6 +46,7 @@ function loadFromSessionStorage(docAddress: string): Session | null {
       sessionPubkey: stored.sessionPubkey,
       realPubkey: stored.realPubkey,
       expiresAt: stored.expiresAt,
+      attestation: stored.attestation ?? null,
     };
   } catch {
     return null;
@@ -58,6 +60,7 @@ function saveToSessionStorage(session: Session): void {
       sessionPubkey: session.sessionPubkey,
       realPubkey: session.realPubkey,
       expiresAt: session.expiresAt,
+      attestation: session.attestation,
     };
     sessionStorage.setItem(
       SESSION_STORAGE_PREFIX + session.docAddress,
@@ -68,16 +71,16 @@ function saveToSessionStorage(session: Session): void {
   }
 }
 
+/** Kind used only as the embedded attestation token's kind (never published). */
+
 /**
- * Returns this tab's collaboration session for a document, creating one if
- * needed. Attested (one real-signer prompt) when signed in so other
- * collaborators can resolve a display name; otherwise a local unattested
- * session (writers are always signed in under v2, so this is the rare case).
+ * Returns this tab's collaboration session, minting one if needed. When signed
+ * in, one real-signer prompt produces the embedded attestation; every subsequent
+ * op is signed locally by the session key.
  */
 export async function getOrCreateSession(
   docAddress: string,
   viewKey: string,
-  relays: string[],
 ): Promise<Session> {
   const cached = sessionCache.get(docAddress) ?? loadFromSessionStorage(docAddress);
   if (cached && cached.expiresAt * 1000 > Date.now()) {
@@ -89,39 +92,21 @@ export async function getOrCreateSession(
   const sessionPubkey = getPublicKey(sessionSecretKey);
   const expiresAt = Math.floor(Date.now() / 1000) + SESSION_TTL_SEC;
 
-  if (!signerManager.hasSigner()) {
-    const session: Session = {
-      docAddress,
-      sessionSecretKey,
-      sessionPubkey,
-      realPubkey: null,
-      expiresAt,
-    };
-    sessionCache.set(docAddress, session);
-    saveToSessionStorage(session);
-    return session;
+  let realPubkey: string | null = null;
+  let attestation: Event | null = null;
+
+  if (signerManager.hasSigner()) {
+    const signer = await signerManager.getSigner();
+    realPubkey = await signer.getPublicKey();
+    // Plaintext: the whole payload is embedded inside a viewKey-encrypted op, so
+    // the token body does not need its own encryption layer.
+    attestation = await signer.signEvent({
+      kind: KIND_SESSION_ATTESTATION,
+      tags: [["d", `${collabRoom(viewKey)}:${sessionPubkey}`]],
+      content: JSON.stringify({ realPubkey, expiresAt }),
+      created_at: Math.floor(Date.now() / 1000),
+    });
   }
-
-  const signer = await signerManager.getSigner();
-  const realPubkey = await signer.getPublicKey();
-
-  const content = await encryptContent(
-    JSON.stringify({ realPubkey, expiresAt }),
-    viewKey,
-  );
-
-  const signed = await signer.signEvent({
-    kind: KIND_SESSION_ATTESTATION,
-    tags: [
-      ["d", `${collabRoom(viewKey)}:${sessionPubkey}`],
-      // NIP-40: lets relays reclaim the row once the session has expired.
-      ["expiration", String(expiresAt)],
-    ],
-    content,
-    created_at: Math.floor(Date.now() / 1000),
-  });
-
-  await publishEventStrict(signed, relays);
 
   const session: Session = {
     docAddress,
@@ -129,74 +114,54 @@ export async function getOrCreateSession(
     sessionPubkey,
     realPubkey,
     expiresAt,
+    attestation,
   };
   sessionCache.set(docAddress, session);
   saveToSessionStorage(session);
   return session;
 }
 
-interface ResolveCacheEntry {
-  result: { realPubkey: string } | null;
-  cachedAt: number;
-  expiresAt?: number;
-}
-
-const resolveCache = new Map<string, ResolveCacheEntry>();
+// Resolved session -> real pubkey, fed by embedded attestations seen on the wire.
+const resolvedSessions = new Map<string, { realPubkey: string; expiresAt: number }>();
 
 /**
- * Resolves a session pubkey seen on an incoming op/presence event back to the
- * real pubkey it was attested for. Returns null when there is no valid,
- * unexpired attestation.
+ * Verify an embedded attestation token and record `sessionPubkey -> realPubkey`.
+ * Called for every op/presence that carries one; idempotent.
  */
-export async function resolveSession(
-  sessionPubkey: string,
-  viewKey: string,
-  relays: string[],
-): Promise<{ realPubkey: string } | null> {
-  const cacheKey = `${collabRoom(viewKey)}:${sessionPubkey}`;
-  const now = Date.now();
-  const cached = resolveCache.get(cacheKey);
-  if (cached) {
-    if (cached.result && cached.expiresAt && cached.expiresAt * 1000 > now) {
-      return cached.result;
-    }
-    if (!cached.result && now - cached.cachedAt < NEGATIVE_CACHE_TTL_MS) {
-      return null;
-    }
-  }
-
-  const latest = await fetchOne(
-    [{ kinds: [KIND_SESSION_ATTESTATION], "#d": [cacheKey] }],
-    relays,
-  ).catch(() => null);
-
-  if (!latest) {
-    resolveCache.set(cacheKey, { result: null, cachedAt: now });
-    return null;
-  }
-
+export function recordAttestation(token: Event): void {
   try {
-    if (!verifyEvent(latest)) throw new Error("Invalid signature");
-    const decrypted = decryptWithViewKey(latest.content, viewKey);
-    const parsed = JSON.parse(decrypted) as {
-      realPubkey: string;
-      expiresAt: number;
+    if (!verifyEvent(token)) return;
+    const parsed = JSON.parse(token.content) as {
+      realPubkey?: unknown;
+      expiresAt?: unknown;
     };
-    if (parsed.realPubkey !== latest.pubkey) {
-      throw new Error("Attestation content/signer mismatch");
+    if (
+      typeof parsed.realPubkey !== "string" ||
+      typeof parsed.expiresAt !== "number"
+    ) {
+      return;
     }
-    if (parsed.expiresAt * 1000 <= now) {
-      throw new Error("Attestation expired");
-    }
-    const result = { realPubkey: parsed.realPubkey };
-    resolveCache.set(cacheKey, {
-      result,
-      cachedAt: now,
+    // The token's own signer must be the real pubkey it claims.
+    if (parsed.realPubkey !== token.pubkey) return;
+    if (parsed.expiresAt * 1000 <= Date.now()) return;
+    // The token's `d` tag binds the session pubkey it attests to.
+    const d = token.tags.find((t) => t[0] === "d")?.[1];
+    const sessionPubkey = d?.split(":").pop();
+    if (!sessionPubkey) return;
+    resolvedSessions.set(sessionPubkey, {
+      realPubkey: parsed.realPubkey,
       expiresAt: parsed.expiresAt,
     });
-    return result;
   } catch {
-    resolveCache.set(cacheKey, { result: null, cachedAt: now });
-    return null;
+    // malformed token — ignore
   }
+}
+
+/** Resolve a session pubkey to its attested real pubkey, if seen and unexpired. */
+export function resolveAttested(
+  sessionPubkey: string,
+): { realPubkey: string } | null {
+  const entry = resolvedSessions.get(sessionPubkey);
+  if (!entry || entry.expiresAt * 1000 <= Date.now()) return null;
+  return { realPubkey: entry.realPubkey };
 }

@@ -14,6 +14,7 @@ import { subscribe, type Subscription } from "../dataLayer";
 import { KIND_CRDT_OP, KIND_PRESENCE } from "../nostr/kinds";
 import { viewKeyConversationKey, collabRoom } from "../nostr/sharedDoc";
 import type { Session } from "./sessionKeys";
+import { recordAttestation } from "./sessionKeys";
 import { uint8ToBase64, base64ToUint8 } from "../utils/base64";
 
 // Tags updates applied from a relay so they aren't re-broadcast.
@@ -144,10 +145,23 @@ export class NostrYjsProvider {
     // Authorization = possession of viewKey: the conversation key below is
     // derived from viewKey, so only a viewKey holder can produce ciphertext
     // that decrypts. (The relay has already verified event.sig.)
+    // Plaintext is a JSON envelope carrying the embedded attestation (if any)
+    // and the base64 Yjs payload. The attestation travels inside the ciphertext,
+    // so relays never see the real identity.
     let bytes: Uint8Array;
     try {
       const decrypted = nip44.decrypt(event.content, this.conversationKey);
-      bytes = base64ToUint8(decrypted);
+      let messageB64 = decrypted;
+      try {
+        const parsed = JSON.parse(decrypted) as { a?: Event; m?: unknown };
+        if (parsed && typeof parsed.m === "string") {
+          if (parsed.a) recordAttestation(parsed.a);
+          messageB64 = parsed.m;
+        }
+      } catch {
+        // not JSON — legacy raw-base64 payload
+      }
+      bytes = base64ToUint8(messageB64);
     } catch {
       return;
     }
@@ -184,7 +198,11 @@ export class NostrYjsProvider {
   }
 
   private publish(kind: number, bytes: Uint8Array): void {
-    const content = nip44.encrypt(uint8ToBase64(bytes), this.conversationKey);
+    const payload = JSON.stringify({
+      a: this.session.attestation,
+      m: uint8ToBase64(bytes),
+    });
+    const content = nip44.encrypt(payload, this.conversationKey);
     const event = finalizeEvent(
       {
         kind,

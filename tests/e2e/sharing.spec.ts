@@ -1,4 +1,4 @@
-import { test, expect } from "@playwright/test";
+import { test, expect, type Browser, type Page } from "@playwright/test";
 import { nip19 } from "nostr-tools";
 import {
   loginAsGuest,
@@ -8,6 +8,49 @@ import {
   editorSurface,
   queryLocalRelay,
 } from "./helpers";
+
+/** Switch a page's editor to WYSIWYG (the shared doc opens in preview). */
+async function becomeVisualEditor(page: Page) {
+  await page.getByRole("button", { name: "More actions" }).click();
+  await page.getByRole("menuitem", { name: "Visual editor" }).click();
+}
+
+/** Owner creates a doc and shares an open (anyone-with-link) editable link. */
+async function ownerCreateAndShareOpen(page: Page): Promise<string> {
+  await loginAsGuest(page);
+  await typeIntoEditor(page, `# ${`e2e-${Date.now()}`}\n\nbody`);
+  await save(page);
+  await page.getByRole("button", { name: "Share", exact: true }).click();
+  const dialog = page.getByRole("dialog").filter({ hasText: "Share Page" });
+  await dialog.getByRole("switch", { name: "Can edit" }).click();
+  await dialog.getByRole("switch", { name: "Anyone with the link can edit" }).click();
+  await dialog.getByRole("button", { name: "Generate Link" }).click();
+  await expect(page).toHaveURL(/#nkeys1/, { timeout: 20_000 });
+  return page.url();
+}
+
+/** A fresh identity opens the share link, connected and in edit mode. */
+async function openSharedAsWriter(browser: Browser, shareLink: string) {
+  const context = await browser.newContext();
+  const page = await context.newPage();
+  await loginAsGuest(page);
+  await page.goto(shareLink);
+  await unlockAfterReload(page);
+  await expect(page.getByText("Shared page · edit access")).toBeVisible({
+    timeout: 20_000,
+  });
+  await expect(page.getByText(/Connecting/)).toBeHidden({ timeout: 20_000 });
+  await becomeVisualEditor(page);
+  return { context, page };
+}
+
+/** Append a new line of text to the document in the visual editor. */
+async function appendLine(page: Page, text: string) {
+  await editorSurface(page).click();
+  await page.keyboard.press("End");
+  await page.keyboard.press("Enter");
+  await page.keyboard.type(text);
+}
 
 /**
  * v2 multi-writer sharing, end to end.
@@ -90,7 +133,7 @@ test("open share: a collaborator edits and the owner sees it", async ({
   });
 
   // Privacy: the collaboration bus (CRDT ops, presence, session attestations,
-  // Yjs checkpoints) is tagged with the capability-derived room, never the
+  // Yjs ops) is tagged with the capability-derived room, never the
   // public document root — an observer must not be able to link it to the doc.
   const rootNaddr = new URL(shareLink).pathname.split("/doc/")[1].split("/")[0];
   const decodedRoot = nip19.decode(rootNaddr);
@@ -102,7 +145,6 @@ test("open share: a collaborator edits and the owner sees it", async ({
     ...(await queryLocalRelay({ kinds: [22457] })),
     ...(await queryLocalRelay({ kinds: [24578] })),
     ...(await queryLocalRelay({ kinds: [34581] })),
-    ...(await queryLocalRelay({ kinds: [34582] })),
   ];
   expect(collabEvents.length, "expected some collaboration events").toBeGreaterThan(0);
   for (const e of collabEvents) {
@@ -121,7 +163,7 @@ test("open share: a collaborator edits and the owner sees it", async ({
   await editorContext.close();
 });
 
-test("save in between: a checkpoint survives when a peer leaves", async ({
+test("save captures the merged state when a peer then leaves", async ({
   page,
   browser,
 }) => {
@@ -172,7 +214,8 @@ test("save in between: a checkpoint survives when a peer leaves", async ({
   await expect(page.getByText(editorText)).toBeVisible({ timeout: 15_000 });
   await expect(editor.getByText(ownerText)).toBeVisible({ timeout: 15_000 });
 
-  // Owner saves (durable checkpoint), then the collaborator disappears.
+  // Owner saves (writes the merged Markdown snapshot), then the collaborator
+  // disappears.
   await page.getByRole("button", { name: "Save", exact: true }).click();
   await expect(page.getByText("Saved", { exact: true })).toBeVisible({
     timeout: 20_000,
@@ -286,4 +329,72 @@ test("live: an edit appears without saving", async ({ page, browser }) => {
   await expect(editor.getByText(ownerText)).toBeVisible({ timeout: 15_000 });
 
   await editorContext.close();
+});
+
+test("concurrent writers: both edits merge live", async ({ page, browser }) => {
+  const shareLink = await ownerCreateAndShareOpen(page);
+  await becomeVisualEditor(page);
+  const { context, page: other } = await openSharedAsWriter(browser, shareLink);
+
+  const a = `A-${Date.now()}`;
+  const b = `B-${Date.now()}`;
+  // Both write without saving or waiting for each other.
+  await appendLine(page, a);
+  await appendLine(other, b);
+
+  // Yjs merges both, so each side must see the other's text.
+  await expect(page.getByText(b)).toBeVisible({ timeout: 15_000 });
+  await expect(other.getByText(a)).toBeVisible({ timeout: 15_000 });
+
+  await context.close();
+});
+
+test("offline writer: edits merge on reconnect", async ({ page, browser }) => {
+  const shareLink = await ownerCreateAndShareOpen(page);
+  await becomeVisualEditor(page);
+  const { context, page: other } = await openSharedAsWriter(browser, shareLink);
+
+  const ownerText = `owner-${Date.now()}`;
+  const editorText = `editor-${Date.now()}`;
+
+  // The collaborator drops offline and writes…
+  await context.setOffline(true);
+  await appendLine(other, editorText);
+  // …while the owner keeps writing.
+  await appendLine(page, ownerText);
+
+  // On reconnect both sides must converge (no reload, no save).
+  await context.setOffline(false);
+  await expect(page.getByText(editorText)).toBeVisible({ timeout: 30_000 });
+  await expect(other.getByText(ownerText)).toBeVisible({ timeout: 30_000 });
+
+  await context.close();
+});
+
+test("three parties converge", async ({ page, browser }) => {
+  const shareLink = await ownerCreateAndShareOpen(page);
+  await becomeVisualEditor(page);
+  const p2 = await openSharedAsWriter(browser, shareLink);
+  const p3 = await openSharedAsWriter(browser, shareLink);
+
+  const t1 = `p1-${Date.now()}`;
+  const t2 = `p2-${Date.now()}`;
+  const t3 = `p3-${Date.now()}`;
+  await appendLine(page, t1);
+  await appendLine(p2.page, t2);
+  await appendLine(p3.page, t3);
+
+  const cases: Array<[Page, string[]]> = [
+    [page, [t2, t3]],
+    [p2.page, [t1, t3]],
+    [p3.page, [t1, t2]],
+  ];
+  for (const [p, texts] of cases) {
+    for (const t of texts) {
+      await expect(p.getByText(t)).toBeVisible({ timeout: 20_000 });
+    }
+  }
+
+  await p2.context.close();
+  await p3.context.close();
 });

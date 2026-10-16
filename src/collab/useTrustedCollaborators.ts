@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type MutableRefObject } from "react";
 import type { Awareness } from "y-protocols/awareness";
-import { resolveSession } from "./sessionKeys";
+import { resolveAttested } from "./sessionKeys";
 import { fetchProfileCached } from "./profileCache";
 
 export interface TrustedCollaborator {
@@ -73,11 +73,7 @@ export function useTrustedCollaborators(
 
         pending.push(
           (async () => {
-            const resolved = await resolveSession(
-              sessionPubkey,
-              viewKey,
-              relays,
-            );
+            const resolved = resolveAttested(sessionPubkey);
             const profile = resolved
               ? await fetchProfileCached(resolved.realPubkey, relays)
               : null;
