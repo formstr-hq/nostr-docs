@@ -277,26 +277,32 @@ export const DocumentProvider: React.FC<{ children: React.ReactNode }> = ({
       // v2 group docs are keyed by their root address so every author's version
       // lives under one document. Legacy single-author docs keep keying by the
       // author address (documentId === authorAddress), so behavior is unchanged.
-      const documentId = ref?.documentId ?? authorAddress;
-      const owner = ref?.owner ?? document.pubkey;
+      let documentId = ref?.documentId ?? authorAddress;
+      let owner = ref?.owner ?? document.pubkey;
 
-      const cachedEntry = localEntriesRef.current.get(documentId);
+      let cachedEntry = localEntriesRef.current.get(documentId);
       let viewKey = keys?.viewKey ?? cachedEntry?.viewKey;
       if (!viewKey) {
         // A v2 event carries ["a", room] (a capability id, not the root). If we
         // already hold that document's viewKey locally (e.g. the owner's own
-        // re-published event), use it instead of wrongly attempting a self-decrypt.
+        // re-published event, or a participant's own author-slot write), use it
+        // instead of wrongly attempting a self-decrypt — and, when it is our own
+        // write for a group doc we know, key it under the group's root (not our
+        // own address) so the doc isn't duplicated as a personal page.
         const eventRoom = document.tags.find((t) => t[0] === "a")?.[1];
         const wantD = (eventRoom ?? documentId).split(":").slice(2).join(":");
         for (const [addr, e] of localEntriesRef.current.entries()) {
           if (!e.viewKey) continue;
-          if (
-            (eventRoom && collabRoom(e.viewKey) === eventRoom) ||
-            addr.split(":").slice(2).join(":") === wantD
-          ) {
-            viewKey = e.viewKey;
-            break;
+          const roomMatch = !!eventRoom && collabRoom(e.viewKey) === eventRoom;
+          const dMatch = addr.split(":").slice(2).join(":") === wantD;
+          if (!roomMatch && !dMatch) continue;
+          viewKey = e.viewKey;
+          if (roomMatch && !ref?.documentId && addr !== documentId) {
+            documentId = addr;
+            owner = addr.split(":")[1] || owner;
+            cachedEntry = e;
           }
+          break;
         }
       }
 

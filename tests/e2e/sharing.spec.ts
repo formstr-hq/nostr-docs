@@ -19,9 +19,12 @@ async function becomeVisualEditor(page: Page) {
 }
 
 /** Owner creates a doc and shares an open (anyone-with-link) editable link. */
-async function ownerCreateAndShareOpen(page: Page): Promise<string> {
+async function ownerCreateAndShareOpen(
+  page: Page,
+): Promise<{ shareLink: string; title: string }> {
+  const title = `e2e-${Date.now()}`;
   await loginAsGuest(page);
-  await typeIntoEditor(page, `# ${`e2e-${Date.now()}`}\n\nbody`);
+  await typeIntoEditor(page, `# ${title}\n\nbody`);
   await save(page);
   await page.getByRole("button", { name: "Share", exact: true }).click();
   const dialog = page.getByRole("dialog").filter({ hasText: "Share Page" });
@@ -29,7 +32,7 @@ async function ownerCreateAndShareOpen(page: Page): Promise<string> {
   await dialog.getByRole("switch", { name: "Anyone with the link can edit" }).click();
   await dialog.getByRole("button", { name: "Generate Link" }).click();
   await expect(page).toHaveURL(/#nkeys1/, { timeout: 20_000 });
-  return page.url();
+  return { shareLink: page.url(), title };
 }
 
 /** A fresh identity opens the share link, connected and in edit mode. */
@@ -335,7 +338,7 @@ test("live: an edit appears without saving", async ({ page, browser }) => {
 });
 
 test("concurrent writers: both edits merge live", async ({ page, browser }) => {
-  const shareLink = await ownerCreateAndShareOpen(page);
+  const { shareLink } = await ownerCreateAndShareOpen(page);
   await becomeVisualEditor(page);
   const { context, page: other } = await openSharedAsWriter(browser, shareLink);
 
@@ -353,7 +356,7 @@ test("concurrent writers: both edits merge live", async ({ page, browser }) => {
 });
 
 test("offline writer: edits merge on reconnect", async ({ page, browser }) => {
-  const shareLink = await ownerCreateAndShareOpen(page);
+  const { shareLink } = await ownerCreateAndShareOpen(page);
   await becomeVisualEditor(page);
   const { context, page: other } = await openSharedAsWriter(browser, shareLink);
 
@@ -375,7 +378,7 @@ test("offline writer: edits merge on reconnect", async ({ page, browser }) => {
 });
 
 test("three parties converge", async ({ page, browser }) => {
-  const shareLink = await ownerCreateAndShareOpen(page);
+  const { shareLink } = await ownerCreateAndShareOpen(page);
   await becomeVisualEditor(page);
   const p2 = await openSharedAsWriter(browser, shareLink);
   const p3 = await openSharedAsWriter(browser, shareLink);
@@ -453,4 +456,37 @@ test("legacy edit-key link still opens, displays and edits", async ({ page }) =>
   expect(stored.length).toBeGreaterThan(0);
   const latest = stored.sort((a, b) => b.created_at - a.created_at)[0];
   expect(nip44.decrypt(latest.content, conv)).toContain("edited through a legacy link");
+});
+
+test("a participant sees a shared doc exactly once", async ({ page, browser }) => {
+  const { shareLink, title } = await ownerCreateAndShareOpen(page);
+
+  const context = await browser.newContext();
+  const friend = await context.newPage();
+  await loginAsGuest(friend);
+  await friend.goto(shareLink);
+  await unlockAfterReload(friend);
+  await expect(friend.getByText("Shared page · edit access")).toBeVisible({
+    timeout: 20_000,
+  });
+  await expect(friend.getByText(/Connecting/)).toBeHidden({ timeout: 20_000 });
+
+  // The friend edits and saves — this creates their own author-slot event, which
+  // must be grouped under the document root, not shown as a second personal page.
+  await friend.getByRole("button", { name: "More actions" }).click();
+  await friend.getByRole("menuitem", { name: "Visual editor" }).click();
+  await editorSurface(friend).click();
+  await friend.keyboard.press("End");
+  await friend.keyboard.press("Enter");
+  await friend.keyboard.type("friend was here");
+  await friend.getByRole("button", { name: "Save", exact: true }).click();
+  await expect(friend.getByText("Saved", { exact: true })).toBeVisible({ timeout: 20_000 });
+
+  // The workspace must show the doc as a single card.
+  await friend.getByRole("button", { name: "All pages" }).click();
+  await expect(friend.getByText(title, { exact: true })).toHaveCount(1, {
+    timeout: 20_000,
+  });
+
+  await context.close();
 });
