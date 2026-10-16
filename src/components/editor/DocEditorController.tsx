@@ -1536,10 +1536,11 @@ export function DocumentEditorController({
       if (!silent) {
         setToast({ open: true, message: "Saved", severity: "success" });
       }
-      // v2: a writer on someone else's shared document keeps their own fork and
-      // should be filed under their Shared list automatically once they save —
-      // no manual "Save to Shared" step.
-      if (!isOwner && !!viewKey && canWrite && selectedDocumentId) {
+      // v2: a logged-in writer on someone else's shared document keeps their own
+      // fork and should be filed under their Shared list automatically once they
+      // save — no manual "Save to Shared" step. Skipped without a signer: a legacy
+      // edit-key editor may be anonymous, and addSharedDoc would prompt for login.
+      if (!isOwner && !!viewKey && canWrite && selectedDocumentId && user?.pubkey) {
         if (getKeys(selectedDocumentId).length === 0) {
           try {
             await addSharedDoc([selectedDocumentId, viewKey]);

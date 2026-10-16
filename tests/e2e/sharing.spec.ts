@@ -1,5 +1,6 @@
 import { test, expect, type Browser, type Page } from "@playwright/test";
-import { nip19 } from "nostr-tools";
+import { finalizeEvent, generateSecretKey, getPublicKey, nip19, nip44 } from "nostr-tools";
+import { bytesToHex, hexToBytes } from "nostr-tools/utils";
 import {
   loginAsGuest,
   typeIntoEditor,
@@ -7,7 +8,9 @@ import {
   unlockAfterReload,
   editorSurface,
   queryLocalRelay,
+  publishToLocalRelay,
 } from "./helpers";
+import { encodeNKeys } from "../../src/utils/nkeys";
 
 /** Switch a page's editor to WYSIWYG (the shared doc opens in preview). */
 async function becomeVisualEditor(page: Page) {
@@ -397,4 +400,57 @@ test("three parties converge", async ({ page, browser }) => {
 
   await p2.context.close();
   await p3.context.close();
+});
+
+test("legacy edit-key link still opens, displays and edits", async ({ page }) => {
+  const unique = `legacy-${Date.now()}`;
+
+  // Forge a legacy share exactly as the old model did: content encrypted with a
+  // viewKey, signed by a shared editKey, at 33457:<editKeyPub>:<d>.
+  const editKey = generateSecretKey();
+  const editPub = getPublicKey(editKey);
+  const viewKey = generateSecretKey();
+  const conv = nip44.getConversationKey(viewKey, getPublicKey(viewKey));
+  const dtag = `leg${Math.random().toString(36).slice(2, 8)}`;
+  const legacyEvent = finalizeEvent(
+    {
+      kind: 33457,
+      tags: [["d", dtag]],
+      content: nip44.encrypt(`# ${unique}\n\nlegacy shared body`, conv),
+      created_at: Math.floor(Date.now() / 1000),
+    },
+    editKey,
+  );
+  await publishToLocalRelay(legacyEvent);
+
+  const naddr = nip19.naddrEncode({ kind: 33457, pubkey: editPub, identifier: dtag });
+  const link = `/doc/${naddr}#${encodeNKeys({
+    viewKey: bytesToHex(viewKey),
+    editKey: bytesToHex(editKey),
+  })}`;
+
+  // No login: the editKey is the capability (legacy "anyone with the link").
+  await page.goto(link);
+  await expect(page.getByRole("heading", { name: unique })).toBeVisible({
+    timeout: 20_000,
+  });
+
+  // Editable via the editKey and saves without a signer.
+  await page.getByRole("button", { name: "More actions" }).click();
+  await page.getByRole("menuitem", { name: "Visual editor" }).click();
+  // Legacy docs also run a live session; wait for it to settle before typing so
+  // the editor isn't recreated mid-keystroke.
+  await expect(page.getByText(/Connecting/)).toBeHidden({ timeout: 20_000 });
+  await editorSurface(page).click();
+  await page.keyboard.press("End");
+  await page.keyboard.press("Enter");
+  await page.keyboard.type("edited through a legacy link");
+  await page.getByText("Save", { exact: true }).click();
+  await expect(page.getByText("Saved", { exact: true })).toBeVisible({ timeout: 20_000 });
+
+  // A newer viewKey-encrypted event now exists at the legacy editKey address.
+  const stored = await queryLocalRelay({ kinds: [33457], authors: [editPub], "#d": [dtag] });
+  expect(stored.length).toBeGreaterThan(0);
+  const latest = stored.sort((a, b) => b.created_at - a.created_at)[0];
+  expect(nip44.decrypt(latest.content, conv)).toContain("edited through a legacy link");
 });
