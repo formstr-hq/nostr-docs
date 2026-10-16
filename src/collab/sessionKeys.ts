@@ -134,8 +134,7 @@ export function recordAttestation(token: Event): void {
     const parsed = JSON.parse(token.content) as {
       realPubkey?: unknown;
       expiresAt?: unknown;
-    };
-    if (
+    };    if (
       typeof parsed.realPubkey !== "string" ||
       typeof parsed.expiresAt !== "number"
     ) {

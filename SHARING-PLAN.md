@@ -213,15 +213,15 @@ a three-party convergence.
   consumers; mitigated by the legacy-default invariant and type-checking.
 - **Metadata dual-encryption.** Must never discard the self-encrypted path; read
   self first, viewKey second.
-- **Open-mode conflicts.** LWW rendering degrades under many writers: a link-holder
-  can win the tip by writing last (denial-of-view), there is no per-writer
-  revocation, and unknown authors cannot be routed to their outboxes. Mitigations:
-  keep `restricted` the default, stamp `["a", root]` for discovery, cap author
-  counts, and only honor the **owner's** kind-5 tombstone. Full fix is the CRDT
-  merge (Phase 6).
-- **Realtime ephemeral vs durable.** Snapshots are LWW in v1; the CRDT merge
-  (Phase 6) needs durable ops/state to fully cover same-author multi-device, but
-  the storage shape already retains per-author branches so no migration is needed.
+- **Open-mode conflicts.** Under `open` mode any link-holder can win the Markdown
+  tip by writing last (denial-of-view), and there is no per-writer write
+  revocation. Mitigations: keep `restricted` the default, stamp `["a", room]` for
+  discovery, and only honor the **owner's** kind-5 tombstone.
+- **Realtime is ephemeral.** In-session edits merge via Yjs, but across sessions /
+  offline the Markdown tip is last-write-wins: a returning offline writer can win
+  with a stale snapshot, and same-author multi-device isn't merged. Accepted for
+  v1; the documented upgrade is durable CRDT checkpoints (removed for now for
+  relay-size reasons).
 
 ## Out of scope (v1)
 

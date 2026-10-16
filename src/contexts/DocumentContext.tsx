@@ -28,7 +28,7 @@ import { publishEvent } from "../nostr/publish";
 import { encryptContent } from "../utils/encryption";
 import { makeTag } from "../utils/makeTag";
 import { subscribe, fetchCachedMany, fetchCachedByAddresses, resolveEventsByAddress, cacheLocalEvents, type Subscription } from "../dataLayer";
-import { authorSet, collabRoom, decodeContentPayload, fetchRoster, isOpenRoster, parseRootAddress } from "../nostr/sharedDoc";
+import { authorSet, collabRoom, fetchRoster, isOpenRoster, parseRootAddress } from "../nostr/sharedDoc";
 import { saveFontResource } from "../lib/fontStore";
 import { registerFontFaceFromBlob } from "../lib/fontRegister";
 import { sha256Hex } from "../utils/fileEncryption";
@@ -113,7 +113,7 @@ const getDecryptedContent = async (
         getPublicKey(hexToBytes(viewKey)),
       );
       const plaintext = nip44.decrypt(event.content, conversationKey);
-      return decodeContentPayload(plaintext).md;
+      return plaintext;
     }
 
     // The signer manager waits for restore and opens the correct login/unlock flow.
@@ -127,7 +127,7 @@ const getDecryptedContent = async (
     const pubkey = await signer.getPublicKey();
     if (event.pubkey !== pubkey) return null;
     const plaintext = await signer.nip44Decrypt(pubkey, event.content);
-    return decodeContentPayload(plaintext).md;
+    return plaintext;
   } catch (err) {
     console.error("Failed to decrypt content:", err);
     return null;

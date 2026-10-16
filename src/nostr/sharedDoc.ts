@@ -119,32 +119,6 @@ export function encryptWithViewKey(plaintext: string, viewKey: string): string {
   return nip44.encrypt(plaintext, viewKeyConversationKey(viewKey));
 }
 
-/** Content value parsed from a decrypted document event. */
-export interface ContentPayload {
-  md: string;
-  yjs?: string;
-}
-
-/**
- * Parse a decrypted content value. Document content is Markdown; this tolerates
- * a JSON `{ v: 2, md }` envelope (written by an earlier draft) and returns the
- * Markdown either way.
- */
-export function decodeContentPayload(plaintext: string): ContentPayload {
-  try {
-    const parsed = JSON.parse(plaintext) as { v?: number; md?: unknown; yjs?: unknown };
-    if (parsed && parsed.v === 2 && typeof parsed.md === "string") {
-      return {
-        md: parsed.md,
-        yjs: typeof parsed.yjs === "string" ? parsed.yjs : undefined,
-      };
-    }
-  } catch {
-    // not JSON — legacy raw markdown
-  }
-  return { md: plaintext };
-}
-
 // ── Roster ─────────────────────────────────────────────────────────────────────
 
 /** Parse and validate a decrypted roster payload. Returns null when malformed. */

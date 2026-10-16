@@ -28,9 +28,11 @@ ThemeProvider
 | **5** | NIP-09 Deletion request | Fetched on startup with `#k: [33457]` filter so deleted documents are hidden. |
 | **10002** | NIP-65 Relay list | Fetched per-user to switch from default relays to user-preferred relays. |
 | **11234** | _(removed)_ | Was never implemented; the "shared with me" store is kind 34579 metadata carrying `viewKey` (see below). |
-| **22457** | CRDT op (planned) | App-specific, ephemeral. Encrypted with the view key, tagged with the root address, signed by an author (or session key). Reserved for the CRDT phase. |
-| **33457** | Encrypted document (replaceable) | Content is NIP-44 encrypted. Tags `["d", <document id>]` and `["a", <root address>]`. For personal docs the author is the owner; for v2 shared docs **each author publishes to their own address** `33457:<author>:<d>` (no shared signing key) and the newest valid version across the roster renders. |
-| **34579** | Per-document metadata / roster | Encrypted JSON. Authored by each user for their own view (`{tags, title, viewKey, editKey?, sharedAs?}`) **and**, for a v2 shared doc, by the **owner** as the shareable roster `{v:2, mode, title, tags, members[]}` encrypted with the document view key. Writes go through `nextCreatedAt()` so consecutive edits never collide on the 1-second `created_at` granularity. |
+| **22457** | CRDT op (realtime) | App-specific, ephemeral. NIP‑44(viewKey) of `{ a: <attestation token|null>, m: <base64 Yjs sync message> }`, tagged `["a", <room>]`, signed by a per-tab session key. Live in-session merging only — Yjs is not stored. |
+| **24578** | Presence (realtime) | Same shape as 22457 with a Yjs awareness update (remote carets). Ephemeral. |
+| **33457** | Encrypted document (replaceable) | Durable document. Content is the NIP‑44(viewKey) Markdown. Tags `["d", <document id>]` and `["a", <room>]` (the capability id, not the owner). For personal docs the author is the owner; for v2 shared docs **each author publishes to their own address** `33457:<author>:<d>`, and the newest valid version across the roster renders. |
+| **34579** | Per-document metadata / roster | Encrypted JSON. Authored by each user for their own view (`{tags, title, viewKey, editKey?, sharedAs?}`) **and**, for a v2 shared doc, by the **owner** as the shareable roster `{v:2, epoch, mode, title, tags, members[]}` encrypted with the document view key. Writes go through `nextCreatedAt()`. |
+| **34581** | Session attestation token | Not published. A real-key-signed event embedded inside 22457/24578 payloads, binding a session key to its real pubkey (presence attribution / restricted-mode authorisation). |
 
 ---
 
