@@ -70,8 +70,12 @@ key, so the event `pubkey` is an unlinkable per-document pseudonym.
   session key.
 - `34581` session attestation: `d` = `<room>:<sessionPubkey>`; plaintext =
   `{ "realPubkey": "<hex>", "expiresAt": <unix> }`; signed by the author's real key.
+  Binds the ephemeral session key (which signs ops/presence so no signer prompt is
+  needed per keystroke) to the real pubkey, for presence attribution and
+  restricted-mode authorisation.
 - `34582` durable Yjs checkpoint (parameterised replaceable on `d`): `d` and `a`
-  = room; plaintext = base64 `Y.encodeStateAsUpdate`; one per author.
+  = room; plaintext = base64 `Y.encodeStateAsUpdate` (the **full** state, not a
+  diff); one per author.
 
 Realtime is **capability-authorized**: any viewKey holder may send ops/presence.
 In `restricted` mode this is weaker than the content rule, so a client that
