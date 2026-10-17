@@ -1,3 +1,12 @@
+# 1.0.0
+- Multi-writer sharing: turn a page into a live, collaborative document. Invite specific editors, or open it up so anyone with the link can edit — and watch changes appear as they're typed
+- Custom fonts: upload your own font files (.woff2, .woff, .ttf, .otf) and use them in any page
+- A redesigned Share dialog with clear view/edit access, one-tap copy, and editor management
+- Fix: view-only share links now open reliably — they could previously fail with "Document not found"
+- Fix: rotating a view link now actually revokes the old one
+- Fix: the Share dialog no longer closes on its own after you generate a link
+- Fix: an unsaved draft is no longer lost when you log in or reload
+
 # 0.10.1
 - Fix: the home screen no longer scrolls sideways on phones — long page titles and tags wrap instead of widening the page
 - Fix: the Android back gesture now returns to the previous screen (for example, from a page back to your pages) instead of closing the app
