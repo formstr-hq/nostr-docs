@@ -183,6 +183,13 @@ export const CommentProvider: React.FC<{
   editKey?: string;
   /** Current user's pubkey — used to decide whether they can resolve a comment. */
   myPubkey?: string;
+  /**
+   * When false, the provider is a pass-through with no comment subscriptions.
+   * It is always mounted (never conditionally swapped in/out of the tree) so
+   * that acquiring a viewKey mid-session — which is what turns comments on —
+   * does not change the root element type and remount the whole editor.
+   */
+  enabled?: boolean;
 }> = ({
   children,
   viewKey,
@@ -190,6 +197,7 @@ export const CommentProvider: React.FC<{
   currentDocText,
   editKey,
   myPubkey,
+  enabled = true,
 }) => {
   const { relays } = useRelays();
   const [comments, setComments] = useState<DecryptedComment[]>([]);
@@ -203,6 +211,12 @@ export const CommentProvider: React.FC<{
     setResolverMap(new Map());
 
     subRef.current?.close();
+    subRef.current = null;
+    resolutionsSubRef.current?.close();
+    resolutionsSubRef.current = null;
+
+    if (!enabled) return;
+
     subRef.current = fetchComments(docAddress, relays, (event) => {
       const comment = decryptCommentEvent(event, viewKey);
       if (!comment) return;
@@ -210,7 +224,6 @@ export const CommentProvider: React.FC<{
       setComments((prev) => insertSorted(prev, comment));
     });
 
-    resolutionsSubRef.current?.close();
     resolutionsSubRef.current = fetchResolutions(docAddress, relays, (event) => {
       const result = decryptResolutionEvent(event, viewKey);
       if (!result) return;
@@ -224,7 +237,7 @@ export const CommentProvider: React.FC<{
       resolutionsSubRef.current?.close();
       resolutionsSubRef.current = null;
     };
-  }, [viewKey, docAddress, relays]);
+  }, [enabled, viewKey, docAddress, relays]);
 
   // The doc address is `<kind>:<pubkey>:<dTag>`; that pubkey is the owner's key
   // for a solo doc, or the shared editKey for an edit-shared doc — i.e. the

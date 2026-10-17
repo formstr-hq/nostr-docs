@@ -37,7 +37,13 @@ const drawerWidth = 264;
 
 function DocPageWrapper() {
   const location = useLocation();
-  return <DocPage key={location.pathname + location.hash} />;
+  // Keyed on the path only. The document id lives in the path, so switching
+  // pages still remounts cleanly — but a hash-only change (e.g. adopting a
+  // share link's `#nkeys` after generating one) must NOT remount. Remounting
+  // there tore down the editor and the open Share dialog mid-flow, which is
+  // why sharing appeared to close the modal and needed repeated clicks.
+  // DocPage's own effect already re-runs when `location.hash` changes.
+  return <DocPage key={location.pathname} />;
 }
 
 function ArticleViewWrapper() {

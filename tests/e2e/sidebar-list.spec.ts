@@ -14,6 +14,7 @@ import {
   save,
   unlockAfterReload,
   publishToLocalRelay,
+  closeShareDialog,
 } from "./helpers";
 
 /**
@@ -177,6 +178,8 @@ test("only pages that are shared by me appear under the Shared tab", async ({
   await expect(generateBtn).toBeVisible({ timeout: 10_000 });
   await generateBtn.click();
   await expect(page).toHaveURL(/#nkeys1/, { timeout: 10_000 });
+  // The Share dialog stays open by design; close it before using the sidebar.
+  await closeShareDialog(page);
 
   // 3. In "All pages" / "Personal", both pages exist
   await page.getByRole("button", { name: "All pages" }).click();
@@ -238,6 +241,8 @@ test("saving a visited page promotes it to Shared alongside pages shared by me",
   await expect(generateBtn).toBeVisible({ timeout: 10_000 });
   await generateBtn.click();
   await expect(page).toHaveURL(/#nkeys1/, { timeout: 10_000 });
+  // The Share dialog stays open by design; close it before using the sidebar.
+  await closeShareDialog(page);
 
   // 3. Open the someone else's shared document
   await page.goto(`/doc/${naddr}#${hash}`);

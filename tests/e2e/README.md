@@ -24,6 +24,15 @@ nostr-docs flows end to end. These are **health checks**, not UI specs.
   persistence, recommended GGUF links, Wllama model-loading options, correction
   normalization, serialized correction/autocomplete generation, and that an
   already-loaded session model survives disabling and re-enabling both tools.
+- **sharing** — the v2 multi-writer spine: an open share link, a second identity
+  editing it, live/offline convergence, and the privacy of the collaboration bus.
+- **share-modal** — the Share dialog itself: generating a link keeps the dialog
+  open and shows it, the editor is not remounted mid-flow, reopening shows the
+  existing link, sharing an unsaved draft saves the page first, a view-only link
+  opens for a fresh identity, repeated open/close is stable, and copy uses the
+  clipboard.
+- **sidebar-list** — a shared page opened via its link is classified as visited
+  and only pages shared *by* you appear under the Shared tab.
 
 ## Running
 
@@ -61,6 +70,18 @@ CAPTURE_SCREENSHOTS=1 npx playwright test backup-import.screenshots
 - `relay-presence.screenshots` → `Screenshots/relay-presence/` (relay coverage
   popover, missing-everywhere warning).
 - `local-relay.screenshots` → `Screenshots/local-relay/` (local-relay tag flow).
+- `share-modal.screenshots` → `Screenshots/share-modal/` (view link, edit
+  access, generated link, editors, copied) plus a short recording,
+  `share-modal-flow.webm`.
+
+## Notes on the realtime/MCP demo
+
+`tests/e2e/realtime-mcp.spec.ts` is excluded from this suite (it boots a real
+MCP server over stdio) and has its own config:
+
+```bash
+npx playwright test -c playwright.realtime.config.ts
+```
 
 ## Principles
 

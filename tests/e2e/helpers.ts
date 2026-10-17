@@ -153,6 +153,19 @@ export async function unlockAfterReload(page: Page) {
   await expect(dialog).toBeHidden({ timeout: 15_000 });
 }
 
+/**
+ * Dismiss the Share dialog if it is open. The dialog stays open (by design)
+ * after a link is generated, so tests that continue to drive the editor must
+ * close it — while a modal is open the rest of the app is out of the
+ * accessibility tree, so role-based queries for the toolbar/sidebar would miss.
+ */
+export async function closeShareDialog(page: Page) {
+  const dialog = page.getByRole("dialog").filter({ hasText: "Share Page" });
+  if ((await dialog.count()) === 0) return;
+  await dialog.getByRole("button", { name: "Close" }).click();
+  await expect(dialog).toBeHidden({ timeout: 10_000 });
+}
+
 /** The WYSIWYG editor surface (TipTap renders a contenteditable with class "tiptap"). */
 export function editorSurface(page: Page) {
   return page.locator(".tiptap").first();

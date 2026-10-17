@@ -15,6 +15,10 @@ const APP_PORT = 5181;
 
 export default defineConfig({
   testDir: "./tests/e2e",
+  // The realtime+MCP demo spawns a real MCP server and has its own config
+  // (playwright.realtime.config.ts, run explicitly). Keep it out of the normal
+  // health-check suite so it can't interfere with the shared relay/app.
+  testIgnore: "realtime-mcp.spec.ts",
   fullyParallel: false,
   workers: 1,
   retries: 0,

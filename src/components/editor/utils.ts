@@ -97,6 +97,7 @@ export async function handleGeneratePrivateLink(
   viewKey?: string,
   editKey?: string,
   blossomServers: string[] = [],
+  prevCreatedAt = 0,
 ): Promise<ShareResult> {
   if (!selectedDocumentId) {
     throw new Error("No document selected");
@@ -158,12 +159,23 @@ export async function handleGeneratePrivateLink(
     console.warn("Could not read stored fonts:", err);
   }
 
-  // 2️⃣ Create shared event with the same d-tag
+  // 2️⃣ Create shared event with the same d-tag.
+  //    The event is a parameterized-replaceable (kind 33457): relays keep only
+  //    the strictly-newest one per (pubkey, d). `created_at` has 1s granularity,
+  //    so sharing right after a save (or a rotate) can otherwise land on the
+  //    same second and be silently dropped — leaving the old, self-encrypted
+  //    version in place, which a viewKey holder cannot decrypt ("Document not
+  //    found"). Keep the timestamp strictly above the document's newest known
+  //    version.
+  const createdAt = Math.max(
+    Math.floor(Date.now() / 1000),
+    (prevCreatedAt || 0) + 1,
+  );
   const sharedEvent = {
     kind: KIND_FILE,
     tags: [["d", dTag], ...fontTags],
     content: encryptedContent,
-    created_at: Math.floor(Date.now() / 1000),
+    created_at: createdAt,
   };
 
   // 3️⃣ Sign with editKey if provided, otherwise use user's signer

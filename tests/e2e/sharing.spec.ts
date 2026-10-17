@@ -1,6 +1,6 @@
 import { test, expect, type Browser, type Page } from "@playwright/test";
 import { finalizeEvent, generateSecretKey, getPublicKey, nip19, nip44 } from "nostr-tools";
-import { bytesToHex, hexToBytes } from "nostr-tools/utils";
+import { bytesToHex } from "nostr-tools/utils";
 import {
   loginAsGuest,
   typeIntoEditor,
@@ -9,6 +9,7 @@ import {
   editorSurface,
   queryLocalRelay,
   publishToLocalRelay,
+  closeShareDialog,
 } from "./helpers";
 import { encodeNKeys } from "../../src/utils/nkeys";
 
@@ -32,6 +33,8 @@ async function ownerCreateAndShareOpen(
   await dialog.getByRole("switch", { name: "Anyone with the link can edit" }).click();
   await dialog.getByRole("button", { name: "Generate Link" }).click();
   await expect(page).toHaveURL(/#nkeys1/, { timeout: 20_000 });
+  // The dialog stays open by design; dismiss it before driving the editor.
+  await closeShareDialog(page);
   return { shareLink: page.url(), title };
 }
 
@@ -94,6 +97,8 @@ test("open share: a collaborator edits and the owner sees it", async ({
   await dialog.getByRole("switch", { name: "Anyone with the link can edit" }).click();
   await dialog.getByRole("button", { name: "Generate Link" }).click();
   await expect(page).toHaveURL(/#nkeys1/, { timeout: 20_000 });
+  // The dialog stays open by design; dismiss it before driving the editor.
+  await closeShareDialog(page);
   const shareLink = page.url();
   expect(shareLink).toContain("/doc/naddr1");
 
@@ -186,6 +191,8 @@ test("save captures the merged state when a peer then leaves", async ({
   await dialog.getByRole("switch", { name: "Anyone with the link can edit" }).click();
   await dialog.getByRole("button", { name: "Generate Link" }).click();
   await expect(page).toHaveURL(/#nkeys1/, { timeout: 20_000 });
+  // The dialog stays open by design; dismiss it before driving the editor.
+  await closeShareDialog(page);
   const shareLink = page.url();
 
   const editorContext = await browser.newContext();
@@ -251,6 +258,8 @@ test("flaky network: a reconnecting client converges", async ({
   await dialog.getByRole("switch", { name: "Anyone with the link can edit" }).click();
   await dialog.getByRole("button", { name: "Generate Link" }).click();
   await expect(page).toHaveURL(/#nkeys1/, { timeout: 20_000 });
+  // The dialog stays open by design; dismiss it before driving the editor.
+  await closeShareDialog(page);
   const shareLink = page.url();
 
   const editorContext = await browser.newContext();
@@ -298,6 +307,8 @@ test("live: an edit appears without saving", async ({ page, browser }) => {
   await dialog.getByRole("switch", { name: "Anyone with the link can edit" }).click();
   await dialog.getByRole("button", { name: "Generate Link" }).click();
   await expect(page).toHaveURL(/#nkeys1/, { timeout: 20_000 });
+  // The dialog stays open by design; dismiss it before driving the editor.
+  await closeShareDialog(page);
   const shareLink = page.url();
 
   const editorContext = await browser.newContext();

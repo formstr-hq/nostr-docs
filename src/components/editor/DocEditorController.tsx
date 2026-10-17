@@ -122,6 +122,12 @@ const AUTO_SAVE_DELAY_MS = 30_000;
 // connected" for the autosave gate below.
 const RESYNC_FRESHNESS_MS = 2 * 60_000;
 
+// Session flag set when the user hits Share on an unsaved draft. Saving the
+// draft navigates to the document's own URL, which remounts this controller —
+// so the intent to open the Share dialog once that lands has to outlive the
+// instance. Session storage carries it across the remount.
+const REOPEN_SHARE_KEY = "formstr:reopenShareAfterSave";
+
 /** Wall-clock seconds. Extracted to module scope so the React Compiler does not
  *  treat a raw `Date.now()` inside component-scope helpers as a render-time
  *  impurity. */
@@ -471,6 +477,35 @@ export function DocumentEditorController({
       cancelled = true;
     };
   }, [shareOpen, isOwner, viewKey, selectedDocumentId, relays]);
+
+  // Reopen the Share dialog after a draft was saved from the Share button.
+  useEffect(() => {
+    if (sessionStorage.getItem(REOPEN_SHARE_KEY) === "1") {
+      sessionStorage.removeItem(REOPEN_SHARE_KEY);
+      setShareOpen(true);
+    }
+  }, []);
+
+  /** Share button: on a draft, save it first (which navigates and remounts),
+   *  then the effect above reopens this dialog on the saved document. */
+  const handleShareClick = async () => {
+    if (!isDraft) {
+      setShareOpen(true);
+      return;
+    }
+    const content = mode === "edit" && editor ? getEditorMarkdown(editor) : mdRef.current;
+    if (!content.trim()) {
+      setToast({
+        open: true,
+        message: "Write something before sharing your page.",
+        severity: "error",
+      });
+      return;
+    }
+    sessionStorage.setItem(REOPEN_SHARE_KEY, "1");
+    const ok = await handleSave(false);
+    if (!ok) sessionStorage.removeItem(REOPEN_SHARE_KEY);
+  };
 
   const parseShareTarget = () => {
     if (!selectedDocumentId) return null;
@@ -1174,8 +1209,8 @@ export function DocumentEditorController({
   /* ── Keyboard shortcuts ─────────────────────────────────── */
   // Use a ref so the keydown listener always calls the latest handleSave
   // without needing to re-register on every render.
-  const handleSaveRef = useRef<(silent?: boolean) => Promise<void>>(
-    async () => { },
+  const handleSaveRef = useRef<(silent?: boolean) => Promise<boolean>>(
+    async () => true,
   );
 
   useEffect(() => {
@@ -1510,8 +1545,8 @@ export function DocumentEditorController({
     }
   };
 
-  const handleSave = async (silent = false) => {
-    if (saving) return;
+  const handleSave = async (silent = false): Promise<boolean> => {
+    if (saving) return false;
 
     // In WYSIWYG mode, read from editor (avoids stale React state).
     // In split/preview mode, mdRef is updated by the textarea onChange.
@@ -1520,7 +1555,7 @@ export function DocumentEditorController({
         ? getEditorMarkdown(editor)
         : mdRef.current;
 
-    if (mdToSave === lastSavedMdRef.current) return;
+    if (mdToSave === lastSavedMdRef.current) return true;
 
     setSaving(true);
     const prevSavedMd = lastSavedMdRef.current;
@@ -1550,6 +1585,7 @@ export function DocumentEditorController({
           }
         }
       }
+      return true;
     } catch (err) {
       lastSavedMdRef.current = prevSavedMd; // restore so unsaved indicator reappears
       console.error("Save failed:", err);
@@ -1558,6 +1594,7 @@ export function DocumentEditorController({
         message: "Failed to save!",
         severity: "error",
       });
+      return false;
     } finally {
       setSaving(false);
     }
@@ -1806,7 +1843,7 @@ export function DocumentEditorController({
             }}
             onSave={() => handleSave(false)}
             handleDelete={handleDelete}
-            onShare={() => setShareOpen(true)}
+            onShare={handleShareClick}
             versions={versions}
             onSelectVersion={handleSelectVersion}
             editor={editor}
@@ -2169,6 +2206,7 @@ export function DocumentEditorController({
       <ShareModal
         open={shareOpen}
         onClose={() => setShareOpen(false)}
+        docTitle={getDocTitle()}
         onPublicPost={() => handleSharePublic()}
         onPublish={(target) => {
           setShareOpen(false);
@@ -2252,9 +2290,13 @@ export function DocumentEditorController({
             selectedDocumentId,
             md,
             relays,
-            viewKey,
+            // Rotating a view link must mint a fresh viewKey — reusing the one
+            // this session already adopted would leave every link handed out
+            // earlier still working.
+            !canEdit && rotate ? undefined : viewKey,
             editKey,
             blossomServers,
+            history?.versions.at(-1)?.event.created_at ?? 0,
           );
 
           const sharedDocTag = [
@@ -2308,14 +2350,21 @@ export function DocumentEditorController({
     </Box>
   );
 
-  if (commentsEnabled) {
-    return (
-      <CommentProvider viewKey={viewKey!} docAddress={selectedDocumentId!} currentDocText={docPlainText} editKey={editKey} myPubkey={user?.pubkey}>
-        <CommentHighlightEffect editor={editor} mode={mode} />
-        {editorJsx}
-      </CommentProvider>
-    );
-  }
-
-  return editorJsx;
+  // Always wrap in CommentProvider so the root element type is stable. Swapping
+  // it in/out when the owner adopts a share viewKey used to remount the whole
+  // editor subtree (closing the open Share dialog, restarting the collab
+  // session). `enabled` toggles the comment subscriptions instead.
+  return (
+    <CommentProvider
+      enabled={commentsEnabled}
+      viewKey={viewKey ?? ""}
+      docAddress={selectedDocumentId ?? ""}
+      currentDocText={docPlainText}
+      editKey={editKey}
+      myPubkey={user?.pubkey}
+    >
+      {commentsEnabled && <CommentHighlightEffect editor={editor} mode={mode} />}
+      {editorJsx}
+    </CommentProvider>
+  );
 }
