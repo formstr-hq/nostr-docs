@@ -33,6 +33,8 @@ nostr-docs flows end to end. These are **health checks**, not UI specs.
   clipboard.
 - **sidebar-list** — a shared page opened via its link is classified as visited
   and only pages shared *by* you appear under the Shared tab.
+- **draft-login** — an unsaved draft typed while logged out survives logging in
+  (and a reload), and is cleared once the page is saved.
 
 ## Running
 

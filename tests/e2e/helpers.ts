@@ -112,6 +112,15 @@ export const TEST_PASSPHRASE = "e2e-test-passphrase";
 export async function loginAsGuest(page: Page) {
   await page.goto("/new");
   await page.getByRole("button", { name: "Login", exact: true }).click();
+  await createAccountFromOpenModal(page);
+}
+
+/**
+ * Complete account creation from an already-open login modal (the caller opens
+ * it). Split out so a test can log in without navigating away first — e.g. to
+ * check that a draft typed while logged out survives the login.
+ */
+export async function createAccountFromOpenModal(page: Page) {
   // The login modal and the recovery-key dialog can overlap in the DOM while
   // the former is fading out, so scope each by its own text.
   const loginDialog = page

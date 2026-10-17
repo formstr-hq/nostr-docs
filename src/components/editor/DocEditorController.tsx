@@ -85,6 +85,7 @@ import {
   setLocalOnlyFlag,
   clearVisitedFlag,
 } from "../../lib/localStore";
+import { clearDraft, loadDraft, saveDraft } from "../../lib/draftStore";
 import { cacheLocalEvents } from "../../dataLayer";
 
 import { EditorToolbar } from "./EditorToolbar";
@@ -355,7 +356,17 @@ export function DocumentEditorController({
 
   const initialContent = activeVersion?.decryptedContent ?? "";
 
-  const [md, setMd] = useState(initialContent);
+  // A draft typed before login (or before a reload) is restored from the session
+  // draft store. Logging in remounts the account subtree, which would otherwise
+  // discard an unsaved draft entirely.
+  const restoredDraft = useMemo(
+    () => (isDraft ? loadDraft() : null),
+    // Re-read only when entering or leaving the draft state.
+    [isDraft],
+  );
+  const draftSeed = restoredDraft?.markdown ?? "";
+
+  const [md, setMd] = useState(draftSeed || initialContent);
   const [mode, setMode] = useState<EditorMode>(
     isViewOnly || !isDraft ? "preview" : "edit",
   );
@@ -548,7 +559,9 @@ export function DocumentEditorController({
   const [publishTarget, setPublishTarget] = useState<"longform" | "communityNip" | null>(null);
   const [savingToShared, setSavingToShared] = useState(false);
   // Device-only state: for drafts tracked locally; for saved docs derived from context
-  const [draftLocalOnly, setDraftLocalOnly] = useState(false);
+  const [draftLocalOnly, setDraftLocalOnly] = useState(
+    restoredDraft?.localOnly ?? false,
+  );
   const isLocalOnly = isDraft
     ? draftLocalOnly
     : (selectedDocumentId ? localOnlyAddresses.has(selectedDocumentId) : false);
@@ -603,9 +616,9 @@ export function DocumentEditorController({
   const [uploadQueue, setUploadQueue] = useState<{ id: string; filename: string }[]>([]);
   const uploading = uploadQueue.length > 0;
 
-  const lastSavedMdRef = useRef<string>(initialContent);
+  const lastSavedMdRef = useRef<string>(activeVersion?.decryptedContent ?? "");
   // Always-current markdown — avoids stale closures in effects/save
-  const mdRef = useRef<string>(initialContent);
+  const mdRef = useRef<string>(draftSeed || initialContent);
   // Always-current mode — used in onUpdate to guard against split-mode clobber
   const modeRef = useRef<EditorMode>(mode);
   // Accepting a review from split mode already replaces TipTap with the final
@@ -627,6 +640,22 @@ export function DocumentEditorController({
   selectedDocIdRef.current = selectedDocumentId;
   isCollabDocRef.current = isCollabDoc;
   collabRef.current = collab;
+
+  /* ── Persist the in-progress draft ───────────────────────── */
+  // A draft has no address until it is saved, so it lives only in component
+  // state. Stash it (debounced) so the account-subtree remount on login/logout
+  // doesn't discard it. Cleared as soon as the page is saved or emptied.
+  useEffect(() => {
+    if (!isDraft || !md.trim()) {
+      clearDraft();
+      return;
+    }
+    const timer = setTimeout(
+      () => saveDraft({ markdown: md, localOnly: draftLocalOnly }),
+      300,
+    );
+    return () => clearTimeout(timer);
+  }, [isDraft, md, draftLocalOnly]);
 
   // Always-current upload function — avoids stale closures in editorProps handlers
   const uploadFileRef = useRef<(file: File) => Promise<void>>(async () => { });
@@ -869,7 +898,7 @@ export function DocumentEditorController({
     },
     // Collab docs get their content from the Yjs doc (via Collaboration), not
     // from the markdown snapshot.
-    content: isCollabReady ? undefined : initialContent,
+    content: isCollabReady ? undefined : draftSeed || initialContent,
     // Editing is never blocked. While a collab session is still connecting the
     // user edits the plain-markdown editor; those keystrokes live in mdRef and
     // are carried into the shared doc by the seed effect when it becomes ready.
