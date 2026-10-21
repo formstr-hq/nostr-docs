@@ -19,6 +19,7 @@ import DocumentList from "./components/DocumentList";
 import { DocumentProvider } from "./contexts/DocumentContext";
 import { UserProvider, useUser } from "./contexts/UserContext";
 import { ThemeModeProvider } from "./contexts/ThemeModeContext";
+import { AppDeskProvider } from "./contexts/AppDeskContext";
 import DocPage from "./components/DocPage";
 import ArticleView from "./components/ArticleView";
 import { SharedPagesProvider } from "./contexts/SharedDocsContext";
@@ -120,7 +121,9 @@ export default function App() {
         <RelayProvider>
           <BlossomProvider>
             <MyFormsProvider>
-              <AuthedApp />
+              <AppDeskProvider>
+                <AuthedApp />
+              </AppDeskProvider>
             </MyFormsProvider>
           </BlossomProvider>
         </RelayProvider>

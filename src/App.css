@@ -397,3 +397,50 @@
   border-radius: 2px;
 }
 
+/* ── The hidden suite door in the Pages logo ─────────────────────────────
+   The P stays the home link. Only the underline (and its trailing star) opens
+   the Formstr app desk. The star is always tinted, so the mark reads as a
+   separate, clickable thing before hover. */
+.pages-logo-wrap .pages-bar,
+.pages-logo-wrap .pages-star {
+  transition: filter 160ms ease, opacity 160ms ease, transform 200ms ease;
+}
+
+.pages-logo-wrap .pages-star {
+  opacity: 1;
+  transform-box: fill-box;
+  transform-origin: center;
+}
+
+.pages-logo-wrap:has(.pages-suite-trigger:hover) .pages-star,
+.pages-logo-wrap:has(.pages-suite-trigger:focus-visible) .pages-star {
+  opacity: 1;
+  filter: drop-shadow(0 0 6px color-mix(in srgb, currentColor 55%, transparent));
+}
+
+.pages-logo-wrap:has(.pages-suite-trigger:hover) .pages-bar,
+.pages-logo-wrap:has(.pages-suite-trigger:focus-visible) .pages-bar {
+  filter: drop-shadow(0 0 6px color-mix(in srgb, currentColor 55%, transparent));
+}
+
+/* A separate hit target over the underline. Kept to the bottom of the lockup
+   so the P — the home target — keeps almost all of its area. */
+.pages-suite-trigger {
+  position: absolute;
+  left: 8%;
+  right: -2%;
+  bottom: 4%;
+  height: 16%;
+  min-height: 12px;
+  border: 0;
+  padding: 0;
+  border-radius: 999px;
+  background: transparent;
+  cursor: pointer;
+}
+
+.pages-suite-trigger:focus-visible {
+  outline: 2px solid #6b4fa3;
+  outline-offset: 2px;
+}
+

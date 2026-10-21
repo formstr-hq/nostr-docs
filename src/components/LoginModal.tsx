@@ -485,7 +485,7 @@ export default function LoginModal({
             flexShrink: 0,
           }}
         >
-          <PagesLogo size={120} />
+          <PagesLogo size={120} showDeskMark={false} />
           <Box textAlign="center">
             <Typography variant="h6" fontWeight={700}>
               Sign in
