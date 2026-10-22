@@ -26,9 +26,11 @@ import MicIcon from "@mui/icons-material/Mic";
 import MoreHorizIcon from "@mui/icons-material/MoreHoriz";
 import DownloadOutlinedIcon from "@mui/icons-material/DownloadOutlined";
 import UploadFileOutlinedIcon from "@mui/icons-material/UploadFileOutlined";
+import AppsIcon from "@mui/icons-material/Apps";
 import { nip19 } from "nostr-tools";
 import { useThemeMode } from "../contexts/ThemeModeContext";
 import { useUser } from "../contexts/UserContext";
+import { useAppDesk } from "../contexts/AppDeskContext";
 import { NostrAvatar } from "./common/NostrAvatar";
 import type { AuthMethod } from "../signer";
 import BlossomServersModal from "./BlossomServersModal";
@@ -56,6 +58,7 @@ export default function UserMenu({
   onSelectTheme: propOnSelectTheme,
   triggerMode = "pill",
 }: Props) {
+  const openDesk = useAppDesk();
   const { themeId: ctxThemeId, setThemeId: ctxSetThemeId } = useThemeMode();
   const themeId = propThemeId ?? ctxThemeId;
   const onSelectTheme = propOnSelectTheme ?? ctxSetThemeId;
@@ -318,6 +321,30 @@ export default function UserMenu({
           <ListItemText
             primary={accounts.length > 0 ? "Add account" : "Login"}
             primaryTypographyProps={{ sx: { fontSize: "0.82rem" } }}
+            sx={{ minWidth: 0, my: 0 }}
+          />
+        </MenuItem>
+
+        <Divider />
+
+        {/* Suite apps — the stable entry point on mobile, where the logo mark
+            can be hidden or too small to tap. Anchored to the avatar/pill so
+            the drawer survives the menu closing. */}
+        <MenuItem
+          onClick={() => {
+            if (anchorEl) openDesk(anchorEl);
+            handleClose();
+          }}
+          sx={{ px: 1.25, py: 0.6 }}
+        >
+          <ListItemIcon sx={{ minWidth: 26, mr: 0.75 }}>
+            <AppsIcon fontSize="small" />
+          </ListItemIcon>
+          <ListItemText
+            primary="Apps"
+            secondary="All Formstr apps"
+            primaryTypographyProps={{ noWrap: true, sx: { fontSize: "0.82rem" } }}
+            secondaryTypographyProps={{ noWrap: true, variant: "caption", sx: { fontSize: "0.68rem" } }}
             sx={{ minWidth: 0, my: 0 }}
           />
         </MenuItem>

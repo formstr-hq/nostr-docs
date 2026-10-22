@@ -12,6 +12,11 @@ import react from '@vitejs/plugin-react';
 export default defineConfig({
   plugins: [react()],
   base: '/',
+  resolve: {
+    // The app-desk package is linked from common-packages during development.
+    // Without dedupe, its local React copy shadows the app's and hooks break.
+    dedupe: ['react', 'react-dom'],
+  },
   worker: {
     format: 'es',
   },
