@@ -704,8 +704,13 @@ export function DocumentEditorController({
         : []),
       TextStyle,
       FontFamily,
-      // html: true so <encrypted-file> tags round-trip through markdown storage
-      Markdown.configure({ html: true, tightLists: true }),
+      // html: true so <encrypted-file> tags round-trip through markdown storage.
+      // transformPastedText: plain-text clipboard content (no text/html, e.g.
+      // copied from a markdown file, README, chat, or terminal) is parsed as
+      // markdown before insertion, so "# Title" etc. renders formatted instead
+      // of landing as literal syntax. Rich paste (text/html, e.g. copying from
+      // a webpage or another doc) is unaffected — that already parses as HTML.
+      Markdown.configure({ html: true, tightLists: true, transformPastedText: true }),
       Link.configure({ openOnClick: false }),
       Placeholder.configure({
         placeholder: "Start writing your page here…",
