@@ -188,6 +188,28 @@ export async function typeIntoEditor(page: Page, text: string) {
 }
 
 /**
+ * Paste plain text into the editor, the way a real clipboard paste would
+ * (Playwright has no OS clipboard in headless CI, so this dispatches a
+ * ClipboardEvent directly). Only "text/plain" is set — no "text/html" — which
+ * matches copying from a markdown file, README, chat, or terminal, and is what
+ * exercises the editor's markdown-on-paste handling.
+ */
+export async function pasteIntoEditor(page: Page, text: string) {
+  const surface = editorSurface(page);
+  await surface.click();
+  await surface.evaluate((el, pasted) => {
+    const data = new DataTransfer();
+    data.setData("text/plain", pasted);
+    const event = new ClipboardEvent("paste", {
+      clipboardData: data,
+      bubbles: true,
+      cancelable: true,
+    });
+    el.dispatchEvent(event);
+  }, text);
+}
+
+/**
  * Click the toolbar Save button and wait for the save to land. Saving a new
  * (draft) document navigates to its own /doc/<naddr> URL, so that navigation —
  * not the transient "Saved" toast, which unmounts as the page navigates — is the
