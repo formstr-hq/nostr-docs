@@ -74,7 +74,7 @@ interface DocumentContextValue {
    */
   addImportedDocument: (
     markdown: string,
-    options?: { publish?: boolean },
+    options?: { publish?: boolean; awaitBroadcast?: boolean },
   ) => Promise<string>;
 
   removeDocument: (id: string) => void;
@@ -446,7 +446,7 @@ export const DocumentProvider: React.FC<{ children: React.ReactNode }> = ({
   const addImportedDocument = useCallback(
     async (
       markdown: string,
-      options?: { publish?: boolean },
+      options?: { publish?: boolean; awaitBroadcast?: boolean },
     ): Promise<string> => {
       const publish = options?.publish ?? true;
       const signer = await signerManager.getSigner();
@@ -502,11 +502,18 @@ export const DocumentProvider: React.FC<{ children: React.ReactNode }> = ({
         return address;
       }
 
-      try {
-        await publishEvent(stored, relays);
-        await markBroadcast(address);
-      } catch (err) {
-        console.warn("Imported page kept locally (broadcast failed):", err);
+      const broadcast = async () => {
+        try {
+          await publishEvent(stored, relays);
+          await markBroadcast(address);
+        } catch (err) {
+          console.warn("Imported page kept locally (broadcast failed):", err);
+        }
+      };
+      if (options?.awaitBroadcast === false) {
+        void broadcast();
+      } else {
+        await broadcast();
       }
 
       return address;

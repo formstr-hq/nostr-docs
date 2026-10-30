@@ -28,9 +28,26 @@ type IndexEntry = {
   tags: string;
 };
 
+/**
+ * Display text of a line of Markdown: inline HTML (the editor stores font and
+ * colour changes as <span style=...>), heading markers and a trailing hard-break
+ * backslash are removed, so a title never shows markup.
+ */
+const plainLine = (line: string): string =>
+  line
+    .replace(/<[^>]*>/g, "")
+    .replace(/&nbsp;/g, " ")
+    .replace(/^#+\s*/, "")
+    .replace(/\\\s*$/, "")
+    .trim();
+
+/** Title of a page: its first line that has any text once markup is removed. */
 export const heuristicTitle = (content: string, maxLength = 120): string => {
-  const firstLine = content.split("\n").find((l) => l.trim()) ?? "";
-  return firstLine.replace(/^#+\s*/, "").replace(/\\\s*$/, "").slice(0, maxLength).trim();
+  for (const line of content.split("\n")) {
+    const title = plainLine(line);
+    if (title) return title.slice(0, maxLength).trim();
+  }
+  return "";
 };
 
 const buildIndex = (

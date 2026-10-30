@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useEffect } from "react";
 import "./App.css";
 import {
   Box,
@@ -22,6 +22,14 @@ import { ThemeModeProvider } from "./contexts/ThemeModeContext";
 import { AppDeskProvider } from "./contexts/AppDeskContext";
 import DocPage from "./components/DocPage";
 import ArticleView from "./components/ArticleView";
+import {
+  DriveImportPage,
+} from "./features/driveImport/components/DriveImportPage";
+import {
+  clearActiveImportPayload,
+  getActiveImportPayload,
+} from "./features/driveImport/hooks/useDriveImport";
+import { useOpenImportedDocument } from "./features/driveImport/hooks/useOpenImportedDocument";
 import { SharedPagesProvider } from "./contexts/SharedDocsContext";
 import { RelayProvider } from "./contexts/RelayContext";
 import { DocMetadataProvider } from "./contexts/DocMetadataContext";
@@ -52,7 +60,51 @@ function ArticleViewWrapper() {
   return <ArticleView key={location.pathname} />;
 }
 
+function DriveImportPageWrapper() {
+  const navigate = useNavigate();
+  const openImportedDocument = useOpenImportedDocument();
+
+  const handleBackToDocs = () => {
+    clearActiveImportPayload();
+    if (typeof window !== "undefined" && window.location.hash) {
+      window.history.replaceState(null, "", window.location.pathname + window.location.search);
+    }
+    navigate("/", { replace: true });
+  };
+
+  return (
+    <DriveImportPage
+      onBackToDocs={handleBackToDocs}
+      onOpenInEditor={openImportedDocument}
+    />
+  );
+}
+
+// A stored payload only resumes a reload/back-forward of the import view, never a fresh visit to "/".
+const navEntryType = (
+  typeof performance !== "undefined" && performance.getEntriesByType
+    ? (performance.getEntriesByType("navigation")[0] as PerformanceNavigationTiming | undefined)
+    : undefined
+)?.type;
+const canResumeStoredImport = navEntryType === "reload" || navEntryType === "back_forward";
+
 export function HomePage() {
+  const location = useLocation();
+  const resumeStored = canResumeStoredImport && location.key === "default";
+  const hasPayload =
+    location.hash.toLowerCase().startsWith("#payload=") ||
+    location.search.toLowerCase().includes("payload=") ||
+    (location.search.toLowerCase().includes("server=") && location.search.toLowerCase().includes("hash=")) ||
+    (resumeStored && Boolean(getActiveImportPayload()));
+
+  useEffect(() => {
+    if (!hasPayload) clearActiveImportPayload();
+  }, [hasPayload]);
+
+  if (hasPayload) {
+    return <DriveImportPageWrapper />;
+  }
+
   return <AllPagesView />;
 }
 
@@ -77,6 +129,7 @@ const router = createRouter([
     element: <AppLayout />,
     children: [
       { index: true, element: <HomePage /> },
+      { path: "drive-import", element: <DriveImportPageWrapper /> },
       { path: "new", element: <DocPageWrapper /> },
       { path: "doc/new", element: <DocPageWrapper /> },
       { path: "doc/:naddr", element: <DocPageWrapper /> },
@@ -169,7 +222,7 @@ function AppLayout() {
           } else {
             App.exitApp();
           }
-        }).then((handle) => {
+        }).then((handle: { remove: () => void }) => {
           remove = () => handle.remove();
         });
       })
