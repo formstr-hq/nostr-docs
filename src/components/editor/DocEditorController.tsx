@@ -157,9 +157,11 @@ function getEditorMarkdown(editor: Editor): string {
 
 function parseMarkdownDocument(editor: Editor, markdown: string): ProseMirrorNode {
   const storage = (editor.storage as unknown as MarkdownStorage).markdown;
-  const element = document.createElement("div");
-  element.innerHTML = storage.parser.parse(markdown);
-  return ProseMirrorDOMParser.fromSchema(editor.schema).parse(element);
+  const html = storage.parser.parse(markdown);
+  // Parse in an inert document: assigning innerHTML on an element of the live
+  // document would load resources and fire handlers like <img onerror>.
+  const body = new DOMParser().parseFromString(html, "text/html").body;
+  return ProseMirrorDOMParser.fromSchema(editor.schema).parse(body);
 }
 
 function TagRow({ address }: { address: string }) {
