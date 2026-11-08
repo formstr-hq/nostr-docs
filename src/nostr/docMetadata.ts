@@ -37,6 +37,16 @@ export interface DocMetadata {
  */
 const metaHighWater = new Map<string, number>();
 
+/**
+ * Tag on the owner's v2 roster event carrying the document viewKey, NIP-44
+ * encrypted to the owner's own key. The roster shares its replaceable slot with
+ * the owner's private metadata (`rosterDTag` is the doc address) and its content
+ * is viewKey-encrypted, so without this the owner could only read the roster —
+ * and the viewKey-encrypted content — on a device that already had the key.
+ * Only the owner can decrypt it; members ignore it.
+ */
+export const ROSTER_OWNER_KEY_TAG = "owner_viewkey";
+
 function nextCreatedAt(address: string): number {
   const now = Math.floor(Date.now() / 1000);
   const next = Math.max(now, (metaHighWater.get(address) ?? 0) + 1);
@@ -86,20 +96,28 @@ export async function fetchAllDocMetadata(
     metaHighWater.set(dTag, Math.max(metaHighWater.get(dTag) ?? 0, event.created_at));
 
     try {
-      let decrypted: string;
+      let meta: DocMetadata;
       try {
         // Self-encrypted: the per-user metadata we have always written.
-        decrypted = await signer.nip44Decrypt(pubkey, event.content);
+        meta = JSON.parse(await signer.nip44Decrypt(pubkey, event.content)) as DocMetadata;
       } catch {
         // v2: the owner's shareable roster is encrypted with the document
-        // viewKey instead of the owner's own key. Only attempt this when we
-        // know the viewKey for that address; otherwise leave the event alone
-        // so legacy undecryptable events are still skipped as before.
-        const viewKey = viewKeys?.get(dTag);
-        if (!viewKey) throw new Error("no viewKey");
-        decrypted = decryptWithViewKey(event.content, viewKey);
+        // viewKey instead of the owner's own key. Use the locally known
+        // viewKey, else the owner's encrypted backup on the event; otherwise
+        // leave the event alone so legacy undecryptable events are still
+        // skipped as before.
+        let viewKey = viewKeys?.get(dTag);
+        if (!viewKey) {
+          const backup = event.tags.find((t) => t[0] === ROSTER_OWNER_KEY_TAG)?.[1];
+          if (!backup) throw new Error("no viewKey");
+          viewKey = await signer.nip44Decrypt(pubkey, backup);
+        }
+        meta = {
+          ...(JSON.parse(decryptWithViewKey(event.content, viewKey)) as DocMetadata),
+          viewKey,
+        };
       }
-      result.set(dTag, JSON.parse(decrypted) as DocMetadata);
+      result.set(dTag, meta);
     } catch {
       // skip undecryptable events
     }
@@ -175,11 +193,15 @@ export async function saveRoster(
   if (pubkey !== owner) throw new Error("Only the document owner can write the roster");
 
   const dTag = rosterDTag(owner, d);
-  const encrypted = encryptWithViewKey(JSON.stringify(roster), viewKey);
+  // Keys never go in the roster payload: every member can read it, and an
+  // editKey there would hand edit access to viewers.
+  const { viewKey: _viewKey, editKey: _editKey, ...payload } = roster;
+  const encrypted = encryptWithViewKey(JSON.stringify(payload), viewKey);
+  const ownerKeyBackup = await signer.nip44Encrypt!(pubkey, viewKey);
 
   const event: EventTemplate = {
     kind: KIND_DOC_METADATA,
-    tags: [["d", dTag]],
+    tags: [["d", dTag], [ROSTER_OWNER_KEY_TAG, ownerKeyBackup]],
     content: encrypted,
     created_at: nextCreatedAt(dTag),
   };
