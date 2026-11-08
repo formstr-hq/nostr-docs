@@ -10,8 +10,6 @@ import {
   Chip,
   InputBase,
   CircularProgress,
-  IconButton,
-  Tooltip,
   useTheme,
   alpha,
 } from "@mui/material";
@@ -20,7 +18,6 @@ import LabelOutlinedIcon from "@mui/icons-material/LabelOutlined";
 import VisibilityOutlinedIcon from "@mui/icons-material/VisibilityOutlined";
 import EditOutlinedIcon from "@mui/icons-material/EditOutlined";
 import SmartphoneIcon from "@mui/icons-material/Smartphone";
-import ChatBubbleOutlineIcon from "@mui/icons-material/ChatBubbleOutline";
 import CropFreeIcon from "@mui/icons-material/CropFree";
 import { useDocMetadata } from "../../contexts/DocMetadataContext";
 import { getDocumentTags } from "../AllPagesView";
@@ -73,6 +70,7 @@ import { useDocumentContext } from "../../contexts/DocumentContext";
 import { useUser } from "../../contexts/UserContext";
 import { useSharedPages } from "../../contexts/SharedDocsContext";
 import { CommentProvider, useComments } from "../../contexts/CommentContext";
+import { CommentsButton } from "../comments/CommentsButton";
 import { signerManager } from "../../signer";
 import { useRelays } from "../../contexts/RelayContext";
 import { publishEvent } from "../../nostr/publish";
@@ -1918,15 +1916,7 @@ export function DocumentEditorController({
         )}
         {isViewOnly && commentsEnabled && (
           <Box sx={{ display: "flex", justifyContent: "flex-end", p: 1, borderBottom: "1px solid", borderColor: "divider" }}>
-            <Tooltip title={showComments ? "Hide comments" : "Show comments"}>
-              <IconButton
-                size="small"
-                onClick={() => setShowComments((s) => !s)}
-                color={showComments ? "secondary" : "default"}
-              >
-                <ChatBubbleOutlineIcon fontSize="small" />
-              </IconButton>
-            </Tooltip>
+            <CommentsButton open={showComments} onToggle={() => setShowComments((s) => !s)} />
           </Box>
         )}
 

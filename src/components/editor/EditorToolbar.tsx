@@ -32,6 +32,7 @@ import CropFreeIcon from "@mui/icons-material/CropFree";
 import HistoryIcon from "@mui/icons-material/History";
 import type { Event } from "nostr-tools";
 import RelayPresenceIndicator from "../RelayPresenceIndicator";
+import { CommentsButton } from "../comments/CommentsButton";
 import FormatBoldIcon from "@mui/icons-material/FormatBold";
 import FormatItalicIcon from "@mui/icons-material/FormatItalic";
 import FormatListBulletedIcon from "@mui/icons-material/FormatListBulleted";
@@ -439,6 +440,10 @@ export function EditorToolbar({
             >
               <RelayPresenceIndicator event={relayEvent} relays={relays} />
             </Box>
+          )}
+
+          {onToggleComments && (
+            <CommentsButton open={!!showComments} onToggle={onToggleComments} />
           )}
 
           {/* History Button */}
