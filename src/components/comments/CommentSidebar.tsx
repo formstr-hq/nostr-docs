@@ -1,9 +1,10 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Box, Button, Typography, Divider, IconButton, Tooltip, Snackbar, Alert, alpha } from "@mui/material";
 import CloseIcon from "@mui/icons-material/Close";
 import { useComments } from "../../contexts/CommentContext";
 import { scrollToComment } from "../../utils/scrollToComment";
 import { CommentCard } from "./CommentCard";
+import type { DecryptedComment } from "../../contexts/CommentContext";
 
 type Props = {
   onClose: () => void;
@@ -12,7 +13,7 @@ type Props = {
 };
 
 export function CommentSidebar({ onClose, activeCommentId, isMobile }: Props) {
-  const { comments, resolvedIds, resolveComment, unresolveComment, isOutdated, canResolve } = useComments();
+  const { comments, replyToComment, resolvedIds, resolveComment, unresolveComment, isOutdated, canResolve } = useComments();
   const [showResolved, setShowResolved] = useState(false);
   const [showOutdated, setShowOutdated] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -32,9 +33,28 @@ export function CommentSidebar({ onClose, activeCommentId, isMobile }: Props) {
     el?.scrollIntoView({ behavior: "smooth", block: "nearest" });
   }, [activeCommentId]);
 
-  const active = comments.filter((c) => !resolvedIds.has(c.id) && !isOutdated(c));
-  const outdated = comments.filter((c) => !resolvedIds.has(c.id) && isOutdated(c));
-  const resolved = comments.filter((c) => resolvedIds.has(c.id));
+  // Replies hang off their parent's card; only top-level comments are threads.
+  const { threads, repliesByParent } = useMemo(() => {
+    const byParent = new Map<string, DecryptedComment[]>();
+    const top: DecryptedComment[] = [];
+    for (const c of comments) {
+      if (!c.parentId) {
+        top.push(c);
+        continue;
+      }
+      const list = byParent.get(c.parentId) ?? [];
+      list.push(c);
+      byParent.set(c.parentId, list);
+    }
+    return { threads: top, repliesByParent: byParent };
+  }, [comments]);
+
+  const handleReply = (parent: DecryptedComment) => (content: string) =>
+    replyToComment(parent, content);
+
+  const active = threads.filter((c) => !resolvedIds.has(c.id) && !isOutdated(c));
+  const outdated = threads.filter((c) => !resolvedIds.has(c.id) && isOutdated(c));
+  const resolved = threads.filter((c) => resolvedIds.has(c.id));
 
   // A section is only open while it has content, so an emptied section
   // collapses on its own — no state syncing needed.
@@ -155,6 +175,8 @@ export function CommentSidebar({ onClose, activeCommentId, isMobile }: Props) {
                   isOutdated={false}
                   onResolve={canResolve(comment) ? () => handleResolve(comment.id) : undefined}
                   onCardClick={comment.quote ? () => scrollToComment(comment.id) : undefined}
+                  replies={repliesByParent.get(comment.id)}
+                  onReply={handleReply(comment)}
                 />
               </Box>
             ))}
@@ -175,6 +197,8 @@ export function CommentSidebar({ onClose, activeCommentId, isMobile }: Props) {
                       isResolved={false}
                       isOutdated={true}
                       onResolve={canResolve(comment) ? () => handleResolve(comment.id) : undefined}
+                      replies={repliesByParent.get(comment.id)}
+                      onReply={handleReply(comment)}
                     />
                   </Box>
                 ))}
@@ -198,6 +222,7 @@ export function CommentSidebar({ onClose, activeCommentId, isMobile }: Props) {
                       isOutdated={isOutdated(comment)}
                       onUnresolve={canResolve(comment) ? () => handleUnresolve(comment.id) : undefined}
                       onCardClick={comment.quote ? () => scrollToComment(comment.id) : undefined}
+                      replies={repliesByParent.get(comment.id)}
                     />
                   </Box>
                 ))}

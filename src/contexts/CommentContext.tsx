@@ -34,12 +34,16 @@ export interface DecryptedComment {
   type: CommentType;
   quote?: string;
   context?: { prefix: string; suffix: string };
+  /** Set on replies: the id of the comment this replies to. */
+  parentId?: string;
   event: Event;
 }
 
 interface CommentContextValue {
   comments: DecryptedComment[];
   addComment: (payload: CommentPayload, docEventId: string) => Promise<void>;
+  /** Post a reply under an existing comment. */
+  replyToComment: (parent: DecryptedComment, content: string) => Promise<void>;
   resolvedIds: Set<string>;
   resolveComment: (commentId: string) => Promise<void>;
   unresolveComment: (commentId: string) => Promise<void>;
@@ -69,6 +73,7 @@ function decryptCommentEvent(
 
     const quoteTag = get("quote");
     const contextTag = get("context");
+    const parentTag = get("parent");
     const docEventId = event.tags.find((t) => t[0] === "e")?.[1] ?? "";
 
     return {
@@ -82,6 +87,7 @@ function decryptCommentEvent(
       context: contextTag
         ? { prefix: contextTag[1], suffix: contextTag[2] }
         : undefined,
+      parentId: parentTag?.[1] || undefined,
       event,
     };
   } catch {
@@ -283,10 +289,14 @@ export const CommentProvider: React.FC<{
       type: payload.type,
       quote: payload.quote,
       context: payload.context,
+      parentId: payload.parentId,
       event,
     };
     setComments((prev) => insertSorted(prev, comment));
   };
+
+  const replyToComment = (parent: DecryptedComment, content: string) =>
+    addComment({ content, type: "comment", parentId: parent.id }, parent.docEventId);
 
   const setCommentResolution = async (commentId: string, resolved: boolean): Promise<void> => {
     // Replaceable events with equal created_at are tie-broken by lowest id,
@@ -343,7 +353,7 @@ export const CommentProvider: React.FC<{
 
   return (
     <CommentContext.Provider
-      value={{ comments, addComment, resolvedIds, resolveComment, unresolveComment, applyHighlights, isOutdated, canResolve }}
+      value={{ comments, addComment, replyToComment, resolvedIds, resolveComment, unresolveComment, applyHighlights, isOutdated, canResolve }}
     >
       {children}
     </CommentContext.Provider>
