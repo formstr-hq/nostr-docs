@@ -28,6 +28,8 @@ import KeyboardArrowUpIcon from "@mui/icons-material/KeyboardArrowUp";
 import CheckIcon from "@mui/icons-material/Check";
 import HistoryOutlinedIcon from "@mui/icons-material/HistoryOutlined";
 import DeleteOutlineIcon from "@mui/icons-material/DeleteOutline";
+import EditOutlinedIcon from "@mui/icons-material/EditOutlined";
+import RenameDialog from "./RenameDialog";
 import PagesLogo from "./PagesLogo";
 import UserMenu from "./UserMenu";
 import TrashDialog from "./TrashDialog";
@@ -173,7 +175,8 @@ export default function AllPagesView() {
   } = useDocumentContext();
   const { sharedDocuments, getKeys } = useSharedPages();
   const { publishedDocuments } = usePublished();
-  const { docTitles, docTags, docSharedAs, selectedTag, setSelectedTag } = useDocMetadata();
+  const { docTitles, setDocTitle, docTags, docSharedAs, selectedTag, setSelectedTag } = useDocMetadata();
+  const [renaming, setRenaming] = useState<{ address: string; title: string } | null>(null);
   const { relays } = useRelays();
   const { user } = useUser();
   const navigate = useNavigate();
@@ -935,6 +938,24 @@ export default function AllPagesView() {
                   </Box>
                 </Tooltip>
 
+                <Box sx={{ display: "flex", alignItems: "center", gap: 0.25 }}>
+                <Tooltip title="Rename">
+                  <IconButton
+                    size="small"
+                    aria-label="Rename page"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setRenaming({ address, title: displayTitle });
+                    }}
+                    sx={{
+                      color: "text.secondary",
+                      p: 0.5,
+                      "&:hover": { color: "text.primary" },
+                    }}
+                  >
+                    <EditOutlinedIcon sx={{ fontSize: 18 }} />
+                  </IconButton>
+                </Tooltip>
                 {isVisited && (
                   <Tooltip title="Remove from visited">
                     <IconButton
@@ -956,6 +977,7 @@ export default function AllPagesView() {
                     </IconButton>
                   </Tooltip>
                 )}
+                </Box>
               </Box>
 
               {/* Card Middle: Title & Tags */}
@@ -1371,6 +1393,18 @@ export default function AllPagesView() {
           </ListItemButton>
         </Box>
       </SwipeableDrawer>
+
+      <RenameDialog
+        open={renaming !== null}
+        initialTitle={renaming?.title ?? ""}
+        onClose={() => setRenaming(null)}
+        onSave={(newTitle) => {
+          // Blank clears the custom title so the first line is used again.
+          if (renaming && newTitle !== (docTitles.get(renaming.address) ?? "")) {
+            void setDocTitle(renaming.address, newTitle);
+          }
+        }}
+      />
 
       {/* ── Trash Dialog ── */}
       <TrashDialog
