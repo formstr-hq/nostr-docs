@@ -173,6 +173,7 @@ export function DocEditorSurface({
         <Box
           ref={previewRef}
           onClick={handleHighlightClick}
+          onDoubleClick={canEdit ? onToggleMode : undefined}
           sx={{
             flex: 1,
             overflowY: "auto",

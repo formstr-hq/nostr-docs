@@ -8,6 +8,7 @@ import {
   alpha,
   TextField,
   InputAdornment,
+  InputBase,
   IconButton,
   Menu,
   MenuItem,
@@ -28,8 +29,6 @@ import KeyboardArrowUpIcon from "@mui/icons-material/KeyboardArrowUp";
 import CheckIcon from "@mui/icons-material/Check";
 import HistoryOutlinedIcon from "@mui/icons-material/HistoryOutlined";
 import DeleteOutlineIcon from "@mui/icons-material/DeleteOutline";
-import EditOutlinedIcon from "@mui/icons-material/EditOutlined";
-import RenameDialog from "./RenameDialog";
 import PagesLogo from "./PagesLogo";
 import UserMenu from "./UserMenu";
 import TrashDialog from "./TrashDialog";
@@ -176,7 +175,17 @@ export default function AllPagesView() {
   const { sharedDocuments, getKeys } = useSharedPages();
   const { publishedDocuments } = usePublished();
   const { docTitles, setDocTitle, docTags, docSharedAs, selectedTag, setSelectedTag } = useDocMetadata();
-  const [renaming, setRenaming] = useState<{ address: string; title: string } | null>(null);
+  const [renaming, setRenaming] = useState<{ address: string; value: string } | null>(null);
+
+  // Blank clears the custom title so the first line is used again.
+  const commitRename = () => {
+    if (!renaming) return;
+    const next = renaming.value.trim();
+    if (next !== (docTitles.get(renaming.address) ?? "")) {
+      void setDocTitle(renaming.address, next);
+    }
+    setRenaming(null);
+  };
   const { relays } = useRelays();
   const { user } = useUser();
   const navigate = useNavigate();
@@ -938,24 +947,6 @@ export default function AllPagesView() {
                   </Box>
                 </Tooltip>
 
-                <Box sx={{ display: "flex", alignItems: "center", gap: 0.25 }}>
-                <Tooltip title="Rename">
-                  <IconButton
-                    size="small"
-                    aria-label="Rename page"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setRenaming({ address, title: displayTitle });
-                    }}
-                    sx={{
-                      color: "text.secondary",
-                      p: 0.5,
-                      "&:hover": { color: "text.primary" },
-                    }}
-                  >
-                    <EditOutlinedIcon sx={{ fontSize: 18 }} />
-                  </IconButton>
-                </Tooltip>
                 {isVisited && (
                   <Tooltip title="Remove from visited">
                     <IconButton
@@ -977,13 +968,33 @@ export default function AllPagesView() {
                     </IconButton>
                   </Tooltip>
                 )}
-                </Box>
               </Box>
 
               {/* Card Middle: Title & Tags */}
               <Box sx={{ my: 1.5, minWidth: 0 }}>
+                {renaming?.address === address ? (
+                  <InputBase
+                    autoFocus
+                    fullWidth
+                    value={renaming.value}
+                    onClick={(e) => e.stopPropagation()}
+                    onChange={(e) => setRenaming({ address, value: e.target.value })}
+                    onBlur={commitRename}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") commitRename();
+                      if (e.key === "Escape") setRenaming(null);
+                    }}
+                    placeholder="Leave blank to use first line"
+                    sx={{ fontWeight: 700, fontSize: "1.02rem", mb: 1 }}
+                  />
+                ) : (
                 <Typography
                   variant="subtitle1"
+                  title="Double-click to rename"
+                  onDoubleClick={(e) => {
+                    e.stopPropagation();
+                    setRenaming({ address, value: displayTitle });
+                  }}
                   sx={{
                     fontWeight: 700,
                     fontSize: "1.02rem",
@@ -999,6 +1010,7 @@ export default function AllPagesView() {
                 >
                   {displayTitle}
                 </Typography>
+                )}
 
                 {itemTags.length > 0 && (
                   <Box sx={{ display: "flex", gap: 0.5, flexWrap: "wrap", minWidth: 0, overflow: "hidden" }}>
@@ -1393,18 +1405,6 @@ export default function AllPagesView() {
           </ListItemButton>
         </Box>
       </SwipeableDrawer>
-
-      <RenameDialog
-        open={renaming !== null}
-        initialTitle={renaming?.title ?? ""}
-        onClose={() => setRenaming(null)}
-        onSave={(newTitle) => {
-          // Blank clears the custom title so the first line is used again.
-          if (renaming && newTitle !== (docTitles.get(renaming.address) ?? "")) {
-            void setDocTitle(renaming.address, newTitle);
-          }
-        }}
-      />
 
       {/* ── Trash Dialog ── */}
       <TrashDialog
