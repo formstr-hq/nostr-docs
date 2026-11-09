@@ -175,13 +175,14 @@ export default function AllPagesView() {
   const { sharedDocuments, getKeys } = useSharedPages();
   const { publishedDocuments } = usePublished();
   const { docTitles, setDocTitle, docTags, docSharedAs, selectedTag, setSelectedTag } = useDocMetadata();
-  const [renaming, setRenaming] = useState<{ address: string; value: string } | null>(null);
+  const [renaming, setRenaming] = useState<{ address: string; value: string; initial: string } | null>(null);
 
   // Blank clears the custom title so the first line is used again.
   const commitRename = () => {
     if (!renaming) return;
     const next = renaming.value.trim();
-    if (next !== (docTitles.get(renaming.address) ?? "")) {
+    // Untouched (still the title that was showing) -> nothing to publish.
+    if (next !== renaming.initial.trim()) {
       void setDocTitle(renaming.address, next);
     }
     setRenaming(null);
@@ -991,7 +992,7 @@ export default function AllPagesView() {
                     fullWidth
                     value={renaming.value}
                     onClick={(e) => e.stopPropagation()}
-                    onChange={(e) => setRenaming({ address, value: e.target.value })}
+                    onChange={(e) => setRenaming({ ...renaming, value: e.target.value })}
                     onBlur={commitRename}
                     onKeyDown={(e) => {
                       if (e.key === "Enter") commitRename();
@@ -1007,7 +1008,7 @@ export default function AllPagesView() {
                   onDoubleClick={(e) => {
                     e.stopPropagation();
                     clearOpenTimer();
-                    setRenaming({ address, value: displayTitle });
+                    setRenaming({ address, value: displayTitle, initial: displayTitle });
                   }}
                   sx={{
                     fontWeight: 700,
