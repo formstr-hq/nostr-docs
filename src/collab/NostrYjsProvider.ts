@@ -5,7 +5,12 @@ import {
   applyAwarenessUpdate,
   removeAwarenessStates,
 } from "y-protocols/awareness";
-import { writeSyncStep1, writeUpdate, readSyncMessage } from "y-protocols/sync";
+import {
+  writeSyncStep1,
+  writeUpdate,
+  readSyncMessage,
+  messageYjsSyncStep1,
+} from "y-protocols/sync";
 import * as encoding from "lib0/encoding";
 import * as decoding from "lib0/decoding";
 import { finalizeEvent, nip44, type Event } from "nostr-tools";
@@ -14,7 +19,7 @@ import { subscribe, type Subscription } from "../dataLayer";
 import { KIND_CRDT_OP, KIND_PRESENCE } from "../nostr/kinds";
 import { viewKeyConversationKey, collabRoom } from "../nostr/sharedDoc";
 import type { Session } from "./sessionKeys";
-import { recordAttestation, verifyAttestation } from "./sessionKeys";
+import { attestIfPossible, recordAttestation, verifyAttestation } from "./sessionKeys";
 import { uint8ToBase64, base64ToUint8 } from "../utils/base64";
 
 // Tags updates applied from a relay so they aren't re-broadcast.
@@ -27,6 +32,19 @@ const SYNC_STEP_INTERVAL_MS = 60_000;
 // outdatedTimeout is 30s).
 const PRESENCE_HEARTBEAT_MS = 15_000;
 const PRESENCE_THROTTLE_MS = 200;
+// Minimum gap between on-demand policy reloads triggered by an unknown writer.
+const POLICY_RECHECK_MS = 5_000;
+
+/**
+ * Who may change the live document. `open` docs accept any viewKey holder (that
+ * is the capability); otherwise a sender must carry an attestation, for this
+ * room and its own session key, from one of `authors` (owner + roster editors,
+ * or a legacy share's editKey).
+ */
+export interface WritePolicy {
+  open: boolean;
+  authors: Set<string>;
+}
 
 export interface NostrYjsProviderOptions {
   /** Root address `33457:<owner>:<d>` — the Yjs room identity. */
@@ -35,6 +53,8 @@ export interface NostrYjsProviderOptions {
   viewKey: string;
   relays: string[];
   session: Session;
+  /** Loads the current write policy; re-run periodically so roster changes apply. */
+  loadWritePolicy: () => Promise<WritePolicy>;
 }
 
 /**
@@ -52,9 +72,16 @@ export class NostrYjsProvider {
   private readonly relays: string[];
   private readonly session: Session;
   private readonly conversationKey: Uint8Array;
+  private readonly loadWritePolicy: () => Promise<WritePolicy>;
+  // Until the first policy loads, nobody else may write.
+  private writePolicy: Promise<WritePolicy> = Promise.resolve({
+    open: false,
+    authors: new Set(),
+  });
   // Awareness client id -> the session key that first claimed it, so one peer
   // can't overwrite or remove another peer's presence.
   private readonly clientOwners = new Map<number, string>();
+  private lastPolicyRecheck = 0;
 
   private sub: Subscription | null = null;
   private syncInterval: ReturnType<typeof setInterval> | null = null;
@@ -100,6 +127,7 @@ export class NostrYjsProvider {
     this.relays = options.relays;
     this.session = options.session;
     this.conversationKey = viewKeyConversationKey(options.viewKey);
+    this.loadWritePolicy = options.loadWritePolicy;
     this.sessionPubkey = options.session.sessionPubkey;
     this.awareness = new Awareness(this.ydoc);
     // Only the session pubkey — names/colors are resolved via attestation +
@@ -113,6 +141,8 @@ export class NostrYjsProvider {
     this.ydoc.on("update", this.onDocUpdate);
     this.awareness.on("update", this.onAwarenessUpdate);
 
+    // Start loading who may write before any remote event can arrive.
+    this.refreshWritePolicy();
     this.sub = subscribe(
       [{ kinds: [KIND_CRDT_OP, KIND_PRESENCE], "#a": [this.room] }],
       { onEvent: (event) => void this.handleIncoming(event) },
@@ -120,10 +150,10 @@ export class NostrYjsProvider {
     );
 
     this.sendSyncStep1();
-    this.syncInterval = setInterval(
-      () => this.sendSyncStep1(),
-      SYNC_STEP_INTERVAL_MS,
-    );
+    this.syncInterval = setInterval(() => {
+      this.refreshWritePolicy();
+      this.sendSyncStep1();
+    }, SYNC_STEP_INTERVAL_MS);
     if (typeof window !== "undefined") {
       window.addEventListener("online", this.onOnline);
     }
@@ -132,6 +162,31 @@ export class NostrYjsProvider {
         encodeAwarenessUpdate(this.awareness, [this.ydoc.clientID]),
       );
     }, PRESENCE_HEARTBEAT_MS);
+  }
+
+  private refreshWritePolicy(): Promise<WritePolicy> {
+    const next = this.loadWritePolicy();
+    // Keep the previous policy if a refresh fails (e.g. relays unreachable).
+    const previous = this.writePolicy;
+    this.writePolicy = next.catch(() => previous);
+    return this.writePolicy;
+  }
+
+  /**
+   * An attested sender we don't recognise may be an editor added after our
+   * policy loaded. Reload it (rate-limited) and, if they're now allowed,
+   * re-request state so the updates we dropped meanwhile are sent again.
+   */
+  private recheckPolicyFor(pubkeys: string[]): void {
+    const now = Date.now();
+    if (now - this.lastPolicyRecheck < POLICY_RECHECK_MS) return;
+    this.lastPolicyRecheck = now;
+    void this.refreshWritePolicy().then((policy) => {
+      if (this.destroyed) return;
+      if (policy.open || pubkeys.some((pk) => policy.authors.has(pk))) {
+        this.sendSyncStep1();
+      }
+    });
   }
 
   /**
@@ -169,25 +224,30 @@ export class NostrYjsProvider {
     if (this.destroyed) return;
     if (event.pubkey === this.session.sessionPubkey) return; // self-echo guard
 
-    // Authorization = possession of viewKey: the conversation key below is
-    // derived from viewKey, so only a viewKey holder can produce ciphertext
-    // that decrypts. (The relay has already verified event.sig.)
-    // Plaintext is a JSON envelope carrying the embedded attestation (if any)
-    // and the base64 Yjs payload. The attestation travels inside the ciphertext,
-    // so relays never see the real identity.
+    // Decrypting proves only that the sender holds the viewKey, which every
+    // share recipient has — view-only ones included. Reading is therefore open
+    // to any of them, but changing the document or showing up as a collaborator
+    // requires write access under the current policy. (The relay has already
+    // verified event.sig, so event.pubkey is the sender's session key.)
+    // Plaintext is a JSON envelope carrying the embedded attestations (if any)
+    // and the base64 Yjs payload. Attestations travel inside the ciphertext, so
+    // relays never see the real identity.
     let bytes: Uint8Array;
+    let realPubkey: string | null = null;
+    let editPubkey: string | null = null;
     try {
       const decrypted = nip44.decrypt(event.content, this.conversationKey);
       let messageB64 = decrypted;
       try {
-        const parsed = JSON.parse(decrypted) as { a?: Event; m?: unknown };
+        const parsed = JSON.parse(decrypted) as { a?: Event; e?: Event; m?: unknown };
         if (parsed && typeof parsed.m === "string") {
           // Only trust an attestation for this room that vouches for the
           // session key that actually signed this event.
           if (parsed.a) {
-            const realPubkey = verifyAttestation(parsed.a, this.room, event.pubkey);
+            realPubkey = verifyAttestation(parsed.a, this.room, event.pubkey);
             if (realPubkey) recordAttestation(event.pubkey, realPubkey, parsed.a);
           }
+          if (parsed.e) editPubkey = verifyAttestation(parsed.e, this.room, event.pubkey);
           messageB64 = parsed.m;
         }
       } catch {
@@ -198,7 +258,18 @@ export class NostrYjsProvider {
       return;
     }
 
+    const policy = await this.writePolicy;
+    if (this.destroyed) return;
+    const canWrite =
+      policy.open ||
+      (!!realPubkey && policy.authors.has(realPubkey)) ||
+      (!!editPubkey && policy.authors.has(editPubkey));
+    if (!canWrite && (realPubkey || editPubkey)) {
+      this.recheckPolicyFor([realPubkey, editPubkey].filter((pk): pk is string => !!pk));
+    }
+
     if (event.kind === KIND_PRESENCE) {
+      if (!canWrite) return;
       try {
         this.applyPresence(bytes, event.pubkey);
       } catch {
@@ -208,6 +279,10 @@ export class NostrYjsProvider {
     }
 
     try {
+      // A sync-step-1 is a read request (answered with our state, which the
+      // sender can decrypt anyway). Anything else changes the document.
+      const messageType = decoding.readVarUint(decoding.createDecoder(bytes));
+      if (messageType !== messageYjsSyncStep1 && !canWrite) return;
       const decoder = decoding.createDecoder(bytes);
       const replyEncoder = encoding.createEncoder();
       readSyncMessage(decoder, replyEncoder, this.ydoc, REMOTE_ORIGIN, (err) =>
@@ -230,8 +305,12 @@ export class NostrYjsProvider {
   }
 
   private publish(kind: number, bytes: Uint8Array): void {
+    // A session started while the account was locked has no attestation yet;
+    // add it once the signer is available so peers accept our edits.
+    if (!this.session.attestation) void attestIfPossible(this.session);
     const payload = JSON.stringify({
       a: this.session.attestation,
+      ...(this.session.editAttestation ? { e: this.session.editAttestation } : {}),
       m: uint8ToBase64(bytes),
     });
     const content = nip44.encrypt(payload, this.conversationKey);

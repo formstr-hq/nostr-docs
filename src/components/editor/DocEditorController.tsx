@@ -330,6 +330,7 @@ export function DocumentEditorController({
     isCollabDoc ? selectedDocumentId : null,
     isCollabDoc ? viewKey : undefined,
     relays,
+    isCollabDoc ? editKey : undefined,
   );
   const isCollabReady = isCollabDoc && !!collab?.ready;
   const { collaborators, collaboratorsRef } = useTrustedCollaborators(
