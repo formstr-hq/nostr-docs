@@ -241,6 +241,15 @@ export default function AllPagesView() {
     return next;
   }, [visitedDocuments, sharedDocuments]);
 
+  // Opening a card waits briefly so a double-click on the title can cancel it
+  // and rename instead of navigating away on the first click.
+  const openTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const clearOpenTimer = () => {
+    if (openTimer.current) clearTimeout(openTimer.current);
+    openTimer.current = null;
+  };
+  useEffect(() => clearOpenTimer, []);
+
   const handleDocumentSelect = (address: string) => {
     // Use the document key (its own address), not a version's event: for a v2
     // group doc the newest version may be a collaborator's, whose pubkey is not
@@ -862,7 +871,11 @@ export default function AllPagesView() {
           return (
             <Box
               key={address}
-              onClick={() => handleDocumentSelect(address)}
+              onClick={(e) => {
+                if (e.detail > 1) return;
+                clearOpenTimer();
+                openTimer.current = setTimeout(() => handleDocumentSelect(address), 250);
+              }}
               sx={{
                 borderRadius: 2,
                 bgcolor: "background.paper",
@@ -993,6 +1006,7 @@ export default function AllPagesView() {
                   title="Double-click to rename"
                   onDoubleClick={(e) => {
                     e.stopPropagation();
+                    clearOpenTimer();
                     setRenaming({ address, value: displayTitle });
                   }}
                   sx={{
