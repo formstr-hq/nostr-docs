@@ -242,6 +242,9 @@ export default function AllPagesView() {
     return next;
   }, [visitedDocuments, sharedDocuments]);
 
+  // Card whose truncated title is being hovered (shows the full title).
+  const [tipAddress, setTipAddress] = useState<string | null>(null);
+
   // Opening a card waits briefly so a double-click on the title can cancel it
   // and rename instead of navigating away on the first click.
   const openTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -1002,9 +1005,20 @@ export default function AllPagesView() {
                     sx={{ fontWeight: 700, fontSize: "1.02rem", mb: 1 }}
                   />
                 ) : (
+                <Tooltip
+                  title={displayTitle}
+                  open={tipAddress === address}
+                  placement="bottom-start"
+                  disableFocusListener
+                  disableTouchListener
+                >
                 <Typography
                   variant="subtitle1"
-                  title="Double-click to rename"
+                  onMouseEnter={(e) => {
+                    const el = e.currentTarget;
+                    if (el.scrollHeight > el.clientHeight + 1) setTipAddress(address);
+                  }}
+                  onMouseLeave={() => setTipAddress(null)}
                   onDoubleClick={(e) => {
                     e.stopPropagation();
                     clearOpenTimer();
@@ -1025,6 +1039,7 @@ export default function AllPagesView() {
                 >
                   {displayTitle}
                 </Typography>
+                </Tooltip>
                 )}
 
                 {itemTags.length > 0 && (
