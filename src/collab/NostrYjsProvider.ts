@@ -13,7 +13,7 @@ import {
 } from "y-protocols/sync";
 import * as encoding from "lib0/encoding";
 import * as decoding from "lib0/decoding";
-import { finalizeEvent, nip44, type Event } from "nostr-tools";
+import { finalizeEvent, nip44, verifyEvent, type Event } from "nostr-tools";
 import { publishEvent } from "../nostr/publish";
 import { subscribe, type Subscription } from "../dataLayer";
 import { KIND_CRDT_OP, KIND_PRESENCE } from "../nostr/kinds";
@@ -103,6 +103,14 @@ export class NostrYjsProvider {
     this.sendSyncStep1();
   };
 
+  // A client whose state was removed (left, or timed out) no longer owns its
+  // id, so ownership doesn't outlive the peer.
+  private readonly onAwarenessChange = ({ removed }: { removed: number[] }) => {
+    for (const clientID of removed) {
+      if (clientID !== this.ydoc.clientID) this.clientOwners.delete(clientID);
+    }
+  };
+
   private readonly onAwarenessUpdate = (
     change: { added: number[]; updated: number[]; removed: number[] },
     origin: unknown,
@@ -135,11 +143,14 @@ export class NostrYjsProvider {
     this.awareness.setLocalStateField("user", {
       sessionPubkey: this.session.sessionPubkey,
     });
+    // Our own client id is ours: a remote state for it would replace ours.
+    this.clientOwners.set(this.ydoc.clientID, this.session.sessionPubkey);
   }
 
   connect(): void {
     this.ydoc.on("update", this.onDocUpdate);
     this.awareness.on("update", this.onAwarenessUpdate);
+    this.awareness.on("change", this.onAwarenessChange);
 
     // Start loading who may write before any remote event can arrive.
     this.refreshWritePolicy();
@@ -223,6 +234,9 @@ export class NostrYjsProvider {
   private async handleIncoming(event: Event): Promise<void> {
     if (this.destroyed) return;
     if (event.pubkey === this.session.sessionPubkey) return; // self-echo guard
+    // event.pubkey decides identity and access below, so check the signature
+    // here rather than relying on every transport to have done it.
+    if (!verifyEvent(event)) return;
 
     // Decrypting proves only that the sender holds the viewKey, which every
     // share recipient has — view-only ones included. Reading is therefore open
@@ -339,6 +353,7 @@ export class NostrYjsProvider {
     }
     this.ydoc.off("update", this.onDocUpdate);
     this.awareness.off("update", this.onAwarenessUpdate);
+    this.awareness.off("change", this.onAwarenessChange);
     if (typeof window !== "undefined") {
       window.removeEventListener("online", this.onOnline);
     }
