@@ -125,32 +125,54 @@ export async function getOrCreateSession(
 const resolvedSessions = new Map<string, { realPubkey: string; expiresAt: number }>();
 
 /**
- * Verify an embedded attestation token and record `sessionPubkey -> realPubkey`.
- * Called for every op/presence that carries one; idempotent.
+ * Verify an embedded attestation token for `room` and return the pubkey it
+ * attests, or null. The token must be a session attestation for exactly this
+ * room and for `sessionPubkey` — the key that signed the event carrying it — so
+ * a token copied from someone else's traffic (or another document) can't be
+ * used to borrow their identity.
  */
-export function recordAttestation(token: Event): void {
+export function verifyAttestation(
+  token: unknown,
+  room: string,
+  sessionPubkey: string,
+): string | null {
   try {
-    if (!verifyEvent(token)) return;
-    const parsed = JSON.parse(token.content) as {
+    const event = token as Event;
+    if (!event || event.kind !== KIND_SESSION_ATTESTATION) return null;
+    if (!verifyEvent(event)) return null;
+    const d = event.tags.find((t) => t[0] === "d")?.[1];
+    if (d !== `${room}:${sessionPubkey}`) return null;
+    const parsed = JSON.parse(event.content) as {
       realPubkey?: unknown;
       expiresAt?: unknown;
-    };    if (
+    };
+    if (
       typeof parsed.realPubkey !== "string" ||
       typeof parsed.expiresAt !== "number"
     ) {
-      return;
+      return null;
     }
     // The token's own signer must be the real pubkey it claims.
-    if (parsed.realPubkey !== token.pubkey) return;
-    if (parsed.expiresAt * 1000 <= Date.now()) return;
-    // The token's `d` tag binds the session pubkey it attests to.
-    const d = token.tags.find((t) => t[0] === "d")?.[1];
-    const sessionPubkey = d?.split(":").pop();
-    if (!sessionPubkey) return;
-    resolvedSessions.set(sessionPubkey, {
-      realPubkey: parsed.realPubkey,
-      expiresAt: parsed.expiresAt,
-    });
+    if (parsed.realPubkey !== event.pubkey) return null;
+    if (parsed.expiresAt * 1000 <= Date.now()) return null;
+    return parsed.realPubkey;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Record `sessionPubkey -> realPubkey` for display, from a token already checked
+ * by `verifyAttestation` against the session that sent it. Idempotent.
+ */
+export function recordAttestation(
+  sessionPubkey: string,
+  realPubkey: string,
+  token: Event,
+): void {
+  try {
+    const { expiresAt } = JSON.parse(token.content) as { expiresAt: number };
+    resolvedSessions.set(sessionPubkey, { realPubkey, expiresAt });
   } catch {
     // malformed token — ignore
   }

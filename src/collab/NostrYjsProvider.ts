@@ -14,7 +14,7 @@ import { subscribe, type Subscription } from "../dataLayer";
 import { KIND_CRDT_OP, KIND_PRESENCE } from "../nostr/kinds";
 import { viewKeyConversationKey, collabRoom } from "../nostr/sharedDoc";
 import type { Session } from "./sessionKeys";
-import { recordAttestation } from "./sessionKeys";
+import { recordAttestation, verifyAttestation } from "./sessionKeys";
 import { uint8ToBase64, base64ToUint8 } from "../utils/base64";
 
 // Tags updates applied from a relay so they aren't re-broadcast.
@@ -52,6 +52,9 @@ export class NostrYjsProvider {
   private readonly relays: string[];
   private readonly session: Session;
   private readonly conversationKey: Uint8Array;
+  // Awareness client id -> the session key that first claimed it, so one peer
+  // can't overwrite or remove another peer's presence.
+  private readonly clientOwners = new Map<number, string>();
 
   private sub: Subscription | null = null;
   private syncInterval: ReturnType<typeof setInterval> | null = null;
@@ -131,6 +134,30 @@ export class NostrYjsProvider {
     }, PRESENCE_HEARTBEAT_MS);
   }
 
+  /**
+   * Apply a presence update only if every client state in it belongs to the
+   * sender: the state must name the sender's own session key, and the client id
+   * must not already be owned by a different session.
+   */
+  private applyPresence(bytes: Uint8Array, sender: string): void {
+    const decoder = decoding.createDecoder(bytes);
+    const count = decoding.readVarUint(decoder);
+    const clients: number[] = [];
+    for (let i = 0; i < count; i++) {
+      const clientID = decoding.readVarUint(decoder);
+      decoding.readVarUint(decoder); // clock
+      const state = JSON.parse(decoding.readVarString(decoder)) as {
+        user?: { sessionPubkey?: unknown };
+      } | null;
+      const owner = this.clientOwners.get(clientID);
+      if (owner !== undefined && owner !== sender) return;
+      if (state !== null && state.user?.sessionPubkey !== sender) return;
+      clients.push(clientID);
+    }
+    for (const clientID of clients) this.clientOwners.set(clientID, sender);
+    applyAwarenessUpdate(this.awareness, bytes, REMOTE_ORIGIN);
+  }
+
   private sendSyncStep1(): void {
     const encoder = encoding.createEncoder();
     writeSyncStep1(encoder, this.ydoc);
@@ -155,7 +182,12 @@ export class NostrYjsProvider {
       try {
         const parsed = JSON.parse(decrypted) as { a?: Event; m?: unknown };
         if (parsed && typeof parsed.m === "string") {
-          if (parsed.a) recordAttestation(parsed.a);
+          // Only trust an attestation for this room that vouches for the
+          // session key that actually signed this event.
+          if (parsed.a) {
+            const realPubkey = verifyAttestation(parsed.a, this.room, event.pubkey);
+            if (realPubkey) recordAttestation(event.pubkey, realPubkey, parsed.a);
+          }
           messageB64 = parsed.m;
         }
       } catch {
@@ -168,7 +200,7 @@ export class NostrYjsProvider {
 
     if (event.kind === KIND_PRESENCE) {
       try {
-        applyAwarenessUpdate(this.awareness, bytes, REMOTE_ORIGIN);
+        this.applyPresence(bytes, event.pubkey);
       } catch {
         /* malformed presence */
       }
