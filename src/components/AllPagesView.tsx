@@ -14,6 +14,8 @@ import {
   SwipeableDrawer,
   ListItemButton,
   Divider,
+  Snackbar,
+  Alert,
 } from "@mui/material";
 import AddIcon from "@mui/icons-material/Add";
 import LockOutlinedIcon from "@mui/icons-material/LockOutlined";
@@ -31,7 +33,13 @@ import DeleteOutlineIcon from "@mui/icons-material/DeleteOutline";
 import PagesLogo from "./PagesLogo";
 import UserMenu from "./UserMenu";
 import TrashDialog from "./TrashDialog";
-import { loadTrashedEvents, removeLocalEvent } from "../lib/localStore";
+import ConfirmModal from "./common/ConfirmModal";
+import { deleteEvent } from "../nostr/deleteRequest";
+import {
+  loadTrashedEvents,
+  removeLocalEvent,
+  trashLocalEvent,
+} from "../lib/localStore";
 import { useDocumentContext } from "../contexts/DocumentContext";
 import { useSharedPages } from "../contexts/SharedDocsContext";
 import { usePublished } from "../contexts/PublishedContext";
@@ -188,6 +196,14 @@ export default function AllPagesView() {
     loadTrashedEvents().then((items) => setTrashCount(items.length)).catch(() => {});
   }, []);
 
+  // Page awaiting delete confirmation, captured when the card's delete icon is clicked.
+  const [pendingDelete, setPendingDelete] = useState<{
+    address: string;
+    localOnly: boolean;
+    eventIds: string[];
+  } | null>(null);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+
   const [sortBy, setSortBy] = useState<SortOption>("last_edited");
   const [sortAnchorEl, setSortAnchorEl] = useState<null | HTMLElement>(null);
   const [query, setQuery] = useState("");
@@ -299,6 +315,30 @@ export default function AllPagesView() {
     unmarkVisited(address);
     removeDocument(address);
     removeLocalEvent(address).catch(() => {});
+  };
+
+  const handleConfirmDelete = async () => {
+    if (!pendingDelete) return;
+    const { address, localOnly, eventIds } = pendingDelete;
+    setPendingDelete(null);
+    if (!localOnly) {
+      try {
+        await deleteEvent({
+          address,
+          relays,
+          reason: "User requested deletion",
+          eventIds,
+        });
+      } catch (err) {
+        console.error("Failed to publish deletion event:", err);
+        setDeleteError("Failed to delete from relays");
+      }
+    }
+    removeDocument(address);
+    await trashLocalEvent(address).catch(() => {});
+    loadTrashedEvents()
+      .then((items) => setTrashCount(items.length))
+      .catch(() => {});
   };
 
   // Combine documents based on active category
@@ -935,6 +975,32 @@ export default function AllPagesView() {
                   </Box>
                 </Tooltip>
 
+                {origin === "personal" && (
+                  <Tooltip title="Delete page">
+                    <IconButton
+                      size="small"
+                      aria-label="Delete page"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setPendingDelete({
+                          address,
+                          localOnly: isLocal,
+                          eventIds: history.versions.map((v) => v.event.id),
+                        });
+                      }}
+                      sx={{
+                        color: "text.secondary",
+                        p: 0.5,
+                        "&:hover": {
+                          color: "error.main",
+                        },
+                      }}
+                    >
+                      <DeleteOutlineIcon sx={{ fontSize: 18 }} />
+                    </IconButton>
+                  </Tooltip>
+                )}
+
                 {isVisited && (
                   <Tooltip title="Remove from visited">
                     <IconButton
@@ -1382,6 +1448,28 @@ export default function AllPagesView() {
             .catch(() => {});
         }}
       />
+
+      <ConfirmModal
+        open={!!pendingDelete}
+        title="Delete Document?"
+        description={
+          pendingDelete?.localOnly
+            ? "This note is only on this device and cannot be recovered once deleted. Do you wish to proceed?"
+            : "This sends a deletion request to your relays. This process is irreversible. Do you wish to proceed?"
+        }
+        confirmText="Delete"
+        cancelText="Cancel"
+        onConfirm={handleConfirmDelete}
+        onCancel={() => setPendingDelete(null)}
+      />
+
+      <Snackbar
+        open={!!deleteError}
+        autoHideDuration={3000}
+        onClose={() => setDeleteError(null)}
+      >
+        <Alert severity="error">{deleteError}</Alert>
+      </Snackbar>
     </Box>
   );
 }
