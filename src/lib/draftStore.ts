@@ -8,11 +8,19 @@
  * typed while logged out vanished the moment you signed in. Backed by
  * `sessionStorage` so it also survives a reload within the tab, and is cleared
  * once the draft is saved or emptied.
+ *
+ * New drafts store the rich document envelope (ProseMirror JSON). Legacy drafts
+ * stored `markdown`; those are still accepted and restored through the
+ * Markdown adapter.
  */
+export type DraftContentFormat = "prosemirror-json" | "markdown";
+
 const KEY = "formstr:unsaved-draft";
 
 export interface StoredDraft {
-  markdown: string;
+  /** Serialized canonical document (rich envelope) or legacy Markdown. */
+  content: string;
+  format: DraftContentFormat;
   /** Mirrors the draft's "device only" toggle so it is preserved too. */
   localOnly: boolean;
 }
@@ -30,9 +38,30 @@ export function loadDraft(): StoredDraft | null {
   try {
     const raw = sessionStorage.getItem(KEY);
     if (!raw) return null;
-    const parsed = JSON.parse(raw) as Partial<StoredDraft> | null;
-    if (!parsed || typeof parsed.markdown !== "string") return null;
-    return { markdown: parsed.markdown, localOnly: !!parsed.localOnly };
+    const parsed = JSON.parse(raw) as
+      | (Partial<StoredDraft> & { markdown?: string })
+      | null;
+    if (!parsed) return null;
+
+    // New shape.
+    if (typeof parsed.content === "string") {
+      return {
+        content: parsed.content,
+        format: parsed.format === "markdown" ? "markdown" : "prosemirror-json",
+        localOnly: !!parsed.localOnly,
+      };
+    }
+
+    // Legacy shape: { markdown, localOnly }.
+    if (typeof parsed.markdown === "string") {
+      return {
+        content: parsed.markdown,
+        format: "markdown",
+        localOnly: !!parsed.localOnly,
+      };
+    }
+
+    return null;
   } catch {
     return null;
   }

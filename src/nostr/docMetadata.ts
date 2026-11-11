@@ -167,6 +167,7 @@ export async function saveRoster(
   viewKey: string,
   roster: DocMetadata,
   relays: string[],
+  kind: number,
 ): Promise<void> {
   const signer = await signerManager.getSigner();
   if (!signer) throw new Error("No signer");
@@ -174,7 +175,7 @@ export async function saveRoster(
   const pubkey = await signer.getPublicKey();
   if (pubkey !== owner) throw new Error("Only the document owner can write the roster");
 
-  const dTag = rosterDTag(owner, d);
+  const dTag = rosterDTag(owner, d, kind);
   const encrypted = encryptWithViewKey(JSON.stringify(roster), viewKey);
 
   const event: EventTemplate = {

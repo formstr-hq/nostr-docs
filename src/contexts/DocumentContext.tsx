@@ -21,7 +21,7 @@ import {
   markBroadcast,
   type LocalStoredEvent,
 } from "../lib/localStore";
-import { KIND_FILE } from "../nostr/kinds";
+import { DOCUMENT_KINDS, KIND_RICH_DOCUMENT } from "../nostr/kinds";
 import { fetchAllDocuments } from "../nostr/fetchFile";
 import { fetchDeleteRequests } from "../nostr/fetchDelete";
 import { publishEvent } from "../nostr/publish";
@@ -32,6 +32,8 @@ import { authorSet, collabRoom, fetchRoster, isOpenRoster, parseRootAddress } fr
 import { saveFontResource } from "../lib/fontStore";
 import { registerFontFaceFromBlob } from "../lib/fontRegister";
 import { sha256Hex } from "../utils/fileEncryption";
+import { serializeRichDocument } from "../lib/documentFormat";
+import { markdownToRichDocument } from "../lib/markdownToDocument";
 
 type DocumentVersion = {
   event: Event;
@@ -454,15 +456,18 @@ export const DocumentProvider: React.FC<{ children: React.ReactNode }> = ({
 
       const pubkey = await signer.getPublicKey();
       const dTag = makeTag(6);
-      const address = `${KIND_FILE}:${pubkey}:${dTag}`;
+      const address = `${KIND_RICH_DOCUMENT}:${pubkey}:${dTag}`;
 
-      const encryptedContent = await encryptContent(markdown);
+      // Markdown is an import adapter: parse it into the canonical rich model
+      // before it is stored. Nothing writes Markdown into the new kind.
+      const canonicalContent = serializeRichDocument(markdownToRichDocument(markdown));
+      const encryptedContent = await encryptContent(canonicalContent);
       const createdAt = Math.floor(Date.now() / 1000);
 
       let stored: Event;
       if (publish) {
         stored = await signer.signEvent({
-          kind: KIND_FILE,
+          kind: KIND_RICH_DOCUMENT,
           tags: [["d", dTag]],
           content: encryptedContent,
           created_at: createdAt,
@@ -471,7 +476,7 @@ export const DocumentProvider: React.FC<{ children: React.ReactNode }> = ({
         // Device-only: a valid event id with an empty signature. Relays reject
         // it, so it structurally cannot be published.
         const template = {
-          kind: KIND_FILE,
+          kind: KIND_RICH_DOCUMENT,
           tags: [["d", dTag]],
           content: encryptedContent,
           created_at: createdAt,
@@ -652,7 +657,7 @@ export const DocumentProvider: React.FC<{ children: React.ReactNode }> = ({
       // SharedDocsProvider. Best-effort: a cold/empty cache is a no-op.
       try {
         const cachedEvents = await fetchCachedMany([
-          { kinds: [KIND_FILE], authors: [pubkey] },
+          { kinds: [...DOCUMENT_KINDS], authors: [pubkey] },
         ]);
         for (const event of cachedEvents) {
           if (isCancelled) return;
@@ -760,7 +765,7 @@ export const DocumentProvider: React.FC<{ children: React.ReactNode }> = ({
         if (groupByRoom.has(room)) continue;
         let roster;
         try {
-          roster = await fetchRoster(parsed.owner, parsed.d, entry.viewKey, relays);
+          roster = await fetchRoster(parsed.owner, parsed.d, entry.viewKey, relays, parsed.kind);
         } catch {
           roster = null;
         }
@@ -774,10 +779,10 @@ export const DocumentProvider: React.FC<{ children: React.ReactNode }> = ({
           room,
         });
         if (isOpenRoster(roster)) {
-          groupFilters.push({ kinds: [KIND_FILE], "#a": [room] });
+          groupFilters.push({ kinds: [parsed.kind], "#a": [room] });
         } else {
           groupFilters.push({
-            kinds: [KIND_FILE],
+            kinds: [parsed.kind],
             authors: authorSet(parsed.owner, roster),
             "#d": [parsed.d],
           });
@@ -785,7 +790,7 @@ export const DocumentProvider: React.FC<{ children: React.ReactNode }> = ({
       }
 
       liveSub = subscribe(
-        [{ kinds: [KIND_FILE], authors: [pubkey] }, ...groupFilters],
+        [{ kinds: [...DOCUMENT_KINDS], authors: [pubkey] }, ...groupFilters],
         {
           onEvent: async (event: Event) => {
             if (isCancelled) return;

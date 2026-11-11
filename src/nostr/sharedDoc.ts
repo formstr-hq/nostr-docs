@@ -18,8 +18,7 @@ import {
   type Event,
 } from "nostr-tools";
 import { hexToBytes } from "nostr-tools/utils";
-import { KIND_DOC_METADATA, KIND_FILE } from "./kinds";
-import { fetchMany, fetchOne } from "../dataLayer";
+import { KIND_DOC_METADATA, KIND_FILE } from "./kinds";import { fetchMany, fetchOne } from "../dataLayer";
 
 /** How far in the future an event's `created_at` may be before we ignore the
  *  excess when ordering (relays do not validate timestamps). */
@@ -75,16 +74,24 @@ export function parseRootAddress(address: string): RootRef | null {
 }
 
 /** Canonical root address for a document owned by `owner` with id `d`. */
-export function rootAddress(owner: string, d: string): string {
-  return `${KIND_FILE}:${owner}:${d}`;
+export function rootAddress(
+  owner: string,
+  d: string,
+  kind: number = KIND_FILE,
+): string {
+  return `${kind}:${owner}:${d}`;
 }
 
 /**
  * `d` tag value for the owner's shared metadata event: the document's root
  * address. (The app keys all per-document metadata by the address it describes.)
  */
-export function rosterDTag(owner: string, d: string): string {
-  return rootAddress(owner, d);
+export function rosterDTag(
+  owner: string,
+  d: string,
+  kind: number = KIND_FILE,
+): string {
+  return rootAddress(owner, d, kind);
 }
 
 // ── viewKey crypto ────────────────────────────────────────────────────────────
@@ -187,13 +194,14 @@ export async function fetchRoster(
   d: string,
   viewKey: string,
   relays?: string[],
+  kind: number = KIND_FILE,
 ): Promise<DocRoster | null> {
   const event = await fetchOne(
     [
       {
         kinds: [KIND_DOC_METADATA],
         authors: [owner],
-        "#d": [rosterDTag(owner, d)],
+        "#d": [rosterDTag(owner, d, kind)],
       },
     ],
     relays,
@@ -235,18 +243,19 @@ export async function fetchGroupEvents(
   roster: DocRoster | null,
   viewKey: string,
   relays?: string[],
+  kind: number = KIND_FILE,
 ): Promise<Event[]> {
   if (isOpenRoster(roster)) {
     // Content events are tagged with the capability-derived room (not the root),
     // so the document owner is not named in the public footprint.
     return fetchMany(
-      [{ kinds: [KIND_FILE], "#a": [collabRoom(viewKey)] }],
+      [{ kinds: [kind], "#a": [collabRoom(viewKey)] }],
       relays,
     );
   }
   const authors = authorSet(owner, roster);
   return fetchMany(
-    [{ kinds: [KIND_FILE], authors, "#d": [d] }],
+    [{ kinds: [kind], authors, "#d": [d] }],
     relays,
   );
 }
@@ -272,10 +281,11 @@ export async function resolveSharedDocument(
   d: string,
   viewKey: string,
   relays?: string[],
+  kind: number = KIND_FILE,
 ): Promise<ResolvedDocument> {
-  const roster = await fetchRoster(owner, d, viewKey, relays);
+  const roster = await fetchRoster(owner, d, viewKey, relays, kind);
   const authors = authorSet(owner, roster);
-  const fetched = await fetchGroupEvents(owner, d, roster, viewKey, relays);
+  const fetched = await fetchGroupEvents(owner, d, roster, viewKey, relays, kind);
 
   const events = fetched.filter((e) => {
     try {

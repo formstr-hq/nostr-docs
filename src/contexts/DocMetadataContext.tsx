@@ -155,7 +155,7 @@ export const DocMetadataProvider: React.FC<{ children: React.ReactNode }> = ({
           v: 2,
           tags: cleanTags,
           members: existing.members,
-        }, relays);
+        }, relays, parsed.kind);
       } else {
         await saveDocMetadata(address, newMeta, relays);
       }
@@ -193,7 +193,7 @@ export const DocMetadataProvider: React.FC<{ children: React.ReactNode }> = ({
           v: 2,
           title: title || undefined,
           members: existing.members,
-        }, relays);
+        }, relays, parsed.kind);
       } else {
         await saveDocMetadata(address, newMeta, relays);
       }

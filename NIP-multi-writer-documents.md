@@ -11,7 +11,8 @@ owner controls who may write through an encrypted roster.
 
 - **viewKey**: random 32-byte key. NIP-44 conversation key =
   `nip44.getConversationKey(viewKey, getPublicKey(viewKey))`.
-- **root address**: `33457:<owner-pubkey>:<d>`.
+- **root address**: `<kind>:<owner-pubkey>:<d>`, where `<kind>` is `33458` for
+  new rich documents and `33457` for legacy Markdown documents.
 - **room**: `getPublicKey(viewKey)` — a capability identifier for the realtime
   channel (computable only by viewKey holders).
 - All `content` is NIP-44 encrypted with the viewKey.
@@ -22,13 +23,32 @@ owner controls who may write through an encrypted roster.
 /doc/<naddr>#<nkeys>
 ```
 
-- `<naddr>`: NIP-19 address of the root (`kind=33457`, `pubkey=owner`, `identifier=d`).
+- `<naddr>`: NIP-19 address of the root (`kind=33458` for new documents,
+  `kind=33457` for legacy documents; `pubkey=owner`, `identifier=d`).
 - `<nkeys>`: `bech32` string, prefix `nkeys`, over TLV pairs (`0` = field name,
   `1` = value). Fields: `viewKey` (hex, required); `editKey` (hex, legacy only).
 
 ## Events
 
-### Content — kind `33457` (parameterised replaceable on `d`)
+### Content — kind `33458` (parameterised replaceable on `d`)
+
+The canonical rich document format. New documents use this kind.
+
+- tags: `["d", <document id>]`, `["a", <room>]`
+- content: NIP-44 encrypted JSON
+  ```json
+  { "format": "prosemirror-json", "version": 1, "doc": { ... } }
+  ```
+  `doc` is ProseMirror JSON. HTML, Markdown, DOCX and PDF are adapters around
+  this model; they are never the durable source of truth.
+- signed by the author
+- one event per author (their own replaceable slot); the newest across authors is
+  the document
+
+### Content — kind `33457` (legacy, parameterised replaceable on `d`)
+
+Kept for backward compatibility. Do not write new documents to this kind, and do
+not change the meaning of its `content` field.
 
 - tags: `["d", <document id>]`, `["a", <room>]`
 - content: the document Markdown

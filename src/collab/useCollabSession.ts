@@ -21,7 +21,7 @@ async function loadWritePolicy(
 ): Promise<WritePolicy> {
   const target = parseRootAddress(docAddress);
   if (!target) return { open: false, authors: new Set() };
-  const roster = await fetchRoster(target.owner, target.d, viewKey, relays);
+  const roster = await fetchRoster(target.owner, target.d, viewKey, relays, target.kind);
   if (roster?.mode === "open") return { open: true, authors: new Set() };
   return { open: false, authors: new Set(authorSet(target.owner, roster)) };
 }

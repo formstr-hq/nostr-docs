@@ -22,6 +22,7 @@ import { useSharedPages } from "../contexts/SharedDocsContext";
 import { usePublished } from "../contexts/PublishedContext";
 import { useDocMetadata } from "../contexts/DocMetadataContext";
 import { heuristicTitle, type DocOrigin, type DocumentHistory } from "../lib/docSearch";
+import { documentToMarkdown } from "../lib/documentFormat";
 import { exportPagesAsZip } from "../utils/exportPagesZip";
 
 type PageItem = {
@@ -91,7 +92,7 @@ export default function ExportPagesDialog({
         out.set(address, {
           address,
           title,
-          markdown: latest.decryptedContent ?? "",
+          markdown: documentToMarkdown(latest.decryptedContent ?? ""),
           origin,
         });
       }

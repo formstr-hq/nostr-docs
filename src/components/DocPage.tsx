@@ -53,12 +53,14 @@ export default function DocPage({
     let address: string;
     let owner: string;
     let dTag: string;
+    let kind = 0;
     try {
       const decoded = nip19.decode(naddr);
       if (decoded.type !== "naddr") throw new Error("Not an naddr");
       owner = decoded.data.pubkey;
       dTag = decoded.data.identifier;
-      address = `${decoded.data.kind}:${owner}:${dTag}`;
+      kind = decoded.data.kind;
+      address = `${kind}:${owner}:${dTag}`;
     } catch (err) {
       console.error("Invalid naddr:", naddr, err);
       setInvalid(true);
@@ -154,7 +156,7 @@ export default function DocPage({
         // owner's roster, then every authorized author's newest version. With no
         // roster this degrades to the legacy single-author path.
         if (keys.viewKey) {
-          const resolved = await resolveSharedDocument(owner, dTag, keys.viewKey, relays);
+          const resolved = await resolveSharedDocument(owner, dTag, keys.viewKey, relays, kind);
           if (cancelled) return;
 
           if (resolved.roster) {
