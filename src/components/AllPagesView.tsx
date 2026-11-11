@@ -35,6 +35,10 @@ import UserMenu from "./UserMenu";
 import TrashDialog from "./TrashDialog";
 import ConfirmModal from "./common/ConfirmModal";
 import { deleteEvent } from "../nostr/deleteRequest";
+import { TemplatePickerDialog } from "./TemplatePickerDialog";
+import { clearDraft, loadDraft, saveDraft } from "../lib/draftStore";
+import { normalizePageLayout } from "../lib/docLayout";
+import type { DocumentTemplate } from "../lib/docTemplates";
 import {
   loadTrashedEvents,
   removeLocalEvent,
@@ -191,6 +195,7 @@ export default function AllPagesView() {
   const [workspaceDrawerOpen, setWorkspaceDrawerOpen] = useState(false);
   const [trashOpen, setTrashOpen] = useState(false);
   const [trashCount, setTrashCount] = useState(0);
+  const [templatePickerOpen, setTemplatePickerOpen] = useState(false);
 
   useEffect(() => {
     loadTrashedEvents().then((items) => setTrashCount(items.length)).catch(() => {});
@@ -283,6 +288,29 @@ export default function AllPagesView() {
   };
 
   const handleNewDoc = () => {
+    setTemplatePickerOpen(true);
+  };
+
+  const handleSelectTemplate = (template: DocumentTemplate | null) => {
+    const existing = loadDraft();
+    if (existing?.markdown.trim()) {
+      const replace = window.confirm(
+        "Starting a new page will replace your current unsaved draft. Continue?",
+      );
+      if (!replace) return;
+    }
+
+    if (template) {
+      saveDraft({
+        markdown: template.markdown,
+        localOnly: false,
+        layout: normalizePageLayout(template.layout),
+      });
+    } else {
+      clearDraft();
+    }
+
+    setTemplatePickerOpen(false);
     setSelectedDocumentId(null);
     navigate("/new");
   };
@@ -1437,6 +1465,13 @@ export default function AllPagesView() {
           </ListItemButton>
         </Box>
       </SwipeableDrawer>
+
+      {/* ── New page template picker ── */}
+      <TemplatePickerDialog
+        open={templatePickerOpen}
+        onClose={() => setTemplatePickerOpen(false)}
+        onSelect={handleSelectTemplate}
+      />
 
       {/* ── Trash Dialog ── */}
       <TrashDialog
