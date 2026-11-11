@@ -32,10 +32,13 @@ import { authorSet, collabRoom, fetchRoster, isOpenRoster, parseRootAddress } fr
 import { saveFontResource } from "../lib/fontStore";
 import { registerFontFaceFromBlob } from "../lib/fontRegister";
 import { sha256Hex } from "../utils/fileEncryption";
+import { extractLegacyLayout, type PageLayout } from "../lib/docLayout";
 
 type DocumentVersion = {
   event: Event;
   decryptedContent: string;
+  /** Layout recovered from the short-lived in-content format, pending migration. */
+  legacyLayout?: PageLayout;
 };
 
 type DocumentHistory = {
@@ -323,8 +326,10 @@ export const DocumentProvider: React.FC<{ children: React.ReactNode }> = ({
         }
       }
 
-      const decryptedContent = await getDecryptedContent(document, viewKey);
-      if (!decryptedContent) return;
+      const plaintext = await getDecryptedContent(document, viewKey);
+      if (!plaintext) return;
+      const legacy = extractLegacyLayout(plaintext);
+      const decryptedContent = legacy.markdown;
 
       setDocuments((prev) => {
         const next = new Map(prev);
@@ -351,6 +356,7 @@ export const DocumentProvider: React.FC<{ children: React.ReactNode }> = ({
           {
             event: document,
             decryptedContent,
+            ...(legacy.layout ? { legacyLayout: legacy.layout } : {}),
           },
         ].sort((a, b) => a.event.created_at - b.event.created_at);
 

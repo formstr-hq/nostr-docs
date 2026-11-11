@@ -34,6 +34,10 @@ import type { Event } from "nostr-tools";
 import RelayPresenceIndicator from "../RelayPresenceIndicator";
 import FormatBoldIcon from "@mui/icons-material/FormatBold";
 import FormatItalicIcon from "@mui/icons-material/FormatItalic";
+import InsertPageBreakIcon from "@mui/icons-material/InsertPageBreak";
+import TuneIcon from "@mui/icons-material/Tune";
+import StickyNote2OutlinedIcon from "@mui/icons-material/StickyNote2Outlined";
+import DescriptionOutlinedIcon from "@mui/icons-material/DescriptionOutlined";
 import FormatListBulletedIcon from "@mui/icons-material/FormatListBulleted";
 import FormatListNumberedIcon from "@mui/icons-material/FormatListNumbered";
 import CodeIcon from "@mui/icons-material/Code";
@@ -159,6 +163,11 @@ type Props = {
   textSuggestEnabled?: boolean;
   onToggleTextSuggest?: (next: boolean) => void;
   onTextSuggestSettingsSaved?: () => void | Promise<void>;
+  onOpenPageSetup?: () => void;
+  canvas?: "notes" | "page";
+  onToggleCanvas?: () => void;
+  baseFontFamily?: string;
+  onBaseFontChange?: (family: string) => void;
   proofreadDocumentLength?: number;
   proofreadStatus?: ProofreadStatus;
   onProofread?: (instruction: string) => Promise<void>;
@@ -198,6 +207,11 @@ export function EditorToolbar({
   textSuggestEnabled = false,
   onToggleTextSuggest,
   onTextSuggestSettingsSaved,
+  onOpenPageSetup,
+  canvas = "notes",
+  onToggleCanvas,
+  baseFontFamily = "Inter",
+  onBaseFontChange,
   proofreadDocumentLength = 0,
   proofreadStatus = { kind: "idle" },
   onProofread,
@@ -269,7 +283,7 @@ export function EditorToolbar({
     const { objectUrl, styleEl } = registerFontFaceFromBlob(family, file, fontFormat.format);
     uploadedFontResourcesRef.current.push({ family, objectUrl, styleEl });
     setAvailableFonts((fonts) => (fonts.includes(family) ? fonts : [...fonts, family]));
-    editor?.chain().focus().setFontFamily(family).run();
+    onBaseFontChange?.(family);
 
     await saveFontResource({
       family,
@@ -326,7 +340,7 @@ export function EditorToolbar({
     editor,
     selector: ({ editor: e }) => e?.isActive("table") ?? false,
   });
-  const activeFontFamily = editor?.getAttributes("textStyle").fontFamily || "Inter";
+  const activeFontFamily = baseFontFamily;
   const fontOptions = activeFontFamily && !availableFonts.includes(activeFontFamily)
     ? [...availableFonts, activeFontFamily]
     : availableFonts;
@@ -426,6 +440,70 @@ export function EditorToolbar({
           >
             {focusMode ? "Exit Focus" : "Focus"}
           </Button>
+
+          {/* Document tools: canvas + page setup, visible without opening the
+              overflow menu (and available in preview). */}
+          {onToggleCanvas && (
+            <Tooltip
+              title={
+                canvas === "page"
+                  ? "Switch to notes view"
+                  : "Switch to page view"
+              }
+            >
+              <IconButton
+                size="small"
+                aria-label={
+                  canvas === "page"
+                    ? "Switch to notes view"
+                    : "Switch to page view"
+                }
+                onClick={onToggleCanvas}
+                sx={{ display: { xs: "none", sm: "inline-flex" }, color: "text.secondary", p: 0.6 }}
+              >
+                {canvas === "page" ? (
+                  <StickyNote2OutlinedIcon sx={{ fontSize: 19 }} />
+                ) : (
+                  <DescriptionOutlinedIcon sx={{ fontSize: 19 }} />
+                )}
+              </IconButton>
+            </Tooltip>
+          )}
+
+          {onOpenPageSetup && (
+            <Tooltip title="Page setup">
+              <IconButton
+                size="small"
+                aria-label="Page setup"
+                onClick={onOpenPageSetup}
+                sx={{ display: { xs: "none", sm: "inline-flex" }, color: "text.secondary", p: 0.6 }}
+              >
+                <TuneIcon sx={{ fontSize: 19 }} />
+              </IconButton>
+            </Tooltip>
+          )}
+
+          {/* Preview is read-only; make the way into editing explicit. */}
+          {mode === "preview" && !isViewOnly && (
+            <Button
+              size="small"
+              variant="contained"
+              color="secondary"
+              startIcon={<EditIcon sx={{ fontSize: 15 }} />}
+              onClick={() => onSetMode("edit")}
+              sx={{
+                fontWeight: 600,
+                px: 1.5,
+                py: 0.5,
+                fontSize: "0.8rem",
+                borderRadius: 1,
+                boxShadow: "none",
+                "&:hover": { boxShadow: "none" },
+              }}
+            >
+              Edit
+            </Button>
+          )}
 
           {/* Relay coverage for this page — one indicator that both shows
               coverage and offers a re-broadcast (replaces the old static dots
@@ -592,6 +670,52 @@ export function EditorToolbar({
                 </MenuItem>
                 <Divider sx={{ my: 0.5 }} />
               </>
+            )}
+
+            {onToggleCanvas && (
+              <MenuItem
+                onClick={() => {
+                  onToggleCanvas();
+                  setMenuAnchor(null);
+                }}
+              >
+                <ListItemIcon>
+                  {canvas === "page" ? (
+                    <StickyNote2OutlinedIcon fontSize="small" />
+                  ) : (
+                    <DescriptionOutlinedIcon fontSize="small" />
+                  )}
+                </ListItemIcon>
+                <ListItemText
+                  primary={canvas === "page" ? "Notes view" : "Page view"}
+                  secondary={
+                    canvas === "page"
+                      ? "Continuous, borderless canvas"
+                      : "Paginated document canvas"
+                  }
+                  primaryTypographyProps={{ fontSize: "0.84rem", fontWeight: 500 }}
+                  secondaryTypographyProps={{ sx: { fontSize: "0.72rem" } }}
+                />
+              </MenuItem>
+            )}
+
+            {onOpenPageSetup && (
+              <MenuItem
+                onClick={() => {
+                  onOpenPageSetup();
+                  setMenuAnchor(null);
+                }}
+              >
+                <ListItemIcon>
+                  <TuneIcon fontSize="small" />
+                </ListItemIcon>
+                <ListItemText
+                  primary="Page setup"
+                  secondary="Size, margins, header & footer"
+                  primaryTypographyProps={{ fontSize: "0.84rem", fontWeight: 500 }}
+                  secondaryTypographyProps={{ sx: { fontSize: "0.72rem" } }}
+                />
+              </MenuItem>
             )}
 
             {/* Comments Toggle */}
@@ -933,7 +1057,7 @@ export function EditorToolbar({
                   if (font === "__UPLOAD_FONT__") {
                     openFontFilePicker();
                   } else {
-                    editor.chain().focus().setFontFamily(font).run();
+                    onBaseFontChange?.(String(font));
                   }
                 }}
                 sx={{
@@ -972,6 +1096,9 @@ export function EditorToolbar({
                 }
               }}
             />
+
+            {/* Font size and line height are document-level styles, edited in
+                Page setup, so they never leak into the Markdown body. */}
 
             <Divider orientation="vertical" flexItem sx={{ mx: 0.25, borderColor: (t) => alpha(t.palette.text.primary, 0.08) }} />
 
@@ -1286,6 +1413,18 @@ export function EditorToolbar({
                 </Menu>
               </>
             )}
+
+            {/* Page break */}
+            <Tooltip title="Page break">
+              <IconButton
+                size="small"
+                aria-label="Page break"
+                onClick={() => editor.chain().focus().setPageBreak().run()}
+                sx={{ p: 0.75 }}
+              >
+                <InsertPageBreakIcon sx={{ fontSize: 18 }} />
+              </IconButton>
+            </Tooltip>
 
             <Divider orientation="vertical" flexItem sx={{ mx: 0.25, borderColor: (t) => alpha(t.palette.text.primary, 0.08) }} />
 

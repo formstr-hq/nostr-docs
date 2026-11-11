@@ -13,10 +13,13 @@ import { CommentComposer } from "../comments/CommentComposer";
 import { CommentSidebar } from "../comments/CommentSidebar";
 import { useComments } from "../../contexts/CommentContext";
 import { applyDomHighlights } from "../../utils/domHighlighting";
+import { DocumentPage } from "./DocumentPage";
+import type { PageLayout } from "../../lib/docLayout";
 
 type Props = {
   value: string;
   editor: Editor | null;
+  layout: PageLayout;
   mode: "edit" | "preview" | "split";
   onChange: (value: string) => void;
   onToggleMode: () => void;
@@ -80,6 +83,12 @@ const markdownSxBase = {
     background: "rgba(128,128,128,0.1)",
     fontWeight: 700,
   },
+  "& [data-page-break]": {
+    display: "block",
+    borderTop: "2px dashed rgba(128,128,128,0.5)",
+    margin: "2em 0",
+    height: 0,
+  },
 };
 
 // Custom component map for ReactMarkdown — handles custom HTML elements that
@@ -118,7 +127,7 @@ const markdownComponents: any = {
   },
 };
 
-function PreviewHighlights({ containerRef, value }: { containerRef: React.RefObject<HTMLElement | null>; value: string }) {
+function PreviewHighlights({ containerRef, value }: { containerRef: React.RefObject<HTMLDivElement | null>; value: string }) {
   const { comments, resolvedIds, isOutdated } = useComments();
 
   useEffect(() => {
@@ -132,6 +141,7 @@ function PreviewHighlights({ containerRef, value }: { containerRef: React.RefObj
 export function DocEditorSurface({
   value,
   editor,
+  layout,
   mode,
   onChange,
   onToggleMode,
@@ -145,7 +155,7 @@ export function DocEditorSurface({
   activeCommentId,
 }: Props) {
   const theme = useTheme();
-  const previewRef = useRef<HTMLElement>(null);
+  const previewRef = useRef<HTMLDivElement>(null);
 
   const linkSx = {
     "& a": {
@@ -171,12 +181,10 @@ export function DocEditorSurface({
     return (
       <Box sx={{ display: "flex", flex: 1, overflow: "hidden", bgcolor: "background.default" }}>
         <Box
-          ref={previewRef}
           onClick={handleHighlightClick}
           sx={{
             flex: 1,
             overflowY: "auto",
-            p: 3,
             pb: 8,
             ...markdownSxBase,
             ...linkSx,
@@ -190,29 +198,31 @@ export function DocEditorSurface({
               color="secondary"
               onClick={onToggleMode}
               title="Edit document"
-              sx={{ position: "sticky", top: 0, float: "right", mb: 1, ml: 1 }}
+              sx={{ position: "sticky", top: 8, float: "right", mr: 2, zIndex: 2 }}
             >
               <EditIcon fontSize="small" />
             </Fab>
           )}
 
-          {value.trim() ? (
-            // Keyed by content: applyDomHighlights mutates this rendered DOM
-            // (splitting text nodes and wrapping them in highlight spans), so
-            // React must never diff into the subtree after the content
-            // changes — it would call removeChild/insertBefore against nodes
-            // whose parents changed and crash. The key swap makes React drop
-            // the old subtree wholesale and mount fresh nodes instead.
-            <div key={value}>
-              <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeRaw]} components={markdownComponents}>{value}</ReactMarkdown>
-            </div>
-          ) : (
-            <Typography color="text.secondary">
-              Nothing to preview yet —{" "}
-              {isMobile ? "tap the edit button" : "click the edit button"} to
-              start writing.
-            </Typography>
-          )}
+          <DocumentPage layout={layout} contentRef={previewRef}>
+            {value.trim() ? (
+              // Keyed by content: applyDomHighlights mutates this rendered DOM
+              // (splitting text nodes and wrapping them in highlight spans), so
+              // React must never diff into the subtree after the content
+              // changes — it would call removeChild/insertBefore against nodes
+              // whose parents changed and crash. The key swap makes React drop
+              // the old subtree wholesale and mount fresh nodes instead.
+              <div key={value}>
+                <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeRaw]} components={markdownComponents}>{value}</ReactMarkdown>
+              </div>
+            ) : (
+              <Typography color="text.secondary">
+                Nothing to preview yet —{" "}
+                {isMobile ? "tap the edit button" : "click the edit button"} to
+                start writing.
+              </Typography>
+            )}
+          </DocumentPage>
         </Box>
         {commentsEnabled && (
           <>
@@ -265,20 +275,21 @@ export function DocEditorSurface({
           sx={{
             flex: 1,
             overflowY: "auto",
-            p: 3,
             pb: 8,
             ...markdownSxBase,
             ...linkSx,
             color: theme.palette.text.primary,
           }}
         >
-          {value.trim() ? (
-            <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeRaw]} components={markdownComponents}>{value}</ReactMarkdown>
-          ) : (
-            <Typography color="text.secondary" fontStyle="italic">
-              Preview will appear here as you type…
-            </Typography>
-          )}
+          <DocumentPage layout={layout}>
+            {value.trim() ? (
+              <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeRaw]} components={markdownComponents}>{value}</ReactMarkdown>
+            ) : (
+              <Typography color="text.secondary" fontStyle="italic">
+                Preview will appear here as you type…
+              </Typography>
+            )}
+          </DocumentPage>
         </Box>
         {showComments && <CommentSidebar onClose={onCloseComments} activeCommentId={activeCommentId} isMobile={isMobile} />}
       </Box>
@@ -295,10 +306,12 @@ export function DocEditorSurface({
   return (
     <Box sx={{ display: "flex", flex: 1, overflow: "hidden", bgcolor: "background.default" }}>
       <Box
-        sx={{ flex: 1, overflowY: "auto", p: { xs: 2, sm: 3 }, pb: { xs: 12, sm: 8 }, cursor: "text" }}
+        sx={{ flex: 1, overflowY: "auto", pb: { xs: 12, sm: 8 }, cursor: "text" }}
         onClick={handleEditorClick}
       >
-        <EditorContent editor={editor} />
+        <DocumentPage layout={layout}>
+          <EditorContent editor={editor} />
+        </DocumentPage>
         {commentsEnabled && (
           <CommentComposer editor={editor} docEventId={docEventId} isMobile={isMobile} />
         )}

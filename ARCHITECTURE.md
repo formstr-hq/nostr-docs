@@ -30,7 +30,8 @@ ThemeProvider
 | **11234** | _(removed)_ | Was never implemented; the "shared with me" store is kind 34579 metadata carrying `viewKey` (see below). |
 | **22457** | CRDT op (realtime) | App-specific, ephemeral. NIP‑44(viewKey) of `{ a: <attestation token|null>, m: <base64 Yjs sync message> }`, tagged `["a", <room>]`, signed by a per-tab session key. Live in-session merging only — Yjs is not stored. |
 | **24578** | Presence (realtime) | Same shape as 22457 with a Yjs awareness update (remote carets). Ephemeral. |
-| **33457** | Encrypted document (replaceable) | Durable document. Content is the NIP‑44(viewKey) Markdown. Tags `["d", <document id>]` and `["a", <room>]` (the capability id, not the owner). For personal docs the author is the owner; for v2 shared docs **each author publishes to their own address** `33457:<author>:<d>`, and the newest valid version across the roster renders. |
+| **33457** | Encrypted document (replaceable) | Durable document. Content is the NIP‑44(viewKey) Markdown only — no layout or style metadata. Tags `["d", <document id>]` and `["a", <room>]` (the capability id, not the owner). For personal docs the author is the owner; for v2 shared docs **each author publishes to their own address** `33457:<author>:<d>`, and the newest valid version across the roster renders. |
+| **34579** | Per-document metadata / roster | Encrypted JSON. Authored by each user for their own view (`{tags, title, layout, viewKey, editKey?, sharedAs?}`) **and**, for a v2 shared doc, by the **owner** as the shareable roster `{v:2, epoch, mode, title, tags, members[]}` encrypted with the document view key. Shared layout is a separate owner-authored `34579` event at `d = <root>:layout`, viewKey-encrypted, so it cannot overwrite the roster. `layout` holds canvas (notes/page), page size/margins/header-footer and document-level typography. Writes go through `nextCreatedAt()`. |
 | **34579** | Per-document metadata / roster | Encrypted JSON. Authored by each user for their own view (`{tags, title, viewKey, editKey?, sharedAs?}`) **and**, for a v2 shared doc, by the **owner** as the shareable roster `{v:2, epoch, mode, title, tags, members[]}` encrypted with the document view key. Writes go through `nextCreatedAt()`. |
 | **34581** | Session attestation token | Not published. A real-key-signed event embedded inside 22457/24578 payloads, binding a session key to its real pubkey (presence attribution / restricted-mode authorisation). |
 
@@ -141,10 +142,11 @@ App mounts
 ```
 User edits Markdown in DocEditorSurface
   → handleSave()
-    → encryptContent(md, viewKey) → NIP-44 ciphertext
-    → signer.signEvent(event) → signed kind-33457
-    → publishEvent(signed, relays) → broadcast to relays
-    → addDocument(signed, keys) → decrypt + add to DocumentContext
+    → mdDirty: encryptContent(markdown, viewKey) → NIP-44 ciphertext
+    → sign kind-33457 → publishEvent → addDocument → decrypt + add to DocumentContext
+    → layoutDirty: setDocLayout(address, layout)
+        → personal doc: self-encrypted kind-34579 {tags, title, layout}
+        → shared owner: viewKey-encrypted kind-34579 at d=<root>:layout
 ```
 
 ### Share (v2)
@@ -197,5 +199,9 @@ handleDelete()
 | `src/utils/encryption.ts` | `encryptContent()` wrapper |
 | `src/utils/nkeys.ts` | URL hash encode/decode for view/edit keys |
 | `src/components/editor/DocEditorController.tsx` | Save / delete / share orchestration |
+| `src/lib/docLayout.ts` | Page layout + document block styles + normalization |
+| `src/components/editor/DocumentPage.tsx` | Notes/page canvases (page frame, margins, header/footer, block styles) |
+| `src/components/editor/PageSetupDialog.tsx` | Page setup + heading/body style UI |
+| `src/utils/exportDocument.ts` | MD/HTML/PDF/DOCX export with page layout + page breaks |
 | `src/components/DocPage.tsx` | Route-level document loader |
 | `src/components/LoginModal.tsx` | Login method picker dialog |

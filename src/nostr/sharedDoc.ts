@@ -20,6 +20,7 @@ import {
 import { hexToBytes } from "nostr-tools/utils";
 import { KIND_DOC_METADATA, KIND_FILE } from "./kinds";
 import { fetchMany, fetchOne } from "../dataLayer";
+import { normalizePageLayout, type PageLayout } from "../lib/docLayout";
 
 /** How far in the future an event's `created_at` may be before we ignore the
  *  excess when ordering (relays do not validate timestamps). */
@@ -49,6 +50,7 @@ export interface DocRoster {
   mode: DocMode;
   title?: string;
   tags: string[];
+  layout?: PageLayout;
   members: DocMember[];
 }
 
@@ -142,6 +144,7 @@ export function parseRosterPayload(payload: string): DocRoster | null {
       tags: Array.isArray(parsed.tags)
         ? parsed.tags.filter((t): t is string => typeof t === "string")
         : [],
+      layout: parsed.layout ? normalizePageLayout(parsed.layout) : undefined,
       members: validMembers,
     };
   } catch {

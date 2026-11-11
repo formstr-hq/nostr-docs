@@ -19,8 +19,10 @@ import { cacheLocalEvents } from "../dataLayer";
 import { collabRoom, encryptWithViewKey, fetchRoster, type DocMember, type DocMode, type DocRole } from "./sharedDoc";
 import {
   saveRoster,
+  saveSharedLayout,
   type DocMetadata,
 } from "./docMetadata";
+import type { PageLayout } from "../lib/docLayout";
 
 /**
  * Re-publish the owner's own version of a document, encrypted with the shared
@@ -70,9 +72,13 @@ export async function enableGroupSharing(
   members: DocMember[] = [],
   mode: DocMode = "restricted",
   createdAt?: number,
+  layout?: PageLayout,
 ): Promise<Event> {
   const event = await publishOwnerContent(owner, d, viewKey, content, relays, createdAt);
   await saveRoster(owner, d, viewKey, { v: 2, mode, tags: [], members }, relays);
+  if (layout) {
+    await saveSharedLayout(owner, d, viewKey, layout, relays);
+  }
   return event;
 }
 

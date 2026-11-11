@@ -9,12 +9,20 @@
  * `sessionStorage` so it also survives a reload within the tab, and is cleared
  * once the draft is saved or emptied.
  */
+import {
+  DEFAULT_PAGE_LAYOUT,
+  normalizePageLayout,
+  type PageLayout,
+} from "./docLayout";
+
 const KEY = "formstr:unsaved-draft";
 
 export interface StoredDraft {
   markdown: string;
   /** Mirrors the draft's "device only" toggle so it is preserved too. */
   localOnly: boolean;
+  /** Page setup for the draft. Older drafts fall back to the default. */
+  layout: PageLayout;
 }
 
 export function saveDraft(draft: StoredDraft): void {
@@ -32,7 +40,13 @@ export function loadDraft(): StoredDraft | null {
     if (!raw) return null;
     const parsed = JSON.parse(raw) as Partial<StoredDraft> | null;
     if (!parsed || typeof parsed.markdown !== "string") return null;
-    return { markdown: parsed.markdown, localOnly: !!parsed.localOnly };
+    return {
+      markdown: parsed.markdown,
+      localOnly: !!parsed.localOnly,
+      layout: parsed.layout
+        ? normalizePageLayout(parsed.layout)
+        : DEFAULT_PAGE_LAYOUT,
+    };
   } catch {
     return null;
   }

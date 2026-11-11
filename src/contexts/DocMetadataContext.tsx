@@ -9,19 +9,22 @@ import React, {
 import { useUser } from "./UserContext";
 import { useRelays } from "./RelayContext";
 import { signerManager } from "../signer";
-import { fetchAllDocMetadata, saveDocMetadata, saveRoster, metadataEqual, type DocMetadata } from "../nostr/docMetadata";
+import { fetchAllDocMetadata, saveDocMetadata, saveRoster, saveSharedLayout, metadataEqual, type DocMetadata } from "../nostr/docMetadata";
 import { loadAllLocalEvents } from "../lib/localStore";
 import { parseRootAddress } from "../nostr/sharedDoc";
+import { normalizePageLayout, type PageLayout } from "../lib/docLayout";
 
 interface DocMetadataContextValue {
   docTags: Map<string, string[]>;
   docTitles: Map<string, string>;
   docSharedAs: Map<string, string>;
+  docLayouts: Map<string, PageLayout>;
   allTags: string[];
   selectedTag: string | null;
   setSelectedTag: (tag: string | null) => void;
   setDocTags: (address: string, tags: string[]) => Promise<void>;
   setDocTitle: (address: string, title: string) => Promise<void>;
+  setDocLayout: (address: string, layout: PageLayout) => Promise<void>;
   setDocSharedAs: (address: string, sharedAs: string) => Promise<void>;
   loading: boolean;
 }
@@ -40,6 +43,7 @@ export const DocMetadataProvider: React.FC<{ children: React.ReactNode }> = ({
   const [docTagsState, setDocTagsState] = useState<Map<string, string[]>>(new Map());
   const [docTitles, setDocTitlesState] = useState<Map<string, string>>(new Map());
   const [docSharedAs, setDocSharedAsState] = useState<Map<string, string>>(new Map());
+  const [docLayouts, setDocLayoutsState] = useState<Map<string, PageLayout>>(new Map());
   const [selectedTag, setSelectedTag] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   // viewKey per document address, from the local store. Lets us decrypt the
@@ -52,6 +56,7 @@ export const DocMetadataProvider: React.FC<{ children: React.ReactNode }> = ({
       setDocTagsState(new Map());
       setDocTitlesState(new Map());
       setDocSharedAsState(new Map());
+      setDocLayoutsState(new Map());
       viewKeysRef.current = new Map();
       return;
     }
@@ -81,6 +86,7 @@ export const DocMetadataProvider: React.FC<{ children: React.ReactNode }> = ({
         const tagsMap = new Map<string, string[]>();
         const titlesMap = new Map<string, string>();
         const sharedAsMap = new Map<string, string>();
+        const layoutsMap = new Map<string, PageLayout>();
         for (const [address, meta] of metadata) {
           if (meta.tags && meta.tags.length > 0) {
             tagsMap.set(address, meta.tags);
@@ -110,6 +116,21 @@ export const DocMetadataProvider: React.FC<{ children: React.ReactNode }> = ({
               }
             }
           }
+          if (meta.layout) {
+            const layout = normalizePageLayout(meta.layout);
+            layoutsMap.set(address, layout);
+            const parts = address.split(":");
+            if (parts.length >= 3) {
+              layoutsMap.set(parts.slice(2).join(":"), layout);
+            }
+            if (meta.sharedAs) {
+              layoutsMap.set(meta.sharedAs, layout);
+              const sharedParts = meta.sharedAs.split(":");
+              if (sharedParts.length >= 3) {
+                layoutsMap.set(sharedParts.slice(2).join(":"), layout);
+              }
+            }
+          }
           if (meta.sharedAs) {
             sharedAsMap.set(address, meta.sharedAs);
             const parts = address.split(":");
@@ -121,6 +142,7 @@ export const DocMetadataProvider: React.FC<{ children: React.ReactNode }> = ({
         setDocTagsState(tagsMap);
         setDocTitlesState(titlesMap);
         setDocSharedAsState(sharedAsMap);
+        setDocLayoutsState(layoutsMap);
       } catch (err) {
         console.error("Failed to fetch doc metadata:", err);
       } finally {
@@ -211,6 +233,40 @@ export const DocMetadataProvider: React.FC<{ children: React.ReactNode }> = ({
     });
   };
 
+  const setDocLayout = async (address: string, layout: PageLayout) => {
+    const existing = metadataMap.get(address) ?? { tags: [] };
+    const newMeta: DocMetadata = { ...existing, layout };
+    if (!metadataEqual(existing, newMeta)) {
+      const viewKey = existing.viewKey ?? viewKeysRef.current.get(address);
+      const parsed = parseRootAddress(address);
+      const isOwner = !!user?.pubkey && !!parsed && user.pubkey === parsed.owner;
+      if (viewKey && parsed && isOwner) {
+        await saveSharedLayout(parsed.owner, parsed.d, viewKey, layout, relays);
+      } else {
+        await saveDocMetadata(address, newMeta, relays);
+      }
+    }
+    setMetadataMap((prev) => {
+      const next = new Map(prev);
+      next.set(address, newMeta);
+      return next;
+    });
+    setDocLayoutsState((prev) => {
+      const next = new Map(prev);
+      next.set(address, layout);
+      const parts = address.split(":");
+      if (parts.length >= 3) next.set(parts.slice(2).join(":"), layout);
+      if (existing.sharedAs) {
+        next.set(existing.sharedAs, layout);
+        const sharedParts = existing.sharedAs.split(":");
+        if (sharedParts.length >= 3) {
+          next.set(sharedParts.slice(2).join(":"), layout);
+        }
+      }
+      return next;
+    });
+  };
+
   const setDocSharedAs = async (address: string, sharedAs: string) => {
     const existing = metadataMap.get(address) ?? { tags: [] };
     const newMeta: DocMetadata = { ...existing, sharedAs };
@@ -237,11 +293,13 @@ export const DocMetadataProvider: React.FC<{ children: React.ReactNode }> = ({
         docTags: docTagsState,
         docTitles,
         docSharedAs,
+        docLayouts,
         allTags,
         selectedTag,
         setSelectedTag,
         setDocTags,
         setDocTitle,
+        setDocLayout,
         setDocSharedAs,
         loading,
       }}

@@ -31,10 +31,50 @@ owner controls who may write through an encrypted roster.
 ### Content — kind `33457` (parameterised replaceable on `d`)
 
 - tags: `["d", <document id>]`, `["a", <room>]`
-- content: the document Markdown
+- content: the document Markdown, with no presentation metadata
 - signed by the author
 - one event per author (their own replaceable slot); the newest across authors is
   the document
+
+Page geometry, header/footer and document-level typography live in the encrypted
+kind-34579 metadata (for personal docs) or the owner-authored roster (for v2
+shared docs). The Markdown body stays parseable by any client.
+
+### Presentation metadata (kind `34579`)
+
+Personal documents keep `layout` in their self-encrypted metadata event. Shared
+docs keep it in a **dedicated owner-authored event** whose `d` is
+`<root address>:layout`, encrypted with the viewKey. A separate `d` slot is
+important: the roster and the user's self metadata share the root `d`, so
+storing layout there would let them overwrite each other.
+
+The JSON shape is:
+
+```json
+{
+  "layout": {
+    "version": 1,
+    "canvas": "notes",
+    "pageSize": "A4",
+    "orientation": "portrait",
+    "margins": { "top": 1, "right": 1, "bottom": 1, "left": 1 },
+    "fontFamily": "Inter",
+    "fontSizePt": 11,
+    "lineHeight": 1.6,
+    "styles": {
+      "h1": { "align": "center", "fontSizePt": 26, "fontWeight": 800 }
+    },
+    "header": { "left": "ACME Inc" },
+    "footer": { "center": "Confidential" }
+  }
+}
+```
+
+Layout changes are owner-controlled for v2 shared documents (the same rule as
+title and tags). They are eventual relative to content saves because they are a
+separate replaceable metadata event. `canvas` selects the screen experience:
+`notes` (continuous, borderless, the default) or `page` (paginated document
+canvas for letterheads/resumes). Print/PDF/DOCX always use the page geometry.
 
 ### Roster — kind `34579` (parameterised replaceable on `d`)
 

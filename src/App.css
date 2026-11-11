@@ -187,6 +187,30 @@
 
 .tiptap p { margin: 0.4em 0; }
 
+/* Page break marker (content node, serialized as <div data-page-break>) */
+.tiptap div[data-page-break] {
+  position: relative;
+  display: block;
+  height: 0;
+  margin: 2.2em 0;
+  border-top: 2px dashed rgba(139, 92, 246, 0.45);
+}
+.tiptap div[data-page-break]::after {
+  content: "Page break";
+  position: absolute;
+  top: -0.85em;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 0 0.5em;
+  background: inherit;
+  color: rgba(139, 92, 246, 0.8);
+  font-size: 0.68em;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
 /* ── Table styles ─────────────────────────────────────────── */
 /* TipTap wraps tables in .tableWrapper for overflow scrolling on mobile */
 .tiptap .tableWrapper {
