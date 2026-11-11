@@ -6,6 +6,25 @@ import type { NostrYjsProvider as NostrYjsProviderType } from "./NostrYjsProvide
 import type { Collaboration as CollaborationType } from "@tiptap/extension-collaboration";
 import type { CollaborationCaret as CollaborationCaretType } from "@tiptap/extension-collaboration-caret";
 import { getOrCreateSession } from "./sessionKeys";
+import type { WritePolicy } from "./NostrYjsProvider";
+import { authorSet, fetchRoster, parseRootAddress } from "../nostr/sharedDoc";
+
+/**
+ * Who may edit the live document: anyone with the link in `open` mode,
+ * otherwise the owner plus roster editors. Legacy edit-key shares have no
+ * roster and live at the editKey's address, so their only author is the editKey.
+ */
+async function loadWritePolicy(
+  docAddress: string,
+  viewKey: string,
+  relays: string[],
+): Promise<WritePolicy> {
+  const target = parseRootAddress(docAddress);
+  if (!target) return { open: false, authors: new Set() };
+  const roster = await fetchRoster(target.owner, target.d, viewKey, relays);
+  if (roster?.mode === "open") return { open: true, authors: new Set() };
+  return { open: false, authors: new Set(authorSet(target.owner, roster)) };
+}
 
 // Grace period for the initial sync-step round-trip, so a client doesn't seed the
 // empty Y.Doc from the Markdown snapshot before a peer's live state arrives.
@@ -43,6 +62,7 @@ export function useCollabSession(
   docAddress: string | null,
   viewKey: string | undefined,
   relays: string[],
+  editKey?: string,
 ): CollabSession | null {
   const [session, setSession] = useState<InternalSession | null>(null);
   const [ready, setReady] = useState(false);
@@ -83,7 +103,7 @@ export function useCollabSession(
       await idb.whenSynced;
       if (cancelled) return;
 
-      const collabSession = await getOrCreateSession(docAddress, viewKey);
+      const collabSession = await getOrCreateSession(docAddress, viewKey, editKey);
       if (cancelled) return;
 
       provider = new NostrYjsProvider({
@@ -92,6 +112,7 @@ export function useCollabSession(
         viewKey,
         relays,
         session: collabSession,
+        loadWritePolicy: () => loadWritePolicy(docAddress, viewKey, relays),
       });
       provider.connect();
       setSession({
@@ -123,7 +144,7 @@ export function useCollabSession(
       idb?.destroy();
       ydoc?.destroy();
     };
-  }, [enabled, docAddress, viewKey, relays]);
+  }, [enabled, docAddress, viewKey, relays, editKey]);
 
   if (!enabled || !session) return null;
   return {
