@@ -6,6 +6,7 @@ import { fetchMany } from "../dataLayer";
 import {
   decryptWithViewKey,
   encryptWithViewKey,
+  parseRootAddress,
   rosterDTag,
   type DocMember,
   type DocMode,
@@ -54,10 +55,26 @@ function nextCreatedAt(address: string): number {
   return next;
 }
 
+/** An owner roster that decrypted with a local key but has no key backup tag. */
+export interface RosterWithoutBackup {
+  address: string;
+  payload: DocMetadata;
+  viewKey: string;
+  /** created_at of the roster event that was read. */
+  createdAt: number;
+}
+
+/**
+ * Fetch and decrypt all of the user's metadata events. When
+ * `rostersWithoutBackup` is given, owner rosters that could only be read with a
+ * locally known viewKey (no `owner_viewkey` tag yet) are appended to it, so the
+ * caller can re-save them with `backfillRosterKeyBackups`.
+ */
 export async function fetchAllDocMetadata(
   relays: string[],
   pubkey: string,
   viewKeys?: Map<string, string>,
+  rostersWithoutBackup?: RosterWithoutBackup[],
 ): Promise<Map<string, DocMetadata>> {
   const result = new Map<string, DocMetadata>();
   if (relays.length === 0 || !pubkey) return result;
@@ -110,6 +127,7 @@ export async function fetchAllDocMetadata(
         // decrypt falls through to the backup instead of dropping the page.
         let viewKey: string | undefined;
         let payload: DocMetadata | undefined;
+        const backup = event.tags.find((t) => t[0] === ROSTER_OWNER_KEY_TAG)?.[1];
         const localKey = viewKeys?.get(dTag);
         if (localKey) {
           try {
@@ -120,10 +138,18 @@ export async function fetchAllDocMetadata(
           }
         }
         if (!payload) {
-          const backup = event.tags.find((t) => t[0] === ROSTER_OWNER_KEY_TAG)?.[1];
           if (!backup) throw new Error("no viewKey");
           viewKey = await signer.nip44Decrypt(pubkey, backup);
           payload = JSON.parse(decryptWithViewKey(event.content, viewKey)) as DocMetadata;
+        } else if (!backup && viewKey) {
+          // Written before the key backup existed: only this device can read
+          // it. Let the caller re-save it so other devices can too.
+          rostersWithoutBackup?.push({
+            address: dTag,
+            payload,
+            viewKey,
+            createdAt: event.created_at,
+          });
         }
         meta = { ...payload, viewKey };
       }
@@ -218,4 +244,31 @@ export async function saveRoster(
 
   const signed = await signer.signEvent(event);
   await publishEvent(signed, relays);
+}
+
+/**
+ * Re-save owner rosters that predate the `owner_viewkey` tag, unchanged except
+ * for the added key backup. Without it the owner can only read those rosters —
+ * and so only see those pages — on a device that already holds the viewKey.
+ * Best-effort and one roster at a time; a failure leaves that roster as it was
+ * and it is retried on the next load.
+ */
+export async function backfillRosterKeyBackups(
+  pubkey: string,
+  rosters: RosterWithoutBackup[],
+  relays: string[],
+): Promise<void> {
+  for (const { address, payload, viewKey, createdAt } of rosters) {
+    const parsed = parseRootAddress(address);
+    if (!parsed || parsed.owner !== pubkey) continue;
+    // Something already re-wrote this roster in this session (a tag, title or
+    // member change). saveRoster always adds the backup, and re-saving the
+    // payload read earlier would undo that change.
+    if ((metaHighWater.get(address) ?? 0) > createdAt) continue;
+    try {
+      await saveRoster(parsed.owner, parsed.d, viewKey, payload, relays);
+    } catch (err) {
+      console.warn("Failed to back up the share key for", address, err);
+    }
+  }
 }

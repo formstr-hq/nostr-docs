@@ -9,7 +9,15 @@ import React, {
 import { useUser } from "./UserContext";
 import { useRelays } from "./RelayContext";
 import { signerManager } from "../signer";
-import { fetchAllDocMetadata, saveDocMetadata, saveRoster, metadataEqual, type DocMetadata } from "../nostr/docMetadata";
+import {
+  backfillRosterKeyBackups,
+  fetchAllDocMetadata,
+  saveDocMetadata,
+  saveRoster,
+  metadataEqual,
+  type DocMetadata,
+  type RosterWithoutBackup,
+} from "../nostr/docMetadata";
 import { loadAllLocalEvents } from "../lib/localStore";
 import { parseRootAddress } from "../nostr/sharedDoc";
 
@@ -76,7 +84,13 @@ export const DocMetadataProvider: React.FC<{ children: React.ReactNode }> = ({
           // local store unavailable — proceed with self-encrypted metadata only
         }
 
-        const metadata = await fetchAllDocMetadata(relays, pubkey, viewKeysRef.current);
+        const rostersWithoutBackup: RosterWithoutBackup[] = [];
+        const metadata = await fetchAllDocMetadata(
+          relays,
+          pubkey,
+          viewKeysRef.current,
+          rostersWithoutBackup,
+        );
         setMetadataMap(metadata);
         const tagsMap = new Map<string, string[]>();
         const titlesMap = new Map<string, string>();
@@ -121,6 +135,13 @@ export const DocMetadataProvider: React.FC<{ children: React.ReactNode }> = ({
         setDocTagsState(tagsMap);
         setDocTitlesState(titlesMap);
         setDocSharedAsState(sharedAsMap);
+
+        // Rosters written before the share key was backed up on them can only
+        // be read on a device that holds the key. Re-save them once so the
+        // owner's edit-shared pages show up on their other devices too.
+        if (rostersWithoutBackup.length > 0) {
+          backfillRosterKeyBackups(pubkey, rostersWithoutBackup, relays).catch(() => {});
+        }
       } catch (err) {
         console.error("Failed to fetch doc metadata:", err);
       } finally {
