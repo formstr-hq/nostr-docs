@@ -262,7 +262,7 @@
 
 .tiptap td,
 .tiptap th {
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(128, 128, 128, 0.28);
   box-sizing: border-box;
   min-width: 80px;
   padding: 6px 12px;
@@ -272,7 +272,7 @@
 }
 
 .tiptap th {
-  background: rgba(139, 92, 246, 0.06);
+  background: rgba(128, 128, 128, 0.08);
   font-weight: 700;
   text-align: left;
 }

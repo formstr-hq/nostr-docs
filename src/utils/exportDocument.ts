@@ -106,6 +106,7 @@ ${blockCssText("blockquote", layout.styles?.blockquote)}
     code { background: #f4f4f4; padding: 0.15em 0.4em; border-radius: 3px; font-size: 0.9em; }
     pre code { background: none; padding: 0; }
     blockquote { border-left: 3px solid #ddd; margin-left: 0; padding-left: 1rem; color: #555; }
+    hr { border: none; border-top: 2px solid ${layout.ruleColor ?? "#ddd"}; margin: 1.15em 0; }
     img { max-width: 100%; height: auto; }
     a { color: #0070f3; }
     .pages-header, .pages-footer {

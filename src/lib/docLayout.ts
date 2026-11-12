@@ -70,6 +70,8 @@ export interface PageLayout {
   lineHeight: number;
   /** Optional per-block overrides; templates use these for letterheads/resumes. */
   styles?: DocumentStyles;
+  /** Accent colour for horizontal rules and template dividers. */
+  ruleColor?: string;
   header?: PageHeaderFooter;
   footer?: PageHeaderFooter;
 }
@@ -272,6 +274,7 @@ export function normalizePageLayout(input: unknown): PageLayout {
       DEFAULT_PAGE_LAYOUT.lineHeight,
     ),
     styles: normalizeStyles(raw.styles),
+    ruleColor: cleanColor(raw.ruleColor),
     header: cleanHeaderFooter(raw.header),
     footer: cleanHeaderFooter(raw.footer),
   };

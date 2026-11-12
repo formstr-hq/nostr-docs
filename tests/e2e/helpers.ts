@@ -182,6 +182,13 @@ export function editorSurface(page: Page) {
 
 /** Type text into the (empty) draft editor. */
 export async function typeIntoEditor(page: Page, text: string) {
+  // New page now opens the template picker; tests that just want a blank draft
+  // should choose Blank page first.
+  const picker = page.getByRole("dialog").filter({ hasText: "Start a new page" });
+  if (await picker.isVisible().catch(() => false)) {
+    await picker.getByRole("button", { name: "Start with Blank page" }).click();
+    await expect(picker).toBeHidden();
+  }
   const surface = editorSurface(page);
   await surface.click();
   await page.keyboard.type(text);

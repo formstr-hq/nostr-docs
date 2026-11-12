@@ -49,3 +49,31 @@ test("rich resume template keeps its two-column sidebar", async ({ page }) => {
   await page.waitForTimeout(400);
   expect(await columnsCount()).toBeGreaterThan(1);
 });
+
+test("all starter templates open with their starter content", async ({ page }) => {
+  page.on("dialog", (dialog) => void dialog.accept());
+  await loginAsGuest(page);
+  await page.getByRole("button", { name: "All pages" }).click();
+
+  const templates: Array<[string, string]> = [
+    ["Resume", "Alex Morgan"],
+    ["Letterhead", "Brand partnership proposal"],
+    ["Cover letter", "Cover letter"],
+    ["Invoice", "Invoice"],
+    ["Project brief", "Project brief"],
+    ["Daily planner", "Daily plan"],
+    ["Weekly planner", "Weekly plan"],
+    ["Journal", "Journal"],
+    ["Meeting notes", "Meeting notes"],
+  ];
+
+  for (const [name, heading] of templates) {
+    await page.getByRole("button", { name: "New page" }).first().click();
+    const dialog = page.getByRole("dialog").filter({ hasText: "Start a new page" });
+    await dialog.getByRole("button", { name: `Start with ${name}` }).click();
+    await expect(page.getByRole("heading", { name: heading }).first()).toBeVisible({
+      timeout: 20_000,
+    });
+    await page.getByRole("button", { name: "All pages" }).click();
+  }
+});

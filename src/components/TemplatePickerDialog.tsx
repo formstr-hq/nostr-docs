@@ -8,10 +8,15 @@ import {
   alpha,
 } from "@mui/material";
 import AddIcon from "@mui/icons-material/Add";
+import AssignmentOutlinedIcon from "@mui/icons-material/AssignmentOutlined";
+import DateRangeOutlinedIcon from "@mui/icons-material/DateRangeOutlined";
 import DescriptionOutlinedIcon from "@mui/icons-material/DescriptionOutlined";
-import WorkOutlineIcon from "@mui/icons-material/WorkOutline";
+import GroupsOutlinedIcon from "@mui/icons-material/GroupsOutlined";
 import MailOutlineIcon from "@mui/icons-material/MailOutline";
+import MenuBookOutlinedIcon from "@mui/icons-material/MenuBookOutlined";
 import ReceiptLongOutlinedIcon from "@mui/icons-material/ReceiptLongOutlined";
+import TodayOutlinedIcon from "@mui/icons-material/TodayOutlined";
+import WorkOutlineIcon from "@mui/icons-material/WorkOutline";
 import type { DocumentTemplate } from "../lib/docTemplates";
 import { DOCUMENT_TEMPLATES } from "../lib/docTemplates";
 
@@ -20,6 +25,11 @@ const KIND_ICONS: Record<DocumentTemplate["kind"], typeof WorkOutlineIcon> = {
   letterhead: DescriptionOutlinedIcon,
   "cover-letter": MailOutlineIcon,
   invoice: ReceiptLongOutlinedIcon,
+  "project-brief": AssignmentOutlinedIcon,
+  "daily-planner": TodayOutlinedIcon,
+  "weekly-planner": DateRangeOutlinedIcon,
+  journal: MenuBookOutlinedIcon,
+  "meeting-notes": GroupsOutlinedIcon,
 };
 
 function Bar({ width, height = 3, opacity = 0.18 }: { width: string; height?: number; opacity?: number }) {
@@ -176,6 +186,121 @@ function MiniPreview({ template }: { template?: DocumentTemplate }) {
           <Bar width="40%" height={3} opacity={0.35} />
         </>
       )}
+
+      {template.kind === "project-brief" && (
+        <>
+          <Bar width="48%" height={5} opacity={0.55} />
+          <Bar width="72%" height={2} />
+          <Box sx={{ height: 3 }} />
+          <Box sx={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 0.7, flex: 1 }}>
+            <Box sx={{ display: "flex", flexDirection: "column", gap: 0.45 }}>
+              <Bar width="48%" height={3} opacity={0.35} />
+              <Bar width="100%" height={2} />
+              <Bar width="92%" height={2} />
+              <Bar width="60%" height={3} opacity={0.35} />
+              <Bar width="100%" height={2} />
+              <Bar width="84%" height={2} />
+            </Box>
+            <Box sx={{ display: "flex", flexDirection: "column", gap: 0.45 }}>
+              <Bar width="54%" height={3} opacity={0.35} />
+              <Bar width="100%" height={2} />
+              <Bar width="88%" height={2} />
+              <Bar width="46%" height={3} opacity={0.35} />
+              <Bar width="100%" height={2} />
+              <Bar width="76%" height={2} />
+            </Box>
+          </Box>
+        </>
+      )}
+
+      {template.kind === "daily-planner" && (
+        <>
+          <Bar width="55%" height={5} opacity={0.55} />
+          <Bar width="78%" height={2} />
+          <Box sx={{ height: 3 }} />
+          <Box sx={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 0.7, flex: 1 }}>
+            <Box sx={{ display: "flex", flexDirection: "column", gap: 0.45 }}>
+              <Bar width="62%" height={3} opacity={0.35} />
+              {[0, 1, 2].map((i) => (
+                <Box key={i} sx={{ display: "flex", alignItems: "center", gap: 0.4 }}>
+                  <Box sx={{ width: 4, height: 4, borderRadius: "50%", bgcolor: (t) => alpha(t.palette.text.primary, 0.25) }} />
+                  <Bar width="80%" height={2} />
+                </Box>
+              ))}
+              <Bar width="50%" height={3} opacity={0.35} />
+              <Bar width="100%" height={2} />
+              <Bar width="90%" height={2} />
+            </Box>
+            <Box sx={{ display: "flex", flexDirection: "column", gap: 0.45 }}>
+              <Bar width="46%" height={3} opacity={0.35} />
+              <Bar width="100%" height={2} />
+              <Bar width="92%" height={2} />
+              <Bar width="70%" height={2} />
+              <Box sx={{ height: 2 }} />
+              <Bar width="56%" height={3} opacity={0.35} />
+              <Bar width="100%" height={2} />
+              <Bar width="84%" height={2} />
+            </Box>
+          </Box>
+        </>
+      )}
+
+      {template.kind === "weekly-planner" && (
+        <>
+          <Bar width="52%" height={5} opacity={0.55} />
+          <Bar width="76%" height={2} />
+          <Box sx={{ height: 3 }} />
+          <Box sx={{ display: "grid", gridTemplateColumns: "18px 1fr 1fr", gap: 0.45, flex: 1 }}>
+            {Array.from({ length: 7 }).map((_, i) => (
+              <Box key={i} sx={{ display: "contents" }}>
+                <Bar width="100%" height={2} opacity={0.2} />
+                <Bar width="100%" height={2} />
+                <Bar width="100%" height={2} opacity={0.7} />
+              </Box>
+            ))}
+          </Box>
+        </>
+      )}
+
+      {template.kind === "journal" && (
+        <>
+          <Bar width="42%" height={5} opacity={0.55} />
+          <Bar width="60%" height={2} />
+          <Box sx={{ height: 3 }} />
+          <Bar width="46%" height={3} opacity={0.35} />
+          <Bar width="100%" height={2} />
+          <Bar width="94%" height={2} />
+          <Bar width="88%" height={2} />
+          <Box sx={{ height: 3 }} />
+          <Bar width="40%" height={3} opacity={0.35} />
+          <Bar width="100%" height={2} />
+          <Bar width="80%" height={2} />
+          <Box sx={{ height: 4 }} />
+          <Box sx={{ borderLeft: "2px solid", borderColor: (t) => alpha(t.palette.text.primary, 0.2), pl: 0.6 }}>
+            <Bar width="82%" height={2} />
+          </Box>
+        </>
+      )}
+
+      {template.kind === "meeting-notes" && (
+        <>
+          <Bar width="56%" height={5} opacity={0.55} />
+          <Bar width="70%" height={2} />
+          <Box sx={{ height: 3 }} />
+          <Bar width="44%" height={3} opacity={0.35} />
+          {[0, 1, 2].map((i) => (
+            <Box key={i} sx={{ display: "flex", alignItems: "center", gap: 0.4 }}>
+              <Box sx={{ width: 4, height: 4, border: "1px solid", borderColor: (t) => alpha(t.palette.text.primary, 0.25), borderRadius: 0.3 }} />
+              <Bar width="74%" height={2} />
+            </Box>
+          ))}
+          <Box sx={{ height: 2 }} />
+          <Bar width="38%" height={3} opacity={0.35} />
+          <Bar width="100%" height={2} />
+          <Bar width="92%" height={2} />
+          <Bar width="84%" height={2} />
+        </>
+      )}
     </Box>
   );
 }
@@ -252,6 +377,21 @@ export function TemplatePickerDialog({
   /** `null` selects a blank page. */
   onSelect: (template: DocumentTemplate | null) => void;
 }) {
+  const gridSx = {
+    display: "grid",
+    gridTemplateColumns: {
+      xs: "repeat(2, minmax(0, 1fr))",
+      sm: "repeat(3, minmax(0, 1fr))",
+    },
+    gap: 1.5,
+  };
+  const documents = DOCUMENT_TEMPLATES.filter(
+    (template) => template.category === "documents",
+  );
+  const notes = DOCUMENT_TEMPLATES.filter(
+    (template) => template.category === "notes",
+  );
+
   return (
     <Dialog open={open} onClose={onClose} maxWidth="md" fullWidth>
       <DialogTitle sx={{ fontWeight: 800 }}>Start a new page</DialogTitle>
@@ -261,18 +401,15 @@ export function TemplatePickerDialog({
           styles at any time.
         </Typography>
 
-        <Box
-          sx={{
-            display: "grid",
-            gridTemplateColumns: {
-              xs: "repeat(2, minmax(0, 1fr))",
-              sm: "repeat(3, minmax(0, 1fr))",
-            },
-            gap: 1.5,
-          }}
+        <Typography
+          variant="overline"
+          sx={{ display: "block", fontWeight: 800, color: "text.secondary", letterSpacing: "0.1em" }}
         >
+          Documents
+        </Typography>
+        <Box sx={{ ...gridSx, mt: 1 }}>
           <TemplateCard onClick={() => onSelect(null)} />
-          {DOCUMENT_TEMPLATES.map((template) => (
+          {documents.map((template) => (
             <TemplateCard
               key={template.id}
               template={template}
@@ -280,6 +417,32 @@ export function TemplatePickerDialog({
             />
           ))}
         </Box>
+
+        {notes.length > 0 && (
+          <>
+            <Typography
+              variant="overline"
+              sx={{
+                display: "block",
+                mt: 3,
+                fontWeight: 800,
+                color: "text.secondary",
+                letterSpacing: "0.1em",
+              }}
+            >
+              Notes
+            </Typography>
+            <Box sx={{ ...gridSx, mt: 1 }}>
+              {notes.map((template) => (
+                <TemplateCard
+                  key={template.id}
+                  template={template}
+                  onClick={() => onSelect(template)}
+                />
+              ))}
+            </Box>
+          </>
+        )}
       </DialogContent>
     </Dialog>
   );

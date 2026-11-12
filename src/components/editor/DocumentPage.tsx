@@ -59,6 +59,12 @@ function contentStyle(layout: PageLayout) {
     "& h4": blockStyleToCss(layout.styles?.h4),
     "& p": blockStyleToCss(layout.styles?.paragraph),
     "& blockquote": blockStyleToCss(layout.styles?.blockquote),
+    "& hr": {
+      border: "none",
+      borderTop: `2px solid ${layout.ruleColor ?? "rgba(128,128,128,0.28)"}`,
+      margin: "1.15em 0",
+      opacity: 0.9,
+    },
   };
 }
 
@@ -160,7 +166,6 @@ export function DocumentPage({
             : "0 10px 32px rgba(15, 23, 42, 0.12)",
           ...pagePadding,
           ...typography,
-          "& h1, & h2, & h3, & h4": { color: "inherit" },
         }}
       >
         {layout.header && <HeaderFooter slots={layout.header} position="header" />}
