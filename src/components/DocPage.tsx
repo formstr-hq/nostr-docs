@@ -81,7 +81,13 @@ export default function DocPage({
     // Document already in context — no loading flash, editor stays mounted
     if (docExists) {
       const docOwner = docExists.owner ?? docExists.versions[0]?.event.pubkey;
-      const isVisited = !!keys.viewKey && docOwner !== user?.pubkey;
+      // Same rule as a fresh fetch below: a page already saved to the user's
+      // Shared list is not a "visited" page. Marking it visited here would
+      // drop it from the local Shared list on the next load.
+      const isAlreadyShared =
+        getKeys(address).length > 0 || sharedDocuments.has(address);
+      const isVisited =
+        !isAlreadyShared && !!keys.viewKey && docOwner !== user?.pubkey;
       if (isVisited) {
         const latestVersion = docExists.versions.at(-1);
         if (latestVersion) {
