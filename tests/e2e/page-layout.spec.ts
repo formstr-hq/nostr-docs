@@ -18,7 +18,7 @@ test("new documents default to the notes canvas and can switch to page", async (
   await expect(page.locator("[data-pages-page]")).toHaveCount(0);
   await expect(page.locator("[data-pages-content]")).toHaveCSS(
     "max-width",
-    "760px",
+    "820px",
   );
 
   await page.getByRole("button", { name: "More actions" }).click();
