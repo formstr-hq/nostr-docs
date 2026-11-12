@@ -102,20 +102,30 @@ export async function fetchAllDocMetadata(
         meta = JSON.parse(await signer.nip44Decrypt(pubkey, event.content)) as DocMetadata;
       } catch {
         // v2: the owner's shareable roster is encrypted with the document
-        // viewKey instead of the owner's own key. Use the locally known
-        // viewKey, else the owner's encrypted backup on the event; otherwise
+        // viewKey instead of the owner's own key. Try the locally known
+        // viewKey, then the owner's encrypted backup on the event; otherwise
         // leave the event alone so legacy undecryptable events are still
-        // skipped as before.
-        let viewKey = viewKeys?.get(dTag);
-        if (!viewKey) {
+        // skipped as before. The local key can be stale (the page was
+        // re-shared under a new key on another device), so a failed local
+        // decrypt falls through to the backup instead of dropping the page.
+        let viewKey: string | undefined;
+        let payload: DocMetadata | undefined;
+        const localKey = viewKeys?.get(dTag);
+        if (localKey) {
+          try {
+            payload = JSON.parse(decryptWithViewKey(event.content, localKey)) as DocMetadata;
+            viewKey = localKey;
+          } catch {
+            // stale local key — try the backup below
+          }
+        }
+        if (!payload) {
           const backup = event.tags.find((t) => t[0] === ROSTER_OWNER_KEY_TAG)?.[1];
           if (!backup) throw new Error("no viewKey");
           viewKey = await signer.nip44Decrypt(pubkey, backup);
+          payload = JSON.parse(decryptWithViewKey(event.content, viewKey)) as DocMetadata;
         }
-        meta = {
-          ...(JSON.parse(decryptWithViewKey(event.content, viewKey)) as DocMetadata),
-          viewKey,
-        };
+        meta = { ...payload, viewKey };
       }
       result.set(dTag, meta);
     } catch {
