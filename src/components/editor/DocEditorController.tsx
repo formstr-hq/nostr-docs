@@ -70,6 +70,7 @@ import type { SlashCommandItem } from "./extensions/SlashCommand";
 import type { SlashCommandMenuHandle } from "./SlashCommandMenu";
 import CreateFormDialog from "../CreateFormDialog";
 import MyFormsPickerDialog from "../MyFormsPickerDialog";
+import { PageLinkDialog } from "../PageLinkDialog";
 import type { FormsSigner } from "@formstr/sdk";
 import { createPortal } from "react-dom";
 
@@ -185,6 +186,23 @@ function parseMarkdownDocument(editor: Editor, markdown: string): ProseMirrorNod
   return ProseMirrorDOMParser.fromSchema(editor.schema).parse(body);
 }
 
+/** Insert a Markdown-native internal link: [title](page:<kind:pubkey:d>). */
+function insertPageLinkMark(
+  target: Editor,
+  address: string,
+  title: string,
+): void {
+  target
+    .chain()
+    .focus()
+    .insertContent({
+      type: "text",
+      text: title,
+      marks: [{ type: "link", attrs: { href: `page:${address}` } }],
+    })
+    .run();
+}
+
 function TagRow({ address }: { address: string }) {
   const { docTags, setDocTags } = useDocMetadata();
   const tags = getDocumentTags(address, docTags);
@@ -281,6 +299,7 @@ export function DocumentEditorController({
     setSelectedDocumentId,
     removeDocument,
     addDocument,
+    addImportedDocument,
     localOnlyAddresses,
     markLocalOnly,
     unmarkVisited,
@@ -519,6 +538,20 @@ export function DocumentEditorController({
     setLayout(next);
   };
 
+  const accentColor =
+    layout.ruleColor ?? layout.styles?.h2?.color ?? "#2563EB";
+  const handleAccentColorChange = (color: string) => {
+    handleApplyLayout({
+      ...layout,
+      ruleColor: color,
+      styles: {
+        ...layout.styles,
+        h2: { ...layout.styles?.h2, color },
+        h3: { ...layout.styles?.h3, color },
+      },
+    });
+  };
+
   const [wordCount, setWordCount] = useState(0);
   const [charCount, setCharCount] = useState(0);
   const [confirmOpen, setConfirmOpen] = useState(false);
@@ -673,6 +706,7 @@ export function DocumentEditorController({
   };
   const [formDialogOpen, setFormDialogOpen] = useState(false);
   const [formsPickerOpen, setFormsPickerOpen] = useState(false);
+  const [pageLinkOpen, setPageLinkOpen] = useState(false);
 
   // Slash command menu state
   const slashMenuRef = useRef<SlashCommandMenuHandle | null>(null);
@@ -695,6 +729,7 @@ export function DocumentEditorController({
   const lastSavedContentRef = useRef<string>(initialRawContent);
   // Always-current markdown projection — avoids stale closures in effects/save
   const mdRef = useRef<string>(initialMarkdown);
+  const editorRef = useRef<Editor | null>(null);
   // Always-current layout / dirty flag for save paths and the nav blocker.
   const lastSavedLayoutRef = useRef<PageLayout>(
     savedLayout ?? draftLayout,
@@ -796,6 +831,81 @@ export function DocumentEditorController({
     textSuggest.prefs,
   ]);
 
+  /* ── Internal page links ───────────────────────────────── */
+  const handleOpenPageLink = useCallback(
+    (address: string) => {
+      const [kindStr, pubkey, ...rest] = address.split(":");
+      const identifier = rest.join(":");
+      if (!kindStr || !pubkey || !identifier) return;
+      const naddr = nip19.naddrEncode({
+        kind: Number(kindStr),
+        pubkey,
+        identifier,
+      });
+      const keys = getKeys(address);
+      let path = `/doc/${naddr}`;
+      if (keys[0]) {
+        const nkeys: Record<string, string> = { viewKey: keys[0] };
+        if (keys[1]) nkeys.editKey = keys[1];
+        path += `#${encodeNKeys(nkeys)}`;
+      }
+      navigate(path);
+    },
+    [getKeys, navigate],
+  );
+  const openPageLinkRef = useRef(handleOpenPageLink);
+  openPageLinkRef.current = handleOpenPageLink;
+
+  const createLinkedPage = async (
+    target: Editor,
+    title: string,
+    markdown: string,
+  ) => {
+    const address = await addImportedDocument(markdown, { publish: true });
+    insertPageLinkMark(target, address, title);
+    setToast({
+      open: true,
+      message: "Page created and linked. Save this page to keep the link.",
+      severity: "success",
+    });
+    return address;
+  };
+
+  const createJournalEntry = async (target: Editor) => {
+    const date = new Date().toLocaleDateString(undefined, {
+      weekday: "long",
+      year: "numeric",
+      month: "long",
+      day: "numeric",
+    });
+    const title = `Journal — ${date}`;
+    const markdown = `# ${title}
+
+Date: ${date} · Mood: ____
+
+---
+
+## Today I'm grateful for
+- A person
+- A moment
+- Something small
+
+## What happened
+
+
+## What I learned
+
+
+## Tomorrow
+- One thing to look forward to
+- One thing to make easier
+
+---
+
+> A thought to keep:`;
+    await createLinkedPage(target, title, markdown);
+  };
+
   /* ── TipTap editor instance ────────────────────────────── */
   const editor = useEditor({
     extensions: [
@@ -838,7 +948,13 @@ export function DocumentEditorController({
       // of landing as literal syntax. Rich paste (text/html, e.g. copying from
       // a webpage or another doc) is unaffected — that already parses as HTML.
       Markdown.configure({ html: true, tightLists: true, transformPastedText: true }),
-      Link.configure({ openOnClick: false }),
+      Link.configure({
+        openOnClick: false,
+        // Allow our internal `page:` links without re-registering linkify's
+        // built-in protocols (which would emit "already initialized" warnings).
+        isAllowedUri: (url, { defaultValidate }) =>
+          url.startsWith("page:") || defaultValidate(url),
+      }),
       Placeholder.configure({
         placeholder: "Start writing your page here…",
       }),
@@ -942,6 +1058,30 @@ export function DocumentEditorController({
                   editor.deleteRange(range).setPageBreak().run(),
               },
               {
+                id: "page-link",
+                label: "Link to page",
+                description: "Link or create another page",
+                icon: "🔗",
+                keywords: ["page", "link", "internal", "wiki", "reference"],
+                command: ({ editor, range }) => {
+                  editor.deleteRange(range).run();
+                  setPageLinkOpen(true);
+                },
+              },
+              {
+                id: "journal-entry",
+                label: "Journal entry",
+                description: "Create today's journal page and link it",
+                icon: "📔",
+                keywords: ["journal", "diary", "today", "daily", "entry"],
+                command: ({ editor, range }) => {
+                  editor.deleteRange(range).run();
+                  if (editorRef.current) {
+                    void createJournalEntry(editorRef.current);
+                  }
+                },
+              },
+              {
                 id: "table",
                 label: "Table",
                 description: "Insert a 3×3 table",
@@ -1025,6 +1165,19 @@ export function DocumentEditorController({
     ],
     editorProps: {
       attributes: { class: "tiptap" },
+      handleClick(_view, _pos, event) {
+        const target = event.target as HTMLElement | null;
+        const anchor = target?.closest?.(
+          'a[href^="page:"]',
+        ) as HTMLAnchorElement | null;
+        if (anchor && (event.metaKey || event.ctrlKey)) {
+          event.preventDefault();
+          const address = anchor.getAttribute("href")?.slice("page:".length);
+          if (address) openPageLinkRef.current(address);
+          return true;
+        }
+        return false;
+      },
       handlePaste(_view, event) {
         if (isViewOnlyRef.current) return false;
         const files = event.clipboardData?.files;
@@ -1102,6 +1255,10 @@ export function DocumentEditorController({
     // Solo docs never change this dep (editor created once). Collab docs
     // recreate the editor exactly once, when the session flips to ready.
   }, [isCollabReady]);
+
+  useEffect(() => {
+    editorRef.current = editor;
+  }, [editor]);
 
   /* ── Sync word/char count on editor ready ──────────────── */
   useEffect(() => {
@@ -1947,6 +2104,16 @@ export function DocumentEditorController({
       .run();
   };
 
+  const handleSelectPageLink = (address: string, title: string) => {
+    if (!editor) return;
+    insertPageLinkMark(editor, address, title);
+  };
+
+  const handleCreateLinkedPage = async (title: string) => {
+    if (!editor) throw new Error("Editor not ready");
+    await createLinkedPage(editor, title, `# ${title}\n\n`);
+  };
+
   /* Build a FormsSigner adapter from the app's signerManager */
   const formsSigner: FormsSigner | null = user
     ? {
@@ -2162,12 +2329,15 @@ export function DocumentEditorController({
             }
             pageViewMode={pageViewMode}
             onTogglePageViewMode={togglePageViewMode}
+            onInsertPageLink={!isViewOnly ? () => setPageLinkOpen(true) : undefined}
             baseFontFamily={layout.fontFamily}
             onBaseFontChange={
               canEditLayout
                 ? (family) => handleApplyLayout({ ...layout, fontFamily: family })
                 : undefined
             }
+            accentColor={accentColor}
+            onAccentColorChange={canEditLayout ? handleAccentColorChange : undefined}
             proofreadDocumentLength={md.length}
             proofreadStatus={textSuggest.proofreadStatus}
             onProofread={handleProofread}
@@ -2220,6 +2390,7 @@ export function DocumentEditorController({
             docEventId={activeVersion?.event.id ?? ""}
             onCommentClick={(id) => { setActiveCommentId(id); setShowComments(true); }}
             activeCommentId={activeCommentId}
+            onOpenPage={handleOpenPageLink}
           />
         )}
       </Paper>
@@ -2489,6 +2660,14 @@ export function DocumentEditorController({
         open={formsPickerOpen}
         onClose={() => setFormsPickerOpen(false)}
         onPick={handleFormCreated}
+      />
+
+      <PageLinkDialog
+        open={pageLinkOpen}
+        onClose={() => setPageLinkOpen(false)}
+        currentAddress={selectedDocumentId}
+        onSelect={handleSelectPageLink}
+        onCreate={handleCreateLinkedPage}
       />
 
       <PageSetupDialog

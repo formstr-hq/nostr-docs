@@ -50,6 +50,35 @@ test("rich resume template keeps its two-column sidebar", async ({ page }) => {
   expect(await columnsCount()).toBeGreaterThan(1);
 });
 
+test("accent colour can be changed from the toolbar", async ({ page }) => {
+  await loginAsGuest(page);
+  await page.getByRole("button", { name: "All pages" }).click();
+  await page.getByRole("button", { name: "New page" }).first().click();
+  const dialog = page.getByRole("dialog").filter({ hasText: "Start a new page" });
+  await dialog.getByRole("button", { name: "Start with Resume", exact: true }).click();
+  await page.waitForTimeout(500);
+
+  const colorInput = page.locator('input[type="color"]').first();
+  await expect(colorInput).toBeAttached();
+  await colorInput.evaluate((element) => {
+    const input = element as HTMLInputElement;
+    const setter = Object.getOwnPropertyDescriptor(
+      HTMLInputElement.prototype,
+      "value",
+    )?.set;
+    setter?.call(input, "#ef4444");
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+    input.dispatchEvent(new Event("change", { bubbles: true }));
+  });
+  await page.waitForTimeout(400);
+
+  const color = await page
+    .locator("[data-pages-page] h2")
+    .first()
+    .evaluate((element) => getComputedStyle(element).color);
+  expect(color).toBe("rgb(239, 68, 68)");
+});
+
 test("all starter templates open with their starter content", async ({ page }) => {
   page.on("dialog", (dialog) => void dialog.accept());
   await loginAsGuest(page);
@@ -64,13 +93,16 @@ test("all starter templates open with their starter content", async ({ page }) =
     ["Daily planner", "Daily plan"],
     ["Weekly planner", "Weekly plan"],
     ["Journal", "Journal"],
+    ["Journal index", "Journal index"],
     ["Meeting notes", "Meeting notes"],
   ];
 
   for (const [name, heading] of templates) {
     await page.getByRole("button", { name: "New page" }).first().click();
     const dialog = page.getByRole("dialog").filter({ hasText: "Start a new page" });
-    await dialog.getByRole("button", { name: `Start with ${name}` }).click();
+    await dialog
+      .getByRole("button", { name: `Start with ${name}`, exact: true })
+      .click();
     await expect(page.getByRole("heading", { name: heading }).first()).toBeVisible({
       timeout: 20_000,
     });

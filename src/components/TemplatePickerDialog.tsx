@@ -11,6 +11,7 @@ import AddIcon from "@mui/icons-material/Add";
 import AssignmentOutlinedIcon from "@mui/icons-material/AssignmentOutlined";
 import DateRangeOutlinedIcon from "@mui/icons-material/DateRangeOutlined";
 import DescriptionOutlinedIcon from "@mui/icons-material/DescriptionOutlined";
+import FormatListBulletedIcon from "@mui/icons-material/FormatListBulleted";
 import GroupsOutlinedIcon from "@mui/icons-material/GroupsOutlined";
 import MailOutlineIcon from "@mui/icons-material/MailOutline";
 import MenuBookOutlinedIcon from "@mui/icons-material/MenuBookOutlined";
@@ -29,6 +30,7 @@ const KIND_ICONS: Record<DocumentTemplate["kind"], typeof WorkOutlineIcon> = {
   "daily-planner": TodayOutlinedIcon,
   "weekly-planner": DateRangeOutlinedIcon,
   journal: MenuBookOutlinedIcon,
+  "journal-index": FormatListBulletedIcon,
   "meeting-notes": GroupsOutlinedIcon,
 };
 
@@ -279,6 +281,24 @@ function MiniPreview({ template }: { template?: DocumentTemplate }) {
           <Box sx={{ borderLeft: "2px solid", borderColor: (t) => alpha(t.palette.text.primary, 0.2), pl: 0.6 }}>
             <Bar width="82%" height={2} />
           </Box>
+        </>
+      )}
+
+      {template.kind === "journal-index" && (
+        <>
+          <Bar width="52%" height={5} opacity={0.55} />
+          <Bar width="74%" height={2} />
+          <Box sx={{ height: 3 }} />
+          <Bar width="36%" height={3} opacity={0.35} />
+          {[0, 1, 2, 3].map((i) => (
+            <Box key={i} sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
+              <Box sx={{ width: 4, height: 4, borderRadius: "50%", bgcolor: (t) => alpha(t.palette.text.primary, 0.28) }} />
+              <Bar width={`${72 + i * 4}%`} height={2} />
+            </Box>
+          ))}
+          <Box sx={{ height: 3 }} />
+          <Bar width="44%" height={3} opacity={0.35} />
+          <Bar width="88%" height={2} />
         </>
       )}
 

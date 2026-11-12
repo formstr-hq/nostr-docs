@@ -11,6 +11,7 @@ export type DocumentTemplateKind =
   | "daily-planner"
   | "weekly-planner"
   | "journal"
+  | "journal-index"
   | "meeting-notes";
 
 export type DocumentTemplateCategory = "documents" | "notes";
@@ -333,6 +334,27 @@ const journalDoc: JSONContent = {
     bullets("One thing to look forward to", "One thing to make easier"),
     rule,
     quote("A thought to keep:"),
+  ],
+};
+
+const journalIndexDoc: JSONContent = {
+  type: "doc",
+  content: [
+    heading(1, "Journal index"),
+    paragraph(
+      text(
+        "A home for your daily entries. Put the cursor under Entries and run /journal-entry to create today's page and link it here.",
+      ),
+    ),
+    rule,
+    heading(2, "Entries"),
+    paragraph(
+      text(
+        "No entries yet. Use /journal-entry, or Link to page from the More actions menu.",
+      ),
+    ),
+    rule,
+    quote("One page at a time."),
   ],
 };
 
@@ -736,7 +758,42 @@ Please reference INV-2026-014 with your payment.`,
     markdown: markdownFromDoc(journalDoc),
     layout: {
       version: 1,
-      canvas: "page",
+      canvas: "notes",
+      pageSize: "A4",
+      orientation: "portrait",
+      margins: { top: 0.9, right: 0.9, bottom: 0.9, left: 0.9 },
+      fontFamily: "Georgia",
+      fontSizePt: 11,
+      lineHeight: 1.7,
+      ruleColor: "#BE123C",
+      styles: {
+        h1: { fontSizePt: 24, fontWeight: 700, align: "left", marginTopPt: 0, marginBottomPt: 8, color: "#9F1239" },
+        h2: {
+          fontSizePt: 11,
+          fontWeight: 700,
+          align: "left",
+          textTransform: "uppercase",
+          marginTopPt: 18,
+          marginBottomPt: 6,
+          color: "#BE123C",
+        },
+        paragraph: { align: "left", lineHeight: 1.7, marginBottomPt: 6 },
+        blockquote: { fontStyle: "italic", color: "#9F1239" },
+      },
+    },
+  },
+  {
+    id: "journal-index",
+    name: "Journal index",
+    kind: "journal-index",
+    category: "notes",
+    description: "Front page for daily entries; add one with /journal-entry.",
+    accent: "#BE123C",
+    doc: journalIndexDoc,
+    markdown: markdownFromDoc(journalIndexDoc),
+    layout: {
+      version: 1,
+      canvas: "notes",
       pageSize: "A4",
       orientation: "portrait",
       margins: { top: 0.9, right: 0.9, bottom: 0.9, left: 0.9 },
@@ -771,7 +828,7 @@ Please reference INV-2026-014 with your payment.`,
     markdown: markdownFromDoc(meetingNotesDoc),
     layout: {
       version: 1,
-      canvas: "page",
+      canvas: "notes",
       pageSize: "A4",
       orientation: "portrait",
       margins: { top: 0.75, right: 0.75, bottom: 0.75, left: 0.75 },

@@ -32,6 +32,7 @@ type Props = {
   docEventId: string;
   onCommentClick?: (commentId: string) => void;
   activeCommentId?: string | null;
+  onOpenPage?: (address: string) => void;
 };
 
 const markdownSxBase = {
@@ -168,6 +169,7 @@ export function DocEditorSurface({
   docEventId,
   onCommentClick,
   activeCommentId,
+  onOpenPage,
 }: Props) {
   const theme = useTheme();
   const previewRef = useRef<HTMLDivElement>(null);
@@ -182,6 +184,15 @@ export function DocEditorSurface({
 
   const handleHighlightClick = (e: React.MouseEvent): boolean => {
     const target = e.target as HTMLElement;
+    const anchor = target.closest(
+      'a[href^="page:"]',
+    ) as HTMLAnchorElement | null;
+    if (anchor) {
+      e.preventDefault();
+      const address = anchor.getAttribute("href")?.slice("page:".length);
+      if (address && onOpenPage) onOpenPage(address);
+      return true;
+    }
     const span = target.closest("[data-comment-id]");
     if (!span) return false;
     const commentId = span.getAttribute("data-comment-id");
@@ -229,7 +240,7 @@ export function DocEditorSurface({
               // whose parents changed and crash. The key swap makes React drop
               // the old subtree wholesale and mount fresh nodes instead.
               <div key={value}>
-                <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeRaw]} components={markdownComponents}>{value}</ReactMarkdown>
+                <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeRaw]} urlTransform={(url) => url} components={markdownComponents}>{value}</ReactMarkdown>
               </div>
             ) : (
               <Typography color="text.secondary">
@@ -300,7 +311,7 @@ export function DocEditorSurface({
         >
           <DocumentPage layout={layout} viewMode={viewMode}>
             {value.trim() ? (
-              <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeRaw]} components={markdownComponents}>{value}</ReactMarkdown>
+              <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeRaw]} urlTransform={(url) => url} components={markdownComponents}>{value}</ReactMarkdown>
             ) : (
               <Typography color="text.secondary" fontStyle="italic">
                 Preview will appear here as you type…

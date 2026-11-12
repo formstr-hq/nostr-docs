@@ -169,8 +169,11 @@ type Props = {
   onToggleCanvas?: () => void;
   pageViewMode?: "fixed" | "responsive";
   onTogglePageViewMode?: () => void;
+  onInsertPageLink?: () => void;
   baseFontFamily?: string;
   onBaseFontChange?: (family: string) => void;
+  accentColor?: string;
+  onAccentColorChange?: (color: string) => void;
   proofreadDocumentLength?: number;
   proofreadStatus?: ProofreadStatus;
   onProofread?: (instruction: string) => Promise<void>;
@@ -215,8 +218,11 @@ export function EditorToolbar({
   onToggleCanvas,
   pageViewMode = "fixed",
   onTogglePageViewMode,
+  onInsertPageLink,
   baseFontFamily = "Inter",
   onBaseFontChange,
+  accentColor = "#2563EB",
+  onAccentColorChange,
   proofreadDocumentLength = 0,
   proofreadStatus = { kind: "idle" },
   onProofread,
@@ -781,6 +787,25 @@ export function EditorToolbar({
               </MenuItem>
             )}
 
+            {onInsertPageLink && (
+              <MenuItem
+                onClick={() => {
+                  onInsertPageLink();
+                  setMenuAnchor(null);
+                }}
+              >
+                <ListItemIcon>
+                  <LinkIcon fontSize="small" />
+                </ListItemIcon>
+                <ListItemText
+                  primary="Link to page"
+                  secondary="Link or create another page"
+                  primaryTypographyProps={{ fontSize: "0.84rem", fontWeight: 500 }}
+                  secondaryTypographyProps={{ sx: { fontSize: "0.72rem" } }}
+                />
+              </MenuItem>
+            )}
+
             {/* Comments Toggle */}
             {onToggleComments && (
               <MenuItem
@@ -1159,6 +1184,34 @@ export function EditorToolbar({
                 }
               }}
             />
+
+            {onAccentColorChange && (
+              <Tooltip title="Accent colour">
+                <IconButton
+                  component="label"
+                  size="small"
+                  aria-label="Accent colour"
+                  sx={{ p: 0.6 }}
+                >
+                  <Box
+                    sx={{
+                      width: 16,
+                      height: 16,
+                      borderRadius: "50%",
+                      bgcolor: accentColor,
+                      border: "1px solid",
+                      borderColor: "divider",
+                    }}
+                  />
+                  <input
+                    type="color"
+                    value={accentColor}
+                    onChange={(e) => onAccentColorChange(e.target.value)}
+                    style={{ display: "none" }}
+                  />
+                </IconButton>
+              </Tooltip>
+            )}
 
             {/* Font size and line height are document-level styles, edited in
                 Page setup, so they never leak into the Markdown body. */}
