@@ -6,6 +6,8 @@ import {
   paragraphText,
   serializeDocumentXml,
   setParagraphText,
+  type OoxmlParagraph,
+  type OoxmlTable,
 } from "../src/lib/ooxml/body";
 
 const fixtureDir = join(process.cwd(), "tests/fixtures/docx");
@@ -63,6 +65,7 @@ for (const fixture of fixtures) {
   const afterXml = serializeDocumentXml(parsed);
 
   const paragraphCount = parsed.blocks.filter((b) => b.kind === "paragraph").length;
+  const tableCount = parsed.blocks.filter((b) => b.kind === "table").length;
   const rawCount = parsed.blocks.filter((b) => b.kind === "raw").length;
 
   const exact = beforeXml === afterXml;
@@ -73,7 +76,7 @@ for (const fixture of fixtures) {
 
   console.log(`\n== ${basename(fixture)} ==`);
   console.log(
-    `parts=${pkg.listParts().length} paragraphs=${paragraphCount} rawBlocks=${rawCount}`,
+    `parts=${pkg.listParts().length} paragraphs=${paragraphCount} tables=${tableCount} rawBlocks=${rawCount}`,
   );
   console.log(
     `document.xml: ${
@@ -88,12 +91,35 @@ for (const fixture of fixtures) {
     `package (no edits): ${noEditDiffs.length === 0 ? "LOSSLESS" : `CHANGED ${noEditDiffs.join(", ")}`}`,
   );
 
-  const firstText = parsed.blocks.find(
-    (b) => b.kind === "paragraph" && paragraphText(b).trim().length > 0,
+  let editableParagraph: OoxmlParagraph | undefined = parsed.blocks.find(
+    (b): b is OoxmlParagraph =>
+      b.kind === "paragraph" && paragraphText(b).trim().length > 0,
   );
-  if (firstText && firstText.kind === "paragraph") {
-    const original = paragraphText(firstText);
-    setParagraphText(firstText, "OOXML adapter edit");
+  let editableTable: OoxmlTable | undefined;
+
+  if (!editableParagraph) {
+    const table = parsed.blocks.find((b): b is OoxmlTable => b.kind === "table");
+    if (table) {
+      for (const row of table.rows) {
+        for (const cell of row.cells) {
+          const p = cell.paragraphs.find((candidate) =>
+            paragraphText(candidate).trim().length > 0,
+          );
+          if (p) {
+            editableParagraph = p;
+            editableTable = table;
+            break;
+          }
+        }
+        if (editableParagraph) break;
+      }
+    }
+  }
+
+  if (editableParagraph) {
+    const original = paragraphText(editableParagraph);
+    setParagraphText(editableParagraph, "OOXML adapter edit");
+    if (editableTable) editableTable.dirty = true;
     const editedXml = serializeDocumentXml(parsed);
     pkg.setText("word/document.xml", editedXml);
 
@@ -102,13 +128,26 @@ for (const fixture of fixtures) {
       skipDocumentXml: true,
     });
     const reparsed = parseDocumentXml(await editedPkg.text("word/document.xml"));
-    const editedText = reparsed.blocks
-      .filter((b) => b.kind === "paragraph")
-      .map((b) => (b.kind === "paragraph" ? paragraphText(b) : ""))
-      .find((text) => text.includes("OOXML adapter edit"));
+    const editedTexts: string[] = [];
+    for (const block of reparsed.blocks) {
+      if (block.kind === "paragraph") {
+        editedTexts.push(paragraphText(block));
+      } else if (block.kind === "table") {
+        for (const row of block.rows) {
+          for (const cell of row.cells) {
+            for (const paragraph of cell.paragraphs) {
+              editedTexts.push(paragraphText(paragraph));
+            }
+          }
+        }
+      }
+    }
+    const editedText = editedTexts.find((text) =>
+      text.includes("OOXML adapter edit"),
+    );
 
     console.log(
-      `edit round-trip: ${editedText ? "OK" : "FAILED"} (was ${JSON.stringify(original.slice(0, 40))})`,
+      `edit round-trip: ${editedText ? "OK" : "FAILED"}${editableTable ? " (table cell)" : ""} (was ${JSON.stringify(original.slice(0, 40))})`,
     );
     console.log(
       `other parts after edit: ${changedParts.length === 0 ? "UNCHANGED" : `CHANGED ${changedParts.join(", ")}`}`,

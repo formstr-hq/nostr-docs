@@ -32,12 +32,35 @@ export interface OoxmlParagraph {
   dirty: boolean;
 }
 
+export interface OoxmlTableCell {
+  tcPrXml?: string;
+  paragraphs: OoxmlParagraph[];
+}
+
+export interface OoxmlTableRow {
+  trPrXml?: string;
+  cells: OoxmlTableCell[];
+}
+
+export interface OoxmlTable {
+  kind: "table";
+  /** Exact source XML. Re-emitted unchanged while the table is not dirty. */
+  originalXml: string;
+  tblPrXml?: string;
+  tblGridXml?: string;
+  rows: OoxmlTableRow[];
+  dirty: boolean;
+}
+
 export interface OoxmlRawBlock {
   kind: "raw";
   xml: string;
 }
 
-export type OoxmlBlock = OoxmlParagraph | OoxmlRawBlock;
+export type OoxmlBlock =
+  | OoxmlParagraph
+  | OoxmlTable
+  | OoxmlRawBlock;
 
 export interface OoxmlDocument {
   /** Source document DOM; root/body namespaces and attributes are preserved. */
@@ -129,6 +152,71 @@ function parseParagraph(paragraph: Element): OoxmlParagraph | null {
   };
 }
 
+function parseTableCell(cell: Element): OoxmlTableCell | null {
+  const tcPr = firstElement(cell, "tcPr");
+  // Merged cells need a span-aware table model. Keep them raw for now rather
+  // than silently producing the wrong grid.
+  if (tcPr && (firstElement(tcPr, "gridSpan") || firstElement(tcPr, "vMerge"))) {
+    return null;
+  }
+
+  const paragraphs: OoxmlParagraph[] = [];
+  for (let i = 0; i < cell.childNodes.length; i += 1) {
+    const child = cell.childNodes.item(i);
+    if (!child || !isElement(child)) continue;
+    if (child.localName === "tcPr") continue;
+    if (child.localName !== "p") return null;
+    const paragraph = parseParagraph(child);
+    if (!paragraph) return null;
+    paragraphs.push(paragraph);
+  }
+
+  return {
+    tcPrXml: tcPr ? innerXml(tcPr) : undefined,
+    paragraphs,
+  };
+}
+
+function parseTableRow(row: Element): OoxmlTableRow | null {
+  const trPr = firstElement(row, "trPr");
+  const cells: OoxmlTableCell[] = [];
+  for (let i = 0; i < row.childNodes.length; i += 1) {
+    const child = row.childNodes.item(i);
+    if (!child || !isElement(child)) continue;
+    if (child.localName === "trPr") continue;
+    if (child.localName !== "tc") return null;
+    const cell = parseTableCell(child);
+    if (!cell) return null;
+    cells.push(cell);
+  }
+  return { trPrXml: trPr ? innerXml(trPr) : undefined, cells };
+}
+
+function parseTable(table: Element): OoxmlTable | null {
+  const tblPr = firstElement(table, "tblPr");
+  const tblGrid = firstElement(table, "tblGrid");
+  const rows: OoxmlTableRow[] = [];
+
+  for (let i = 0; i < table.childNodes.length; i += 1) {
+    const child = table.childNodes.item(i);
+    if (!child || !isElement(child)) continue;
+    if (child.localName === "tblPr" || child.localName === "tblGrid") continue;
+    if (child.localName !== "tr") return null;
+    const row = parseTableRow(child);
+    if (!row) return null;
+    rows.push(row);
+  }
+
+  return {
+    kind: "table",
+    originalXml: outerXml(table),
+    tblPrXml: tblPr ? innerXml(tblPr) : undefined,
+    tblGridXml: tblGrid ? innerXml(tblGrid) : undefined,
+    rows,
+    dirty: false,
+  };
+}
+
 /**
  * Parse `word/document.xml` into a body that is either an editable paragraph
  * (only pPr/r children) or an opaque raw block. This is what makes the adapter
@@ -150,6 +238,13 @@ export function parseDocumentXml(xml: string): OoxmlDocument {
       const paragraph = parseParagraph(node);
       if (paragraph) {
         blocks.push(paragraph);
+        continue;
+      }
+    }
+    if (node.localName === "tbl") {
+      const table = parseTable(node);
+      if (table) {
+        blocks.push(table);
         continue;
       }
     }
@@ -217,6 +312,49 @@ function appendParagraph(
   body.appendChild(p);
 }
 
+function appendTable(doc: Document, body: Element, table: OoxmlTable): void {
+  if (!table.dirty) {
+    appendRaw(doc, body, table.originalXml);
+    return;
+  }
+
+  const tbl = doc.createElementNS(W_NS, "w:tbl");
+  if (table.tblPrXml) {
+    const tblPr = doc.createElementNS(W_NS, "w:tblPr");
+    appendRaw(doc, tblPr, table.tblPrXml);
+    tbl.appendChild(tblPr);
+  }
+  if (table.tblGridXml) {
+    const tblGrid = doc.createElementNS(W_NS, "w:tblGrid");
+    appendRaw(doc, tblGrid, table.tblGridXml);
+    tbl.appendChild(tblGrid);
+  }
+
+  for (const row of table.rows) {
+    const tr = doc.createElementNS(W_NS, "w:tr");
+    if (row.trPrXml) {
+      const trPr = doc.createElementNS(W_NS, "w:trPr");
+      appendRaw(doc, trPr, row.trPrXml);
+      tr.appendChild(trPr);
+    }
+    for (const cell of row.cells) {
+      const tc = doc.createElementNS(W_NS, "w:tc");
+      if (cell.tcPrXml) {
+        const tcPr = doc.createElementNS(W_NS, "w:tcPr");
+        appendRaw(doc, tcPr, cell.tcPrXml);
+        tc.appendChild(tcPr);
+      }
+      for (const paragraph of cell.paragraphs) {
+        appendParagraph(doc, tc, paragraph);
+      }
+      tr.appendChild(tc);
+    }
+    tbl.appendChild(tr);
+  }
+
+  body.appendChild(tbl);
+}
+
 /** Serialize the body back into the original document root. */
 export function serializeDocumentXml(parsed: OoxmlDocument): string {
   const { doc, body, blocks } = parsed;
@@ -225,6 +363,8 @@ export function serializeDocumentXml(parsed: OoxmlDocument): string {
   for (const block of blocks) {
     if (block.kind === "raw") {
       appendRaw(doc, body, block.xml);
+    } else if (block.kind === "table") {
+      appendTable(doc, body, block);
     } else {
       appendParagraph(doc, body, block);
     }
