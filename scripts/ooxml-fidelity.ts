@@ -1,0 +1,117 @@
+import { readFileSync } from "node:fs";
+import { basename, join } from "node:path";
+import { DocxPackage } from "../src/lib/ooxml/package";
+import {
+  parseDocumentXml,
+  paragraphText,
+  serializeDocumentXml,
+  setParagraphText,
+} from "../src/lib/ooxml/body";
+
+const fixtureDir = join(process.cwd(), "tests/fixtures/docx");
+const fixtures = ["letterhead.docx", "report.docx", "resume-sidebar.docx"];
+
+function firstDifference(a: string, b: string): string {
+  const max = Math.max(a.length, b.length);
+  for (let i = 0; i < max; i += 1) {
+    if (a[i] !== b[i]) {
+      return `at ${i}: ${JSON.stringify(a.slice(Math.max(0, i - 40), i + 40))} != ${JSON.stringify(b.slice(Math.max(0, i - 40), i + 40))}`;
+    }
+  }
+  return "no difference";
+}
+
+function normalizeEntities(xml: string): string {
+  return xml.replace(/&apos;/g, "'").replace(/&quot;/g, '"');
+}
+
+async function compareParts(
+  left: DocxPackage,
+  right: DocxPackage,
+  options?: { skipDocumentXml?: boolean },
+): Promise<string[]> {
+  const diffs: string[] = [];
+  const leftParts = left.listParts();
+  const rightParts = new Set(right.listParts());
+  for (const part of leftParts) {
+    if (!rightParts.has(part)) {
+      diffs.push(`missing ${part}`);
+      continue;
+    }
+    if (part === "word/document.xml") {
+      if (options?.skipDocumentXml) continue;
+      const a = normalizeEntities(await left.text(part));
+      const b = normalizeEntities(await right.text(part));
+      if (a !== b) diffs.push(part);
+      continue;
+    }
+    const a = await left.bytes(part);
+    const b = await right.bytes(part);
+    if (Buffer.compare(Buffer.from(a), Buffer.from(b)) !== 0) diffs.push(part);
+  }
+  for (const part of rightParts) {
+    if (!leftParts.includes(part)) diffs.push(`extra ${part}`);
+  }
+  return diffs;
+}
+
+for (const fixture of fixtures) {
+  const input = readFileSync(join(fixtureDir, fixture));
+  const pkg = await DocxPackage.load(input);
+  const beforeXml = await pkg.text("word/document.xml");
+  const parsed = parseDocumentXml(beforeXml);
+  const afterXml = serializeDocumentXml(parsed);
+
+  const paragraphCount = parsed.blocks.filter((b) => b.kind === "paragraph").length;
+  const rawCount = parsed.blocks.filter((b) => b.kind === "raw").length;
+
+  const exact = beforeXml === afterXml;
+  const equivalent = normalizeEntities(beforeXml) === normalizeEntities(afterXml);
+
+  const noEditPkg = await DocxPackage.load(await pkg.save());
+  const noEditDiffs = await compareParts(pkg, noEditPkg);
+
+  console.log(`\n== ${basename(fixture)} ==`);
+  console.log(
+    `parts=${pkg.listParts().length} paragraphs=${paragraphCount} rawBlocks=${rawCount}`,
+  );
+  console.log(
+    `document.xml: ${
+      exact
+        ? "EXACT"
+        : equivalent
+          ? "EQUIVALENT (entity encoding only)"
+          : "DIFF " + firstDifference(beforeXml, afterXml)
+    }`,
+  );
+  console.log(
+    `package (no edits): ${noEditDiffs.length === 0 ? "LOSSLESS" : `CHANGED ${noEditDiffs.join(", ")}`}`,
+  );
+
+  const firstText = parsed.blocks.find(
+    (b) => b.kind === "paragraph" && paragraphText(b).trim().length > 0,
+  );
+  if (firstText && firstText.kind === "paragraph") {
+    const original = paragraphText(firstText);
+    setParagraphText(firstText, "OOXML adapter edit");
+    const editedXml = serializeDocumentXml(parsed);
+    pkg.setText("word/document.xml", editedXml);
+
+    const editedPkg = await DocxPackage.load(await pkg.save());
+    const changedParts = await compareParts(pkg, editedPkg, {
+      skipDocumentXml: true,
+    });
+    const reparsed = parseDocumentXml(await editedPkg.text("word/document.xml"));
+    const editedText = reparsed.blocks
+      .filter((b) => b.kind === "paragraph")
+      .map((b) => (b.kind === "paragraph" ? paragraphText(b) : ""))
+      .find((text) => text.includes("OOXML adapter edit"));
+
+    console.log(
+      `edit round-trip: ${editedText ? "OK" : "FAILED"} (was ${JSON.stringify(original.slice(0, 40))})`,
+    );
+    console.log(
+      `other parts after edit: ${changedParts.length === 0 ? "UNCHANGED" : `CHANGED ${changedParts.join(", ")}`}`,
+    );
+  }
+}
