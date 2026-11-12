@@ -60,6 +60,9 @@ test("imports, edits and exports a DOCX with headers preserved", async ({ page }
   const zip = await JSZip.loadAsync(readFileSync(filePath as string));
   const documentXml = await zip.file("word/document.xml")!.async("string");
   expect(documentXml).toContain("EDITED");
+  expect(documentXml).toContain('w:w="12240"');
+  expect(documentXml).toContain('w:h="15840"');
+  expect(Object.keys(zip.files).some((name) => name.startsWith("word/media/"))).toBe(true);
   expect(zip.file("word/header1.xml")).toBeTruthy();
   expect(zip.file("word/footer1.xml")).toBeTruthy();
 });

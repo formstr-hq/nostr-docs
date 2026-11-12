@@ -2,9 +2,10 @@ import type { JSONContent } from "@tiptap/core";
 import { DEFAULT_PAGE_LAYOUT, type PageLayout } from "./docLayout";
 import { DocxPackage } from "./ooxml/package";
 import { parseDocumentXml, serializeDocumentXml } from "./ooxml/body";
+import { resolveImageBlocks } from "./ooxml/images";
 import { ooxmlToRichDocument } from "./ooxml/rich";
 import { applyRichDocumentToOoxml } from "./ooxml/writer";
-import { pageSetupToLayout, parsePageSetup } from "./ooxml/sections";
+import { pageSetupToLayout, parsePageSetup, applyLayoutToSection } from "./ooxml/sections";
 
 export interface DocxImportResult {
   doc: JSONContent;
@@ -57,6 +58,7 @@ export async function docxToRichDocument(
   const pkg = await DocxPackage.load(data);
   const documentXml = await pkg.text("word/document.xml");
   const parsed = parseDocumentXml(documentXml);
+  await resolveImageBlocks(parsed, pkg);
   const doc = ooxmlToRichDocument(parsed);
   const setup = await parsePageSetup(pkg);
   const layout = pageSetupToLayout(setup, {
@@ -89,10 +91,12 @@ export async function docxToRichDocument(
 export async function richDocumentToDocxBlob(
   packageBase64: string,
   doc: JSONContent,
+  layout?: PageLayout,
 ): Promise<Blob> {
   const pkg = await DocxPackage.load(base64ToBytes(packageBase64));
   const parsed = parseDocumentXml(await pkg.text("word/document.xml"));
   applyRichDocumentToOoxml(parsed, doc);
+  if (layout) applyLayoutToSection(parsed, layout);
   pkg.setText("word/document.xml", serializeDocumentXml(parsed));
   const bytes = await pkg.save();
   const buffer = bytes.buffer.slice(

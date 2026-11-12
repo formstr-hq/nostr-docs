@@ -1,13 +1,17 @@
 import type { Element } from "@xmldom/xmldom";
-import type { PageLayout, PageSize } from "../docLayout";
+import { PAGE_SIZES, type PageLayout, type PageSize } from "../docLayout";
+import type { OoxmlDocument } from "./body";
 import { DocxPackage } from "./package";
 import {
+  W_NS,
   descendants,
   elements,
   firstElement,
   isElement,
   outerXml,
   parseXml,
+  serializeXml,
+  setWAttr,
   wAttr,
 } from "./xml";
 
@@ -285,4 +289,45 @@ export function pageSetupToLayout(
     header: header ? slotsFromPart(header, "header") : base.header,
     footer: footer ? slotsFromPart(footer, "footer") : base.footer,
   };
+}
+
+/**
+ * Write page size, orientation and margins from PageLayout back into the final
+ * `w:sectPr` before export. Header/footer text is preserved from the original
+ * parts; editing those slots is a later adapter slice.
+ */
+export function applyLayoutToSection(
+  parsed: OoxmlDocument,
+  layout: PageLayout,
+): void {
+  if (!parsed.sectPrXml) return;
+  const doc = parseXml(parsed.sectPrXml);
+  const sectPr = doc.documentElement;
+  if (!sectPr) return;
+
+  let pgSz = firstElement(sectPr, "pgSz");
+  if (!pgSz) {
+    pgSz = doc.createElementNS(W_NS, "w:pgSz");
+    sectPr.appendChild(pgSz);
+  }
+  const page = PAGE_SIZES[layout.pageSize] ?? PAGE_SIZES.A4;
+  const widthIn =
+    layout.orientation === "landscape" ? page.heightIn : page.widthIn;
+  const heightIn =
+    layout.orientation === "landscape" ? page.widthIn : page.heightIn;
+  setWAttr(pgSz, "w", String(Math.round(widthIn * 1440)));
+  setWAttr(pgSz, "h", String(Math.round(heightIn * 1440)));
+  setWAttr(pgSz, "orient", layout.orientation);
+
+  let pgMar = firstElement(sectPr, "pgMar");
+  if (!pgMar) {
+    pgMar = doc.createElementNS(W_NS, "w:pgMar");
+    sectPr.appendChild(pgMar);
+  }
+  setWAttr(pgMar, "top", String(Math.round(layout.margins.top * 1440)));
+  setWAttr(pgMar, "right", String(Math.round(layout.margins.right * 1440)));
+  setWAttr(pgMar, "bottom", String(Math.round(layout.margins.bottom * 1440)));
+  setWAttr(pgMar, "left", String(Math.round(layout.margins.left * 1440)));
+
+  parsed.sectPrXml = serializeXml(sectPr);
 }

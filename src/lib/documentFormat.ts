@@ -201,6 +201,10 @@ function blockToMarkdown(node: JSONContent, depth = 0): string {
       );
       return `<div data-ooxml-block="true" data-label="${label}"></div>`;
     }
+    case "ooxmlImage": {
+      const src = String(node.attrs?.src ?? "");
+      return src ? `![${String(node.attrs?.alt ?? "")}](${src})` : "";
+    }
     case "table": {
       const rows = (node.content ?? []).map((row) =>
         (row.content ?? []).map((cell) =>

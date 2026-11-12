@@ -17,10 +17,14 @@ DOCX package -> OOXML body AST -> rich document nodes
   media file and unknown XML fragment is preserved.
 - `xml.ts` — namespace-aware XML helpers built on `@xmldom/xmldom`.
 - `body.ts` — parses `word/document.xml` into editable paragraphs and simple
-  tables while keeping unsupported blocks as opaque raw XML.
+  tables while keeping unsupported blocks as opaque raw XML. Horizontal merges
+  (`w:gridSpan`) map to table-cell spans; vertical merges stay raw.
+- `images.ts` — resolves drawing relationships to media parts, renders them as
+  data-URL image nodes and keeps the original drawing XML for export.
 - `sections.ts` — parses `w:sectPr`, page size/margins and the referenced
-  header/footer parts; projects them into the app's `PageLayout` (the raw parts
-  stay in the package).
+  header/footer parts; projects them into the app's `PageLayout`, and writes
+  page size/orientation/margins back on export. The raw parts stay in the
+  package.
 - `rich.ts` — maps supported OOXML blocks into the canonical ProseMirror model.
   Unsupported blocks become `ooxmlBlock` placeholders carrying their raw XML.
 - `writer.ts` — writes edited rich paragraphs/tables back into the original
@@ -46,8 +50,11 @@ Fixtures live in `tests/fixtures/docx/`.
 
 - A paragraph is editable only if its children are `w:pPr` + `w:r` and each run
   contains only `w:rPr`/`w:t`/`w:br`/`w:tab`/`w:cr`.
-- A table is editable only when it has non-merged `w:tc` cells containing
-  paragraphs. Merged cells, nested tables and other complex content stay raw.
+- A table is editable when it has `w:tc` cells containing paragraphs. Horizontal
+  merges (`w:gridSpan`) are preserved as `colspan`; vertical merges, nested
+  tables and other complex content stay raw.
+- Drawings/images are rendered as data-URL image nodes; the raw drawing XML is
+  re-emitted on export. Replacing or resizing an image is a later slice.
 - Anything else (drawings, hyperlinks, bookmarks, fields, content controls,
   footnotes, …) is a **raw block** and is re-emitted verbatim.
 - Non-dirty paragraphs are re-emitted from their original XML, so no attributes
@@ -59,12 +66,12 @@ This gives us a lossless floor while the editable surface grows.
 
 ## Next coverage
 
-1. Merged cells and complex/nested tables.
-2. Images → editor image nodes, with relationship/media preservation.
+1. Vertical merges and complex/nested tables.
+2. Image replacement and resizing.
 3. Field results and page numbers in headers/footers (`w:fldChar`/`w:instrText`).
-4. Footnotes/endnotes, comments and tracked changes as explicit sidecars.
+4. Footnotes/endnotes, comments and tracked changes as editable content.
 5. Floating objects and content controls.
-6. Write PageLayout/header/footer edits back into the DOCX package.
+6. Writing header/footer text edits back into the DOCX package.
 7. Preserve richer run formatting when editing imported text.
 
 Every step should add a fixture to `tests/fixtures/docx/` and a fidelity check to

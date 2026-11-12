@@ -139,8 +139,18 @@ function applyTable(table: OoxmlTable, node: JSONContent): void {
           }
           return newParagraph(block);
         });
+      const colspan = Number(cell.attrs?.colspan) || undefined;
+      let tcPrXml = originalCell?.tcPrXml;
+      if (colspan) {
+        const span = `<w:gridSpan w:val="${colspan}"/>`;
+        tcPrXml = /<w:gridSpan\b[^>]*\/>/.test(tcPrXml ?? "")
+          ? (tcPrXml ?? "").replace(/<w:gridSpan\b[^>]*\/>/, span)
+          : `${tcPrXml ?? ""}${span}`;
+      } else if (tcPrXml) {
+        tcPrXml = tcPrXml.replace(/<w:gridSpan\b[^>]*\/>/g, "");
+      }
       return {
-        tcPrXml: originalCell?.tcPrXml,
+        tcPrXml,
         paragraphs:
           paragraphs.length > 0 ? paragraphs : [newParagraph({ type: "paragraph" })],
       };
@@ -187,6 +197,7 @@ export function applyRichDocumentToOoxml(
   const visit = (node: JSONContent) => {
     switch (node.type) {
       case "ooxmlBlock":
+      case "ooxmlImage":
         blocks.push({ kind: "raw", xml: String(node.attrs?.xml ?? "") });
         return;
       case "heading":

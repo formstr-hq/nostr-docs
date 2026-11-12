@@ -280,6 +280,12 @@
   font-size: 0.7rem;
   opacity: 0.55;
 }
+.ooxml-image {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  margin: 1em 0;
+}
 
 /* ── Table styles ─────────────────────────────────────────── */
 /* TipTap wraps tables in .tableWrapper for overflow scrolling on mobile */

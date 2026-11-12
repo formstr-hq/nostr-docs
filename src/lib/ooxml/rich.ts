@@ -62,6 +62,7 @@ function tableNode(table: OoxmlTable): JSONContent {
         const content = cell.paragraphs.map(paragraphNode);
         return {
           type: "tableCell",
+          ...(cell.colspan ? { attrs: { colspan: cell.colspan } } : {}),
           content: content.length > 0 ? content : [{ type: "paragraph" }],
         };
       }),
@@ -103,6 +104,21 @@ export function ooxmlToRichDocument(parsed: OoxmlDocument): JSONContent {
       content.push({
         type: "ooxmlBlock",
         attrs: { xml: block.xml, label: rawLabel(block.xml) },
+      });
+      index += 1;
+      continue;
+    }
+
+    if (block.kind === "image") {
+      content.push({
+        type: "ooxmlImage",
+        attrs: {
+          src: block.src,
+          alt: "",
+          width: block.width ?? null,
+          height: block.height ?? null,
+          xml: block.xml,
+        },
       });
       index += 1;
       continue;

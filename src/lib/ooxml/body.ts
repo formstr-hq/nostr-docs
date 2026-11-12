@@ -39,6 +39,8 @@ export interface OoxmlParagraph {
 export interface OoxmlTableCell {
   tcPrXml?: string;
   paragraphs: OoxmlParagraph[];
+  /** Horizontal merge (w:gridSpan). Vertical merges stay raw for now. */
+  colspan?: number;
 }
 
 export interface OoxmlTableRow {
@@ -61,9 +63,20 @@ export interface OoxmlRawBlock {
   xml: string;
 }
 
+export interface OoxmlImageBlock {
+  kind: "image";
+  /** Renderable data URL extracted from the package. */
+  src: string;
+  width?: number;
+  height?: number;
+  /** Original drawing XML, re-emitted on export. */
+  xml: string;
+}
+
 export type OoxmlBlock =
   | OoxmlParagraph
   | OoxmlTable
+  | OoxmlImageBlock
   | OoxmlRawBlock;
 
 export interface OoxmlDocument {
@@ -167,11 +180,10 @@ function parseParagraph(paragraph: Element): OoxmlParagraph | null {
 
 function parseTableCell(cell: Element): OoxmlTableCell | null {
   const tcPr = firstElement(cell, "tcPr");
-  // Merged cells need a span-aware table model. Keep them raw for now rather
-  // than silently producing the wrong grid.
-  if (tcPr && (firstElement(tcPr, "gridSpan") || firstElement(tcPr, "vMerge"))) {
-    return null;
-  }
+  // Vertical merges need rowspan-aware stitching; keep them raw for now.
+  if (tcPr && firstElement(tcPr, "vMerge")) return null;
+  const gridSpan = tcPr ? firstElement(tcPr, "gridSpan") : null;
+  const colspan = gridSpan ? Number(wAttr(gridSpan, "val")) : undefined;
 
   const paragraphs: OoxmlParagraph[] = [];
   for (let i = 0; i < cell.childNodes.length; i += 1) {
@@ -187,6 +199,7 @@ function parseTableCell(cell: Element): OoxmlTableCell | null {
   return {
     tcPrXml: tcPr ? innerXml(tcPr) : undefined,
     paragraphs,
+    colspan: colspan && colspan > 1 ? colspan : undefined,
   };
 }
 
@@ -380,6 +393,8 @@ export function serializeDocumentXml(parsed: OoxmlDocument): string {
 
   for (const block of blocks) {
     if (block.kind === "raw") {
+      appendRaw(doc, body, block.xml);
+    } else if (block.kind === "image") {
       appendRaw(doc, body, block.xml);
     } else if (block.kind === "table") {
       appendTable(doc, body, block);

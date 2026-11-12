@@ -48,6 +48,7 @@ import { TableCell } from "@tiptap/extension-table-cell";
 import { Columns, Column } from "./extensions/Columns";
 import { MarkdownColor } from "./extensions/MarkdownColor";
 import { OoxmlBlock } from "./extensions/OoxmlBlock";
+import { OoxmlImage } from "./extensions/OoxmlImage";
 import { EncryptedFileNode } from "./extensions/EncryptedFileNode";
 import { CommentHighlight } from "./extensions/CommentHighlight";
 import { FormNode } from "./extensions/FormNode";
@@ -744,6 +745,7 @@ export function DocumentEditorController({
   );
   // Always-current mode — used in onUpdate to guard against split-mode clobber
   const modeRef = useRef<EditorMode>(mode);
+  const previousModeRef = useRef<EditorMode>(mode);
   // Accepting a review from split mode already replaces TipTap with the final
   // candidate. Skip the normal split→edit sync once so Undo stays atomic.
   const skipNextEditModeSyncRef = useRef(false);
@@ -974,6 +976,7 @@ Date: ${date} · Mood: ____
       Columns,
       Column,
       OoxmlBlock,
+      OoxmlImage,
       Indent,
       PageBreak,
       GhostTextSuggestion,
@@ -1419,7 +1422,9 @@ Date: ${date} · Mood: ____
 
   /* ── Sync split-mode Markdown when returning to edit ──── */
   useEffect(() => {
-    if (!editor || mode !== "edit") return;
+    const previous = previousModeRef.current;
+    previousModeRef.current = mode;
+    if (!editor || mode !== "edit" || previous !== "split") return;
     if (skipNextEditModeSyncRef.current) {
       skipNextEditModeSyncRef.current = false;
       setWordCount(editor.storage.characterCount.words());
@@ -1427,12 +1432,18 @@ Date: ${date} · Mood: ____
       return;
     }
     // Switching back to WYSIWYG: sync TipTap with whatever was typed in the
-    // split textarea. Pass `false` (not a truthy object) so onUpdate doesn't
-    // fire and clobber mdRef with a re-serialized version.
-    editor.commands.setContent(mdRef.current, { emitUpdate: false });
+    // split textarea. Preview→edit keeps the canonical rich JSON untouched so
+    // images, columns and opaque OOXML nodes are not round-tripped through
+    // Markdown.
+    editor.commands.setContent(
+      isRichDocument
+        ? parseMarkdownDocument(editor, mdRef.current)
+        : mdRef.current,
+      { emitUpdate: false },
+    );
     setWordCount(editor.storage.characterCount.words());
     setCharCount(editor.storage.characterCount.characters());
-  }, [mode, editor]);
+  }, [mode, editor, isRichDocument]);
 
   const handleProofread = async (instruction: string) => {
     const before = mdRef.current;
@@ -2112,7 +2123,11 @@ Date: ${date} · Mood: ____
     const source = sourcePackageRef.current;
     if (source) {
       try {
-        const blob = await richDocumentToDocxBlob(source, editor.getJSON());
+        const blob = await richDocumentToDocxBlob(
+          source,
+          editor.getJSON(),
+          layout,
+        );
         const url = URL.createObjectURL(blob);
         const anchor = document.createElement("a");
         anchor.href = url;
@@ -2328,11 +2343,9 @@ Date: ${date} · Mood: ____
             saving={saving}
             mode={mode}
             onSetMode={(newMode) => {
-              // Pre-sync TipTap before the re-render so that if onUpdate fires
-              // during EditorContent remount it fires with the correct content.
-              if (newMode === "edit" && editor) {
-                editor.commands.setContent(mdRef.current, { emitUpdate: false });
-              }
+              // The split→edit sync effect applies split-mode Markdown. Keeping
+              // this handler free of setContent preserves rich JSON nodes on
+              // preview→edit switches.
               setMode(newMode);
             }}
             onSave={() => handleSave(false)}
