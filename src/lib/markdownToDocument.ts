@@ -8,6 +8,7 @@ import { Table } from "@tiptap/extension-table";
 import { TableRow } from "@tiptap/extension-table-row";
 import { TableHeader } from "@tiptap/extension-table-header";
 import { TableCell } from "@tiptap/extension-table-cell";
+import { Columns, Column } from "../components/editor/extensions/Columns";
 import MarkdownIt from "markdown-it";
 import { Indent } from "../components/editor/extensions/Indent";
 import { EncryptedFileNode } from "../components/editor/extensions/EncryptedFileNode";
@@ -33,13 +34,18 @@ const documentExtensions = [
   TableRow,
   TableHeader,
   TableCell,
+  Columns,
+  Column,
   Indent,
   EncryptedFileNode,
   CommentHighlight,
   FormNode,
 ];
 
-export function markdownToRichDocument(source: string): JSONContent {
-  const html = markdown.render(source);
+export function htmlToRichDocument(html: string): JSONContent {
   return generateJSON(html, documentExtensions) as JSONContent;
+}
+
+export function markdownToRichDocument(source: string): JSONContent {
+  return htmlToRichDocument(markdown.render(source));
 }

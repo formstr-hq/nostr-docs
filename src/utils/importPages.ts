@@ -1,30 +1,39 @@
 // src/utils/importPages.ts
 //
-// Read pages to import from user-selected files. Accepts plain Markdown files
-// and .zip archives containing Markdown — so a backup produced by the "Backup
-// pages" feature can be re-imported directly. Nothing here touches Nostr; it
-// only turns Files into { name, markdown } entries.
+// Read pages to import from user-selected files. Accepts plain Markdown files,
+// .docx documents (converted to the rich model) and .zip archives containing
+// Markdown — so a backup produced by the "Backup pages" feature can be
+// re-imported directly. Nothing here touches Nostr; it only turns Files into
+// importable entries.
 
 import JSZip from "jszip";
+import type { JSONContent } from "@tiptap/core";
+import { docxToRichDocument } from "../lib/docxToDocument";
 
 export type ImportEntry = {
   /** Stable, unique key for React lists. */
   id: string;
   /** Display name (file name without its extension). */
   name: string;
-  /** Raw Markdown to import verbatim. */
+  /** Raw Markdown for Markdown entries (empty for DOCX). */
   markdown: string;
+  /** Canonical rich document for DOCX entries. */
+  doc?: JSONContent;
+  kind: "markdown" | "docx";
+  /** DOCX import warnings (unsupported features, etc.). */
+  warnings?: string[];
   /** Original file or archive entry path, for display. */
   source: string;
 };
 
 export type ImportReadResult = {
   entries: ImportEntry[];
-  /** Names of files that were not Markdown or could not be read. */
+  /** Names of files that were not Markdown/DOCX or could not be read. */
   skipped: string[];
 };
 
 const MARKDOWN_EXT = /\.(md|markdown|mdown|mkd|txt)$/i;
+const DOCX_EXT = /\.docx$/i;
 
 function basename(path: string): string {
   const base = path.split("/").pop() ?? path;
@@ -38,6 +47,14 @@ function isIgnoredPath(path: string): boolean {
 
 function isZip(file: File): boolean {
   return /\.zip$/i.test(file.name) || file.type === "application/zip";
+}
+
+function isDocx(file: File): boolean {
+  return (
+    DOCX_EXT.test(file.name) ||
+    file.type ===
+      "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+  );
 }
 
 /**
@@ -56,12 +73,29 @@ export async function readImportFiles(files: File[]): Promise<ImportReadResult> 
       id: `import-${counter++}`,
       name: basename(source),
       markdown,
+      kind: "markdown",
       source,
     });
   };
 
   for (const file of files) {
-    if (isZip(file)) {
+    if (isDocx(file)) {
+      try {
+        const result = await docxToRichDocument(await file.arrayBuffer());
+        entries.push({
+          id: `import-${counter++}`,
+          name: basename(file.name),
+          markdown: "",
+          doc: result.doc,
+          kind: "docx",
+          warnings: result.messages,
+          source: file.name,
+        });
+      } catch (err) {
+        console.warn("Failed to read DOCX for import:", file.name, err);
+        skipped.push(file.name);
+      }
+    } else if (isZip(file)) {
       try {
         const zip = await JSZip.loadAsync(await file.arrayBuffer());
         const paths = Object.keys(zip.files)

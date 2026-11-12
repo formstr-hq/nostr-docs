@@ -32,7 +32,7 @@ ThemeProvider
 | **24578** | Presence (realtime) | Same shape as 22457 with a Yjs awareness update (remote carets). Ephemeral. |
 | **33457** | Legacy encrypted document (replaceable) | Backward-compatible Markdown documents. Content is NIP‑44(viewKey) Markdown. New pages use **33458**; this kind remains readable and writable for legacy pages and links. Tags `["d", <document id>]` and `["a", <room>]`. |
 | **33458** | Rich encrypted document (replaceable) | Default for new documents. Content is NIP‑44(viewKey) JSON `{format:"prosemirror-json",version:1,doc:<ProseMirror JSON>}`. HTML/Markdown/DOCX/PDF are adapters around this model. Tags `["d", <document id>]` and `["a", <room>]`; the same roster/realtime/sharing rules apply. |
-| **34579** | Per-document metadata / roster | Encrypted JSON. Authored by each user for their own view (`{tags, title, viewKey, editKey?, sharedAs?}`) **and**, for a v2 shared doc, by the **owner** as the shareable roster `{v:2, epoch, mode, title, tags, members[]}` encrypted with the document view key. Writes go through `nextCreatedAt()`. |
+| **34579** | Per-document metadata / roster | Encrypted JSON. Authored by each user for their own view (`{tags, title, layout, viewKey, editKey?, sharedAs?}`) **and**, for a v2 shared doc, by the **owner** as the shareable roster `{v:2, epoch, mode, title, tags, members[]}` encrypted with the document view key. Shared layout is a separate owner-authored `34579` event at `d = <root>:layout`, viewKey-encrypted, so it cannot overwrite the roster. `layout` holds canvas (notes/page), page size/margins/header-footer and document-level typography. Writes go through `nextCreatedAt()`. |
 | **34581** | Session attestation token | Not published. A real-key-signed event embedded inside 22457/24578 payloads, binding a session key to its real pubkey (presence attribution / restricted-mode authorisation). |
 
 ---
@@ -147,10 +147,11 @@ App mounts
 ```
 User edits Markdown in DocEditorSurface
   → handleSave()
-    → encryptContent(md, viewKey) → NIP-44 ciphertext
-    → signer.signEvent(event) → signed kind-33457
-    → publishEvent(signed, relays) → broadcast to relays
-    → addDocument(signed, keys) → decrypt + add to DocumentContext
+    → mdDirty: encryptContent(markdown, viewKey) → NIP-44 ciphertext
+    → sign kind-33457 → publishEvent → addDocument → decrypt + add to DocumentContext
+    → layoutDirty: setDocLayout(address, layout)
+        → personal doc: self-encrypted kind-34579 {tags, title, layout}
+        → shared owner: viewKey-encrypted kind-34579 at d=<root>:layout
 ```
 
 ### Share (v2)
@@ -203,5 +204,9 @@ handleDelete()
 | `src/utils/encryption.ts` | `encryptContent()` wrapper |
 | `src/utils/nkeys.ts` | URL hash encode/decode for view/edit keys |
 | `src/components/editor/DocEditorController.tsx` | Save / delete / share orchestration |
+| `src/lib/docLayout.ts` | Page layout + document block styles + normalization |
+| `src/components/editor/DocumentPage.tsx` | Notes/page canvases (page frame, margins, header/footer, block styles) |
+| `src/components/editor/PageSetupDialog.tsx` | Page setup + heading/body style UI |
+| `src/utils/exportDocument.ts` | MD/HTML/PDF/DOCX export with page layout + page breaks |
 | `src/components/DocPage.tsx` | Route-level document loader |
 | `src/components/LoginModal.tsx` | Login method picker dialog |

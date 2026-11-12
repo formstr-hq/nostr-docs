@@ -2,11 +2,12 @@
 //
 // Multi-writer encrypted documents (NIP-XX, see NIP-multi-writer-documents.md).
 //
-// A document is identified by a root address `33457:<owner>:<d>`. Every author
-// publishes their own replaceable content event at `33457:<author>:<d>`, all
-// encrypted with one shared `viewKey`. The owner publishes a viewKey-encrypted
-// roster (kind 34579) listing the editors; clients fetch every author's slot and
-// render the newest valid one.
+// A document is identified by a root address `<kind>:<owner>:<d>` (33458 for
+// rich documents, 33457 for legacy Markdown). Every author publishes their own
+// replaceable content event at `<kind>:<author>:<d>`, all encrypted with one
+// shared `viewKey`. The owner publishes a viewKey-encrypted roster (kind 34579)
+// listing the editors; clients fetch every author's slot and render the newest
+// valid one.
 //
 // This module is the pure model + the small I/O helpers around it. It is
 // deliberately independent of React so the resolution logic can be unit-tested
@@ -18,7 +19,9 @@ import {
   type Event,
 } from "nostr-tools";
 import { hexToBytes } from "nostr-tools/utils";
-import { KIND_DOC_METADATA, KIND_FILE } from "./kinds";import { fetchMany, fetchOne } from "../dataLayer";
+import { KIND_DOC_METADATA, KIND_FILE } from "./kinds";
+import { fetchMany, fetchOne } from "../dataLayer";
+import { normalizePageLayout, type PageLayout } from "../lib/docLayout";
 
 /** How far in the future an event's `created_at` may be before we ignore the
  *  excess when ordering (relays do not validate timestamps). */
@@ -48,10 +51,11 @@ export interface DocRoster {
   mode: DocMode;
   title?: string;
   tags: string[];
+  layout?: PageLayout;
   members: DocMember[];
 }
 
-/** Parsed components of a root address `33457:<owner>:<d>`. */
+/** Parsed components of a root address `<kind>:<owner>:<d>`. */
 export interface RootRef {
   kind: number;
   owner: string;
@@ -149,6 +153,7 @@ export function parseRosterPayload(payload: string): DocRoster | null {
       tags: Array.isArray(parsed.tags)
         ? parsed.tags.filter((t): t is string => typeof t === "string")
         : [],
+      layout: parsed.layout ? normalizePageLayout(parsed.layout) : undefined,
       members: validMembers,
     };
   } catch {

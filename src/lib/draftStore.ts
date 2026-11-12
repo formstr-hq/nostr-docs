@@ -13,6 +13,12 @@
  * stored `markdown`; those are still accepted and restored through the
  * Markdown adapter.
  */
+import {
+  DEFAULT_PAGE_LAYOUT,
+  normalizePageLayout,
+  type PageLayout,
+} from "./docLayout";
+
 export type DraftContentFormat = "prosemirror-json" | "markdown";
 
 const KEY = "formstr:unsaved-draft";
@@ -23,6 +29,8 @@ export interface StoredDraft {
   format: DraftContentFormat;
   /** Mirrors the draft's "device only" toggle so it is preserved too. */
   localOnly: boolean;
+  /** Page setup for the draft. Older drafts fall back to the default. */
+  layout: PageLayout;
 }
 
 export function saveDraft(draft: StoredDraft): void {
@@ -43,12 +51,17 @@ export function loadDraft(): StoredDraft | null {
       | null;
     if (!parsed) return null;
 
+    const layout = parsed.layout
+      ? normalizePageLayout(parsed.layout)
+      : DEFAULT_PAGE_LAYOUT;
+
     // New shape.
     if (typeof parsed.content === "string") {
       return {
         content: parsed.content,
         format: parsed.format === "markdown" ? "markdown" : "prosemirror-json",
         localOnly: !!parsed.localOnly,
+        layout,
       };
     }
 
@@ -58,6 +71,7 @@ export function loadDraft(): StoredDraft | null {
         content: parsed.markdown,
         format: "markdown",
         localOnly: !!parsed.localOnly,
+        layout,
       };
     }
 

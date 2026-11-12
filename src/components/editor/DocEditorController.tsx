@@ -34,8 +34,9 @@ import {
 } from "@tiptap/pm/model";
 import { closeHistory } from "@tiptap/pm/history";
 import StarterKit from "@tiptap/starter-kit";
-import { TextStyle } from "@tiptap/extension-text-style";
+import { TextStyle, FontSize, LineHeight, Color } from "@tiptap/extension-text-style";
 import { FontFamily } from "@tiptap/extension-font-family";
+import TextAlign from "@tiptap/extension-text-align";
 import { Markdown } from "tiptap-markdown";
 import Link from "@tiptap/extension-link";
 import Placeholder from "@tiptap/extension-placeholder";
@@ -44,12 +45,15 @@ import { Table } from "@tiptap/extension-table";
 import { TableRow } from "@tiptap/extension-table-row";
 import { TableHeader } from "@tiptap/extension-table-header";
 import { TableCell } from "@tiptap/extension-table-cell";
+import { Columns, Column } from "./extensions/Columns";
 import { EncryptedFileNode } from "./extensions/EncryptedFileNode";
 import { CommentHighlight } from "./extensions/CommentHighlight";
 import { FormNode } from "./extensions/FormNode";
 import { SlashCommand } from "./extensions/SlashCommand";
 import { Indent } from "./extensions/Indent";
 import { TableHandles } from "./extensions/TableHandles";
+import { AlignableParagraph, AlignableHeading } from "./extensions/AlignableBlocks";
+import { PageBreak } from "./extensions/PageBreak";
 import {
   GhostTextSuggestion,
   setGhostSuggestion,
@@ -90,6 +94,7 @@ import { cacheLocalEvents } from "../../dataLayer";
 
 import { EditorToolbar } from "./EditorToolbar";
 import { DocEditorSurface } from "./DocEditorSurface";
+import { PageSetupDialog } from "./PageSetupDialog";
 import { PresenceAvatars } from "./PresenceAvatars";
 import { createCollaborationCaretRenderers } from "./extensions/collaborationCaret";
 import { useCollabSession } from "../../collab/useCollabSession";
@@ -107,6 +112,7 @@ import { KIND_FILE, KIND_RICH_DOCUMENT } from "../../nostr/kinds";
 import { getLatestVersion } from "../../utils/helpers";
 import { enableGroupSharing, updateRosterMembers, upsertMember, removeMember } from "../../nostr/shareV2";
 import { fetchRoster, parseRootAddress, collabRoom, type DocMember, type DocMode } from "../../nostr/sharedDoc";
+import { fetchSharedLayout } from "../../nostr/docMetadata";
 import { fetchProfile } from "../../nostr/fetchProfile";
 import { encodeNKeys } from "../../utils/nkeys";
 import {
@@ -120,6 +126,12 @@ import {
   parseDocumentContent,
   serializeRichDocument,
 } from "../../lib/documentFormat";
+import { heuristicTitle } from "../../lib/docSearch";
+import {
+  DEFAULT_PAGE_LAYOUT,
+  layoutEquals,
+  type PageLayout,
+} from "../../lib/docLayout";
 
 // Delay after the last edit before auto-save fires (ms)
 const AUTO_SAVE_DELAY_MS = 30_000;
@@ -269,7 +281,7 @@ export function DocumentEditorController({
     unmarkVisited,
   } = useDocumentContext();
   const { addSharedDoc, getKeys } = useSharedPages();
-  const { setDocSharedAs, docSharedAs, docTags } = useDocMetadata();
+  const { setDocSharedAs, docSharedAs, docTags, docLayouts, setDocLayout } = useDocMetadata();
 
   const navigate = useNavigate();
   const { relays } = useRelays();
@@ -335,6 +347,10 @@ export function DocumentEditorController({
   // Only shared documents (a viewKey or a legacy backup link) can be view-only;
   // drafts and personal docs must keep their editing UI (the original rule).
   const isViewOnly = (!!viewKey && !canWrite) || !!sharedAsAddress;
+  // Layout is owner-controlled for v2 group docs (like the roster/title). A
+  // non-owner editor can still edit content, but must not silently keep a
+  // different page setup. Legacy edit-key shares keep their old local behavior.
+  const canEditLayout = !isViewOnly && (!viewKey || isOwner || !!editKey);
   const commentsEnabled = !!viewKey && !!selectedDocumentId;
 
   // Realtime collaboration (Yjs over Nostr) for writers on a shared document.
@@ -383,6 +399,11 @@ export function DocumentEditorController({
     [isDraft],
   );
   const draftContent = restoredDraft?.content ?? "";
+  const draftLayout = restoredDraft?.layout ?? DEFAULT_PAGE_LAYOUT;
+  const legacyLayout = activeVersion?.legacyLayout;
+  const savedLayout =
+    (selectedDocumentId ? docLayouts.get(selectedDocumentId) : undefined) ??
+    legacyLayout;
   const initialRawContent = draftContent || initialContent;
   const initialParsed = parseDocumentContent(initialRawContent);
   const initialMarkdown =
@@ -392,6 +413,12 @@ export function DocumentEditorController({
     initialParsed.kind === "rich" ? initialParsed.doc : initialParsed.markdown;
 
   const [md, setMd] = useState(initialMarkdown);
+  const [layout, setLayout] = useState<PageLayout>(
+    savedLayout ?? draftLayout,
+  );
+  // Layout changes are rare but must still mark the page dirty and trigger a
+  // save (the Markdown body alone is unchanged when only page setup changes).
+  const [pageSetupOpen, setPageSetupOpen] = useState(false);
   const [mode, setMode] = useState<EditorMode>(
     isViewOnly || !isDraft ? "preview" : "edit",
   );
@@ -471,6 +498,12 @@ export function DocumentEditorController({
       if (focusHintTimeoutRef.current) clearTimeout(focusHintTimeoutRef.current);
     };
   }, []);
+
+  const handleApplyLayout = (next: PageLayout) => {
+    setPageSetupOpen(false);
+    if (layoutEquals(next, layout)) return;
+    setLayout(next);
+  };
 
   const [wordCount, setWordCount] = useState(0);
   const [charCount, setCharCount] = useState(0);
@@ -648,6 +681,10 @@ export function DocumentEditorController({
   const lastSavedContentRef = useRef<string>(initialRawContent);
   // Always-current markdown projection — avoids stale closures in effects/save
   const mdRef = useRef<string>(initialMarkdown);
+  // Always-current layout / dirty flag for save paths and the nav blocker.
+  const lastSavedLayoutRef = useRef<PageLayout>(
+    savedLayout ?? draftLayout,
+  );
   // Always-current mode — used in onUpdate to guard against split-mode clobber
   const modeRef = useRef<EditorMode>(mode);
   // Accepting a review from split mode already replaces TipTap with the final
@@ -669,6 +706,55 @@ export function DocumentEditorController({
   selectedDocIdRef.current = selectedDocumentId;
   isCollabDocRef.current = isCollabDoc;
   collabRef.current = collab;
+
+  // Migrate a layout recovered from the short-lived in-content format into the
+  // document's encrypted metadata the first time it is opened.
+  useEffect(() => {
+    if (!selectedDocumentId || !legacyLayout) return;
+    if (docLayouts.get(selectedDocumentId)) return;
+    void setDocLayout(selectedDocumentId, legacyLayout).catch(() => {});
+  }, [selectedDocumentId, legacyLayout, docLayouts, setDocLayout]);
+
+  // Apply layout loaded from the document's metadata (personal docs, or the
+  // owner's roster once DocMetadataContext has decrypted it). Never clobber an
+  // unsaved local layout change.
+  useEffect(() => {
+    const next = selectedDocumentId
+      ? docLayouts.get(selectedDocumentId)
+      : undefined;
+    if (!next) return;
+    if (!layoutEquals(layout, lastSavedLayoutRef.current)) return;
+    if (layoutEquals(next, layout)) {
+      lastSavedLayoutRef.current = next;
+      return;
+    }
+    lastSavedLayoutRef.current = next;
+    setLayout(next);
+  }, [selectedDocumentId, docLayouts, layout]);
+
+  // A viewer of a shared document may not own the roster metadata, so fetch it
+  // explicitly to pick up the owner's layout.
+  useEffect(() => {
+    if (!selectedDocumentId || !viewKey) return;
+    // A locally-known metadata layout (owner metadata or a previous local
+    // choice) wins over the roster; only viewers without metadata need this.
+    if (docLayouts.get(selectedDocumentId)) return;
+    const target = parseRootAddress(selectedDocumentId);
+    if (!target) return;
+    let cancelled = false;
+    fetchSharedLayout(target.owner, target.d, viewKey, relays, target.kind)
+      .then((sharedLayout) => {
+        if (cancelled || !sharedLayout) return;
+        if (!layoutEquals(layout, lastSavedLayoutRef.current)) return;
+        if (layoutEquals(sharedLayout, layout)) return;
+        lastSavedLayoutRef.current = sharedLayout;
+        setLayout(sharedLayout);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedDocumentId, viewKey, relays, layout, docLayouts]);
 
   // Always-current upload function — avoids stale closures in editorProps handlers
   const uploadFileRef = useRef<(file: File) => Promise<void>>(async () => { });
@@ -703,8 +789,13 @@ export function DocumentEditorController({
       // so for solo docs (and collab docs still connecting) it — and
       // CollaborationCaret — must be absent, not configured empty. StarterKit's
       // undo/redo is incompatible with Collaboration, so only the collab path
-      // disables it.
-      isCollabReady ? StarterKit.configure({ undoRedo: false }) : StarterKit,
+      // disables it. Paragraph/heading variants keep old aligned blocks intact
+      // when an existing document is re-saved.
+      StarterKit.configure({
+        ...(isCollabReady ? { undoRedo: false } : {}),
+        paragraph: false,
+        heading: false,
+      }),
       ...(isCollabReady && collab
         ? [
             collab.CollaborationExt.configure({ document: collab.ydoc }),
@@ -715,8 +806,17 @@ export function DocumentEditorController({
             }),
           ]
         : []),
+      AlignableParagraph,
+      AlignableHeading,
       TextStyle,
       FontFamily,
+      // These legacy inline attributes are intentionally not exposed in the
+      // toolbar anymore (formatting now lives in kind-34579 metadata), but they
+      // stay registered so older documents parse and round-trip unchanged.
+      FontSize,
+      LineHeight,
+      Color,
+      TextAlign.configure({ types: ["heading", "paragraph"] }),
       // html: true so <encrypted-file> tags round-trip through markdown storage.
       // transformPastedText: plain-text clipboard content (no text/html, e.g.
       // copied from a markdown file, README, chat, or terminal) is parsed as
@@ -733,7 +833,10 @@ export function DocumentEditorController({
       TableRow,
       TableHeader,
       TableCell,
+      Columns,
+      Column,
       Indent,
+      PageBreak,
       GhostTextSuggestion,
       TableHandles,
       EncryptedFileNode,
@@ -814,6 +917,15 @@ export function DocumentEditorController({
                 keywords: ["divider", "hr", "separator", "rule"],
                 command: ({ editor, range }) =>
                   editor.deleteRange(range).setHorizontalRule().run(),
+              },
+              {
+                id: "page-break",
+                label: "Page break",
+                description: "Start the next page here",
+                icon: "⤓",
+                keywords: ["page break", "break", "new page", "paginate"],
+                command: ({ editor, range }) =>
+                  editor.deleteRange(range).setPageBreak().run(),
               },
               {
                 id: "table",
@@ -1016,11 +1128,12 @@ export function DocumentEditorController({
               : md,
           format: isRichDocument ? "prosemirror-json" : "markdown",
           localOnly: draftLocalOnly,
+          layout,
         }),
       300,
     );
     return () => clearTimeout(timer);
-  }, [isDraft, md, draftLocalOnly, isRichDocument, editor]);
+  }, [isDraft, md, draftLocalOnly, isRichDocument, editor, layout]);
 
   /* ── Seed a fresh Yjs doc from the existing snapshot ───── */
   // A brand-new collab session's Y.Doc starts empty and the Collaboration
@@ -1317,7 +1430,9 @@ export function DocumentEditorController({
   }, [focusMode, focusAnimation, handleToggleFocusMode]);
 
   /* ── Warn on browser close / refresh ───────────────────── */
-  const hasUnsavedChanges = md !== lastSavedMdRef.current;
+  const hasUnsavedChanges =
+    md !== lastSavedMdRef.current ||
+    !layoutEquals(layout, lastSavedLayoutRef.current);
 
   useEffect(() => {
     const onBeforeUnload = (e: BeforeUnloadEvent) => {
@@ -1336,7 +1451,11 @@ export function DocumentEditorController({
   // the content can mark it saved and navigate in the same tick (see the
   // view-only share path) — a plain boolean would be stale from the previous
   // render and still block.
-  const blocker = useBlocker(() => mdRef.current !== lastSavedMdRef.current);
+  const blocker = useBlocker(
+    () =>
+      mdRef.current !== lastSavedMdRef.current ||
+      !layoutEquals(layout, lastSavedLayoutRef.current),
+  );
 
   /* ── Auto-save: debounced 30s after last content change ── */
   // Only fires for existing (non-draft) documents that the user can edit.
@@ -1345,7 +1464,12 @@ export function DocumentEditorController({
   // to avoid stale closure issues.
   useEffect(() => {
     // Don't even set the timer if there's nothing to save
-    if (md === lastSavedMdRef.current) return;
+    if (
+      md === lastSavedMdRef.current &&
+      layoutEquals(layout, lastSavedLayoutRef.current)
+    ) {
+      return;
+    }
 
     // Bind this timer to the document that was active when the edit was made.
     // If the active document changes before the timer fires (e.g. the user
@@ -1372,7 +1496,7 @@ export function DocumentEditorController({
     }, AUTO_SAVE_DELAY_MS);
 
     return () => clearTimeout(timer);
-  }, [md]);
+  }, [md, layout]);
 
   /* ── Resync when active version changes (relay updates) ── */
   useEffect(() => {
@@ -1522,6 +1646,7 @@ export function DocumentEditorController({
     const createdAt = nextContentCreatedAt(prevAt);
     // KIND_FILE content is legacy Markdown; KIND_RICH_DOCUMENT content is the
     // versioned ProseMirror JSON envelope. Yjs is a live-only layer (not stored).
+    // Layout/styles live in the document's encrypted kind-34579 metadata.
     const encryptedContent = await encryptContent(content, viewKey);
     if (!encryptedContent) throw new Error("Encryption failed");
 
@@ -1612,6 +1737,9 @@ export function DocumentEditorController({
     }
     const address = `${KIND_RICH_DOCUMENT}:${pubkey}:${dTag}`;
     await saveSnapshotWithAddress(address, content, draftLocalOnly, KIND_RICH_DOCUMENT);
+    if (!layoutEquals(layout, DEFAULT_PAGE_LAYOUT)) {
+      await setDocLayout(address, layout);
+    }
     if (draftLocalOnly) markLocalOnly(address, true);
     setSelectedDocumentId(address);
     const naddr = nip19.naddrEncode({
@@ -1682,18 +1810,24 @@ export function DocumentEditorController({
     const contentChanged = isRichDocument
       ? contentToSave !== lastSavedContentRef.current
       : mdToSave !== lastSavedMdRef.current;
-    if (!contentChanged) return true;
+    const layoutChanged = !layoutEquals(layout, lastSavedLayoutRef.current);
+    if (!contentChanged && !layoutChanged) return true;
 
     setSaving(true);
     const prevSavedMd = lastSavedMdRef.current;
     const prevSavedContent = lastSavedContentRef.current;
+    const prevSavedLayout = lastSavedLayoutRef.current;
     lastSavedMdRef.current = mdToSave; // update before navigate() fires in saveNewDocument
     lastSavedContentRef.current = contentToSave;
+    // The navigation below is synchronous with the save; mark both saved now so
+    // the unsaved-changes blocker sees the page as saved.
+    lastSavedLayoutRef.current = layout;
     try {
       if (isDraft) {
         await saveNewDocument(contentToSave);
       } else {
-        await saveExistingDocument(selectedDocumentId!, contentToSave);
+        if (contentChanged) await saveExistingDocument(selectedDocumentId!, contentToSave);
+        if (layoutChanged) await setDocLayout(selectedDocumentId!, layout);
       }
       setLastSavedAt(new Date());
       setWasAutoSaved(silent);
@@ -1718,6 +1852,7 @@ export function DocumentEditorController({
     } catch (err) {
       lastSavedMdRef.current = prevSavedMd; // restore so unsaved indicator reappears
       lastSavedContentRef.current = prevSavedContent;
+      lastSavedLayoutRef.current = prevSavedLayout;
       console.error("Save failed:", err);
       setToast({
         open: true,
@@ -1762,10 +1897,7 @@ export function DocumentEditorController({
   /* ── Export helpers ──────────────────────────────────────── */
 
   const getDocTitle = () => {
-    const firstLine = mdRef.current.split("\n").find((l) => l.trim());
-    return firstLine
-      ? firstLine.replace(/^#+\s*/, "").trim().slice(0, 60) || "Untitled"
-      : "Untitled";
+    return heuristicTitle(mdRef.current, 60) || "Untitled";
   };
 
   const handleExportMarkdown = () => {
@@ -1775,7 +1907,7 @@ export function DocumentEditorController({
   const handleExportHtml = () => {
     if (!editor) return;
     const html = editor.getHTML();
-    void exportAsHtml(html, getDocTitle());
+    void exportAsHtml(html, getDocTitle(), layout);
   };
 
   const handleExportPlainText = () => {
@@ -1784,12 +1916,12 @@ export function DocumentEditorController({
 
   const handleExportPdf = () => {
     if (!editor) return;
-    void exportAsPdf(editor.getHTML(), getDocTitle());
+    void exportAsPdf(editor.getHTML(), getDocTitle(), layout);
   };
 
   const handleExportDoc = () => {
     if (!editor) return;
-    void exportAsDocx(editor.getHTML(), getDocTitle());
+    void exportAsDocx(editor.getHTML(), getDocTitle(), layout);
   };
 
   const handleFormCreated = (naddr: string, nkeys?: string) => {
@@ -2003,6 +2135,23 @@ export function DocumentEditorController({
               void textSuggest.updatePrefs({ ...textSuggest.prefs, enabled: next });
             }}
             onTextSuggestSettingsSaved={() => void textSuggest.reload()}
+            onOpenPageSetup={canEditLayout ? () => setPageSetupOpen(true) : undefined}
+            canvas={layout.canvas}
+            onToggleCanvas={
+              canEditLayout
+                ? () =>
+                    handleApplyLayout({
+                      ...layout,
+                      canvas: layout.canvas === "page" ? "notes" : "page",
+                    })
+                : undefined
+            }
+            baseFontFamily={layout.fontFamily}
+            onBaseFontChange={
+              canEditLayout
+                ? (family) => handleApplyLayout({ ...layout, fontFamily: family })
+                : undefined
+            }
             proofreadDocumentLength={md.length}
             proofreadStatus={textSuggest.proofreadStatus}
             onProofread={handleProofread}
@@ -2038,6 +2187,7 @@ export function DocumentEditorController({
           <DocEditorSurface
             value={md}
             editor={editor}
+            layout={layout}
             mode={mode}
             onChange={(value) => {
               // Used by the split-mode markdown textarea
@@ -2324,6 +2474,13 @@ export function DocumentEditorController({
         onPick={handleFormCreated}
       />
 
+      <PageSetupDialog
+        open={pageSetupOpen}
+        layout={layout}
+        onClose={() => setPageSetupOpen(false)}
+        onSave={handleApplyLayout}
+      />
+
       <PublishArticleDialog
         open={publishTarget !== null}
         target={publishTarget ?? "longform"}
@@ -2393,6 +2550,7 @@ export function DocumentEditorController({
                 mode,
                 createdAt,
                 target.kind,
+                layout,
               );
               // Register the viewKey+version locally right away so this session's
               // live/hydration paths decrypt the owner's own viewKey-encrypted
@@ -2408,6 +2566,7 @@ export function DocumentEditorController({
               // intercept the navigation.
               lastSavedMdRef.current = md;
               lastSavedContentRef.current = shareContent;
+              lastSavedLayoutRef.current = layout;
               setLastSavedAt(new Date());
               const naddr = nip19.naddrEncode({
                 kind: target.kind,
@@ -2437,6 +2596,7 @@ export function DocumentEditorController({
             editKey,
             blossomServers,
             history?.versions.at(-1)?.event.created_at ?? 0,
+            layout,
           );
 
           const sharedDocTag = [
@@ -2471,7 +2631,8 @@ export function DocumentEditorController({
             // this navigation, and if the user picks "stay" the session
             // never adopts the viewKey and the next save silently breaks the
             // link that was just handed out.
-            lastSavedMdRef.current = md;
+            lastSavedMdRef.current = mdRef.current;
+            lastSavedLayoutRef.current = layout;
             setLastSavedAt(new Date());
             const [kind, pubkey, identifier] = result.address.split(":");
             const naddr = nip19.naddrEncode({

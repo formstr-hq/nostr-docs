@@ -32,12 +32,16 @@ import { authorSet, collabRoom, fetchRoster, isOpenRoster, parseRootAddress } fr
 import { saveFontResource } from "../lib/fontStore";
 import { registerFontFaceFromBlob } from "../lib/fontRegister";
 import { sha256Hex } from "../utils/fileEncryption";
+import type { JSONContent } from "@tiptap/core";
 import { serializeRichDocument } from "../lib/documentFormat";
 import { markdownToRichDocument } from "../lib/markdownToDocument";
+import { extractLegacyLayout, type PageLayout } from "../lib/docLayout";
 
 type DocumentVersion = {
   event: Event;
   decryptedContent: string;
+  /** Layout recovered from the short-lived in-content format, pending migration. */
+  legacyLayout?: PageLayout;
 };
 
 type DocumentHistory = {
@@ -76,7 +80,7 @@ interface DocumentContextValue {
    */
   addImportedDocument: (
     markdown: string,
-    options?: { publish?: boolean },
+    options?: { publish?: boolean; doc?: JSONContent },
   ) => Promise<string>;
 
   removeDocument: (id: string) => void;
@@ -325,8 +329,10 @@ export const DocumentProvider: React.FC<{ children: React.ReactNode }> = ({
         }
       }
 
-      const decryptedContent = await getDecryptedContent(document, viewKey);
-      if (!decryptedContent) return;
+      const plaintext = await getDecryptedContent(document, viewKey);
+      if (!plaintext) return;
+      const legacy = extractLegacyLayout(plaintext);
+      const decryptedContent = legacy.markdown;
 
       setDocuments((prev) => {
         const next = new Map(prev);
@@ -353,6 +359,7 @@ export const DocumentProvider: React.FC<{ children: React.ReactNode }> = ({
           {
             event: document,
             decryptedContent,
+            ...(legacy.layout ? { legacyLayout: legacy.layout } : {}),
           },
         ].sort((a, b) => a.event.created_at - b.event.created_at);
 
@@ -448,7 +455,7 @@ export const DocumentProvider: React.FC<{ children: React.ReactNode }> = ({
   const addImportedDocument = useCallback(
     async (
       markdown: string,
-      options?: { publish?: boolean },
+      options?: { publish?: boolean; doc?: JSONContent },
     ): Promise<string> => {
       const publish = options?.publish ?? true;
       const signer = await signerManager.getSigner();
@@ -458,9 +465,10 @@ export const DocumentProvider: React.FC<{ children: React.ReactNode }> = ({
       const dTag = makeTag(6);
       const address = `${KIND_RICH_DOCUMENT}:${pubkey}:${dTag}`;
 
-      // Markdown is an import adapter: parse it into the canonical rich model
-      // before it is stored. Nothing writes Markdown into the new kind.
-      const canonicalContent = serializeRichDocument(markdownToRichDocument(markdown));
+      // Markdown/DOCX are import adapters: parse them into the canonical rich
+      // model before they are stored. Nothing writes Markdown into the new kind.
+      const canonicalDoc = options?.doc ?? markdownToRichDocument(markdown);
+      const canonicalContent = serializeRichDocument(canonicalDoc);
       const encryptedContent = await encryptContent(canonicalContent);
       const createdAt = Math.floor(Date.now() / 1000);
 
