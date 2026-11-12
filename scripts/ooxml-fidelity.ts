@@ -1,5 +1,6 @@
 import { readFileSync } from "node:fs";
 import { basename, join } from "node:path";
+import { DEFAULT_PAGE_LAYOUT } from "../src/lib/docLayout";
 import { DocxPackage } from "../src/lib/ooxml/package";
 import {
   parseDocumentXml,
@@ -9,6 +10,7 @@ import {
   type OoxmlParagraph,
   type OoxmlTable,
 } from "../src/lib/ooxml/body";
+import { pageSetupToLayout, parsePageSetup } from "../src/lib/ooxml/sections";
 
 const fixtureDir = join(process.cwd(), "tests/fixtures/docx");
 const fixtures = ["letterhead.docx", "report.docx", "resume-sidebar.docx"];
@@ -89,6 +91,12 @@ for (const fixture of fixtures) {
   );
   console.log(
     `package (no edits): ${noEditDiffs.length === 0 ? "LOSSLESS" : `CHANGED ${noEditDiffs.join(", ")}`}`,
+  );
+
+  const setup = await parsePageSetup(pkg);
+  const layout = pageSetupToLayout(setup, DEFAULT_PAGE_LAYOUT);
+  console.log(
+    `page: ${layout.pageSize} ${layout.orientation} margins=${JSON.stringify(layout.margins)} header=${JSON.stringify(layout.header ?? null)} footer=${JSON.stringify(layout.footer ?? null)}`,
   );
 
   let editableParagraph: OoxmlParagraph | undefined = parsed.blocks.find(

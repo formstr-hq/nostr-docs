@@ -18,10 +18,14 @@ DOCX package -> OOXML body AST -> rich document nodes
 - `xml.ts` — namespace-aware XML helpers built on `@xmldom/xmldom`.
 - `body.ts` — parses `word/document.xml` into editable paragraphs and simple
   tables while keeping unsupported blocks as opaque raw XML.
+- `sections.ts` — parses `w:sectPr`, page size/margins and the referenced
+  header/footer parts; projects them into the app's `PageLayout` (the raw parts
+  stay in the package).
 - `scripts/ooxml-fidelity.ts` — round-trip harness:
   - package parts are preserved
   - `document.xml` round-trips without edits
   - editing paragraph text and table-cell text works
+  - page size, margins, header and footer text are reported
   - other package parts stay byte-identical after an edit
 
 Run it with:
@@ -51,9 +55,9 @@ This gives us a lossless floor while the editable surface grows.
 
 1. Merged cells and complex/nested tables.
 2. Images → editor image nodes, with relationship/media preservation.
-3. Sections and page setup: `w:sectPr`, page size, margins, headers/footers.
+3. Field results and page numbers in headers/footers (`w:fldChar`/`w:instrText`).
 4. Footnotes/endnotes, comments and tracked changes as explicit sidecars.
-5. Fields, floating objects and content controls.
+5. Floating objects and content controls.
 6. Rich → OOXML writer for edited structured nodes, then swap the import path
    from Mammoth to this adapter and remove Mammoth.
 
