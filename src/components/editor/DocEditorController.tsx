@@ -132,6 +132,11 @@ import {
   layoutEquals,
   type PageLayout,
 } from "../../lib/docLayout";
+import {
+  loadPageViewMode,
+  savePageViewMode,
+  type PageViewMode,
+} from "../../lib/pageViewMode";
 
 // Delay after the last edit before auto-save fires (ms)
 const AUTO_SAVE_DELAY_MS = 30_000;
@@ -419,6 +424,15 @@ export function DocumentEditorController({
   // Layout changes are rare but must still mark the page dirty and trigger a
   // save (the Markdown body alone is unchanged when only page setup changes).
   const [pageSetupOpen, setPageSetupOpen] = useState(false);
+  const [pageViewMode, setPageViewMode] = useState<PageViewMode>(loadPageViewMode);
+  const togglePageViewMode = () => {
+    setPageViewMode((current) => {
+      const next: PageViewMode =
+        current === "fixed" ? "responsive" : "fixed";
+      savePageViewMode(next);
+      return next;
+    });
+  };
   const [mode, setMode] = useState<EditorMode>(
     isViewOnly || !isDraft ? "preview" : "edit",
   );
@@ -2146,6 +2160,8 @@ export function DocumentEditorController({
                     })
                 : undefined
             }
+            pageViewMode={pageViewMode}
+            onTogglePageViewMode={togglePageViewMode}
             baseFontFamily={layout.fontFamily}
             onBaseFontChange={
               canEditLayout
@@ -2188,6 +2204,7 @@ export function DocumentEditorController({
             value={md}
             editor={editor}
             layout={layout}
+            viewMode={pageViewMode}
             mode={mode}
             onChange={(value) => {
               // Used by the split-mode markdown textarea

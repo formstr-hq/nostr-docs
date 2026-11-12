@@ -20,7 +20,9 @@ import UploadFileOutlinedIcon from "@mui/icons-material/UploadFileOutlined";
 import DeleteOutlineIcon from "@mui/icons-material/DeleteOutline";
 import { useNavigate } from "react-router-dom";
 import { useDocumentContext } from "../contexts/DocumentContext";
+import { useDocMetadata } from "../contexts/DocMetadataContext";
 import { useUser } from "../contexts/UserContext";
+import { DEFAULT_PAGE_LAYOUT } from "../lib/docLayout";
 import { readImportFiles, type ImportEntry } from "../utils/importPages";
 
 /**
@@ -38,6 +40,7 @@ export default function ImportPagesDialog({
 }) {
   const { user } = useUser();
   const { addImportedDocument } = useDocumentContext();
+  const { setDocLayout } = useDocMetadata();
   const navigate = useNavigate();
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -100,7 +103,22 @@ export default function ImportPagesDialog({
 
     for (const entry of entries) {
       try {
-        await addImportedDocument(entry.markdown, { publish: publishToRelays, doc: entry.doc });
+        const address = await addImportedDocument(entry.markdown, {
+          publish: publishToRelays,
+          doc: entry.doc,
+        });
+        if (entry.kind === "docx" && publishToRelays) {
+          try {
+            await setDocLayout(address, {
+              ...DEFAULT_PAGE_LAYOUT,
+              canvas: "page",
+              pageSize: "Letter",
+              margins: { top: 1, right: 1, bottom: 1, left: 1 },
+            });
+          } catch (layoutError) {
+            console.warn("Imported DOCX but could not set page layout:", layoutError);
+          }
+        }
         ok += 1;
       } catch (err) {
         console.error("Failed to import page:", entry.source, err);

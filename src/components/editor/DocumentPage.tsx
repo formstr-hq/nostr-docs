@@ -7,6 +7,7 @@ import {
   type PageHeaderFooter,
   type PageLayout,
 } from "../../lib/docLayout";
+import type { PageViewMode } from "../../lib/pageViewMode";
 
 function HeaderFooter({
   slots,
@@ -63,10 +64,12 @@ function contentStyle(layout: PageLayout) {
 
 export function DocumentPage({
   layout,
+  viewMode,
   children,
   contentRef,
 }: {
   layout: PageLayout;
+  viewMode: PageViewMode;
   children: React.ReactNode;
   contentRef?: React.Ref<HTMLDivElement>;
 }) {
@@ -105,17 +108,33 @@ export function DocumentPage({
 
   // ── Page canvas: paginated document / letterhead / resume ──
   const dims = getPageDimensions(layout);
+  const isFixed = viewMode === "fixed";
   const margin = (inches: number) => ({
     xs: `${Math.max(16, Math.round(inches * 96 * 0.5))}px`,
     sm: `${Math.max(16, Math.round(inches * 96))}px`,
   });
+  const fixedMargin = (inches: number) => `${Math.max(0, Math.round(inches * 96))}px`;
+  const pagePadding = isFixed
+    ? {
+        pt: fixedMargin(layout.margins.top),
+        pr: fixedMargin(layout.margins.right),
+        pb: fixedMargin(layout.margins.bottom),
+        pl: fixedMargin(layout.margins.left),
+      }
+    : {
+        pt: margin(layout.margins.top),
+        pr: margin(layout.margins.right),
+        pb: margin(layout.margins.bottom),
+        pl: margin(layout.margins.left),
+      };
 
   return (
     <Box
       sx={{
         display: "flex",
-        justifyContent: "center",
+        justifyContent: isFixed ? "safe center" : "center",
         width: "100%",
+        overflowX: isFixed ? "auto" : "visible",
         py: { xs: 1, sm: 2 },
         px: { xs: 0.5, sm: 2 },
         bgcolor: isDark ? "rgba(0,0,0,0.22)" : "rgba(0,0,0,0.045)",
@@ -123,9 +142,12 @@ export function DocumentPage({
     >
       <Box
         data-pages-page
+        data-layout-mode={viewMode}
         sx={{
           width: `${dims.widthPx}px`,
-          maxWidth: "100%",
+          minWidth: isFixed ? `${dims.widthPx}px` : undefined,
+          maxWidth: isFixed ? "none" : "100%",
+          flexShrink: 0,
           minHeight: `${dims.heightPx}px`,
           boxSizing: "border-box",
           display: "flex",
@@ -136,10 +158,7 @@ export function DocumentPage({
           boxShadow: isDark
             ? "0 10px 32px rgba(0,0,0,0.45)"
             : "0 10px 32px rgba(15, 23, 42, 0.12)",
-          pt: margin(layout.margins.top),
-          pr: margin(layout.margins.right),
-          pb: margin(layout.margins.bottom),
-          pl: margin(layout.margins.left),
+          ...pagePadding,
           ...typography,
           "& h1, & h2, & h3, & h4": { color: "inherit" },
         }}

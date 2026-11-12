@@ -20,6 +20,7 @@ type Props = {
   value: string;
   editor: Editor | null;
   layout: PageLayout;
+  viewMode: "fixed" | "responsive";
   mode: "edit" | "preview" | "split";
   onChange: (value: string) => void;
   onToggleMode: () => void;
@@ -99,8 +100,7 @@ const markdownSxBase = {
   "& [data-column]": { minWidth: 0 },
   "@media (max-width: 700px)": {
     "& [data-columns]": {
-      gridTemplateColumns: "minmax(0, 1fr)",
-      gap: "1rem",
+      gap: "0.9rem",
     },
   },
 };
@@ -156,6 +156,7 @@ export function DocEditorSurface({
   value,
   editor,
   layout,
+  viewMode,
   mode,
   onChange,
   onToggleMode,
@@ -196,6 +197,7 @@ export function DocEditorSurface({
       <Box sx={{ display: "flex", flex: 1, overflow: "hidden", bgcolor: "background.default" }}>
         <Box
           onClick={handleHighlightClick}
+          className="pages-preview"
           sx={{
             flex: 1,
             overflowY: "auto",
@@ -218,7 +220,7 @@ export function DocEditorSurface({
             </Fab>
           )}
 
-          <DocumentPage layout={layout} contentRef={previewRef}>
+          <DocumentPage layout={layout} viewMode={viewMode} contentRef={previewRef}>
             {value.trim() ? (
               // Keyed by content: applyDomHighlights mutates this rendered DOM
               // (splitting text nodes and wrapping them in highlight spans), so
@@ -286,6 +288,7 @@ export function DocEditorSurface({
       <Box sx={{ display: "flex", flex: 1, overflow: "hidden", bgcolor: "background.default" }}>
         {markdownPane}
         <Box
+          className="pages-preview"
           sx={{
             flex: 1,
             overflowY: "auto",
@@ -295,7 +298,7 @@ export function DocEditorSurface({
             color: theme.palette.text.primary,
           }}
         >
-          <DocumentPage layout={layout}>
+          <DocumentPage layout={layout} viewMode={viewMode}>
             {value.trim() ? (
               <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeRaw]} components={markdownComponents}>{value}</ReactMarkdown>
             ) : (
@@ -323,7 +326,7 @@ export function DocEditorSurface({
         sx={{ flex: 1, overflowY: "auto", pb: { xs: 12, sm: 8 }, cursor: "text" }}
         onClick={handleEditorClick}
       >
-        <DocumentPage layout={layout}>
+        <DocumentPage layout={layout} viewMode={viewMode}>
           <EditorContent editor={editor} />
         </DocumentPage>
         {commentsEnabled && (

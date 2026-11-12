@@ -28,4 +28,24 @@ test("rich resume template keeps its two-column sidebar", async ({ page }) => {
 
   await expect(page.locator("[data-columns]")).toBeVisible({ timeout: 20_000 });
   await expect(page.getByText("Skills", { exact: true })).toBeVisible();
+
+  // The sidebar must not collapse into a single column on a narrow window in
+  // fixed-page mode; responsive mode may reflow it.
+  await page.setViewportSize({ width: 640, height: 900 });
+  await page.waitForTimeout(500);
+  const columnsCount = async () =>
+    page
+      .locator("[data-columns]")
+      .first()
+      .evaluate((el) => getComputedStyle(el).gridTemplateColumns.split(" ").length);
+
+  expect(await columnsCount()).toBeGreaterThan(1);
+
+  await page.getByRole("button", { name: "Switch to responsive layout" }).click();
+  await page.waitForTimeout(400);
+  expect(await columnsCount()).toBe(1);
+
+  await page.getByRole("button", { name: "Switch to fixed page layout" }).click();
+  await page.waitForTimeout(400);
+  expect(await columnsCount()).toBeGreaterThan(1);
 });

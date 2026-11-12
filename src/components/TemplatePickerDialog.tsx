@@ -102,7 +102,9 @@ function MiniPreview({ template }: { template?: DocumentTemplate }) {
               gap: 0.45,
               borderLeft: "1px solid",
               borderColor: (theme) => alpha(theme.palette.text.primary, 0.1),
-              pl: 0.6,
+              bgcolor: (theme) => alpha(theme.palette.text.primary, 0.04),
+              borderRadius: 0.5,
+              p: 0.45,
               minWidth: 0,
             }}
           >

@@ -29,6 +29,7 @@ import SmartphoneIcon from "@mui/icons-material/Smartphone";
 import ChatBubbleOutlineIcon from "@mui/icons-material/ChatBubbleOutline";
 import FullscreenExitIcon from "@mui/icons-material/FullscreenExit";
 import CropFreeIcon from "@mui/icons-material/CropFree";
+import FitScreenIcon from "@mui/icons-material/FitScreen";
 import HistoryIcon from "@mui/icons-material/History";
 import type { Event } from "nostr-tools";
 import RelayPresenceIndicator from "../RelayPresenceIndicator";
@@ -166,6 +167,8 @@ type Props = {
   onOpenPageSetup?: () => void;
   canvas?: "notes" | "page";
   onToggleCanvas?: () => void;
+  pageViewMode?: "fixed" | "responsive";
+  onTogglePageViewMode?: () => void;
   baseFontFamily?: string;
   onBaseFontChange?: (family: string) => void;
   proofreadDocumentLength?: number;
@@ -210,6 +213,8 @@ export function EditorToolbar({
   onOpenPageSetup,
   canvas = "notes",
   onToggleCanvas,
+  pageViewMode = "fixed",
+  onTogglePageViewMode,
   baseFontFamily = "Inter",
   onBaseFontChange,
   proofreadDocumentLength = 0,
@@ -470,6 +475,33 @@ export function EditorToolbar({
             </Tooltip>
           )}
 
+          {canvas === "page" && onTogglePageViewMode && (
+            <Tooltip
+              title={
+                pageViewMode === "fixed"
+                  ? "Switch to responsive layout"
+                  : "Switch to fixed page layout"
+              }
+            >
+              <IconButton
+                size="small"
+                aria-label={
+                  pageViewMode === "fixed"
+                    ? "Switch to responsive layout"
+                    : "Switch to fixed page layout"
+                }
+                onClick={onTogglePageViewMode}
+                sx={{ display: { xs: "none", sm: "inline-flex" }, color: "text.secondary", p: 0.6 }}
+              >
+                {pageViewMode === "fixed" ? (
+                  <FitScreenIcon sx={{ fontSize: 19 }} />
+                ) : (
+                  <CropFreeIcon sx={{ fontSize: 19 }} />
+                )}
+              </IconButton>
+            </Tooltip>
+          )}
+
           {onOpenPageSetup && (
             <Tooltip title="Page setup">
               <IconButton
@@ -692,6 +724,37 @@ export function EditorToolbar({
                     canvas === "page"
                       ? "Continuous, borderless canvas"
                       : "Paginated document canvas"
+                  }
+                  primaryTypographyProps={{ fontSize: "0.84rem", fontWeight: 500 }}
+                  secondaryTypographyProps={{ sx: { fontSize: "0.72rem" } }}
+                />
+              </MenuItem>
+            )}
+
+            {canvas === "page" && onTogglePageViewMode && (
+              <MenuItem
+                onClick={() => {
+                  onTogglePageViewMode();
+                  setMenuAnchor(null);
+                }}
+              >
+                <ListItemIcon>
+                  {pageViewMode === "fixed" ? (
+                    <FitScreenIcon fontSize="small" />
+                  ) : (
+                    <CropFreeIcon fontSize="small" />
+                  )}
+                </ListItemIcon>
+                <ListItemText
+                  primary={
+                    pageViewMode === "fixed"
+                      ? "Responsive layout"
+                      : "Fixed page layout"
+                  }
+                  secondary={
+                    pageViewMode === "fixed"
+                      ? "Reflow to the viewport width"
+                      : "Preserve page geometry and scroll horizontally"
                   }
                   primaryTypographyProps={{ fontSize: "0.84rem", fontWeight: 500 }}
                   secondaryTypographyProps={{ sx: { fontSize: "0.72rem" } }}
