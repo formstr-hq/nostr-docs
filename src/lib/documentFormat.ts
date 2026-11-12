@@ -125,6 +125,11 @@ function inlineToMarkdown(node: JSONContent): string {
         case "link":
           text = `[${text}](${mark.attrs?.href ?? ""})`;
           break;
+        case "textStyle":
+          if (mark.attrs?.color) {
+            text = `<span style="color: ${mark.attrs.color}">${text}</span>`;
+          }
+          break;
         default:
           break;
       }

@@ -89,7 +89,7 @@ export function DocumentPage({
       <Box
         sx={{
           display: "flex",
-          justifyContent: "center",
+          justifyContent: { xs: "center", md: "flex-start" },
           width: "100%",
           py: { xs: 2, sm: 3 },
           px: { xs: 2, sm: 3 },
@@ -101,7 +101,7 @@ export function DocumentPage({
           ref={contentRef}
           sx={{
             width: "100%",
-            maxWidth: 760,
+            maxWidth: 820,
             color: "text.primary",
             ...typography,
           }}

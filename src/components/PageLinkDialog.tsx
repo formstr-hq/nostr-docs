@@ -2,7 +2,6 @@ import { useMemo, useState } from "react";
 import {
   Box,
   Button,
-  Chip,
   CircularProgress,
   Dialog,
   DialogActions,
@@ -25,7 +24,6 @@ import { heuristicTitle } from "../lib/docSearch";
 interface PageItem {
   address: string;
   title: string;
-  kind: number;
 }
 
 /**
@@ -65,7 +63,6 @@ export function PageLinkDialog({
       list.push({
         address,
         title,
-        kind: Number(address.split(":")[0]),
       });
     }
     return list.sort((a, b) => a.title.localeCompare(b.title));
@@ -152,18 +149,7 @@ export function PageLinkDialog({
               >
                 <ListItemText
                   primary={item.title}
-                  secondary={item.address}
                   primaryTypographyProps={{ fontSize: "0.88rem", fontWeight: 600 }}
-                  secondaryTypographyProps={{
-                    fontSize: "0.68rem",
-                    noWrap: true,
-                    sx: { fontFamily: "monospace" },
-                  }}
-                />
-                <Chip
-                  label={item.kind === 33458 ? "rich" : "legacy"}
-                  size="small"
-                  sx={{ height: 18, fontSize: "0.6rem" }}
                 />
               </ListItemButton>
             ))

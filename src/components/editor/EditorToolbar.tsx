@@ -174,6 +174,7 @@ type Props = {
   onBaseFontChange?: (family: string) => void;
   accentColor?: string;
   onAccentColorChange?: (color: string) => void;
+  onTextColorChange?: (color: string) => void;
   proofreadDocumentLength?: number;
   proofreadStatus?: ProofreadStatus;
   onProofread?: (instruction: string) => Promise<void>;
@@ -223,6 +224,7 @@ export function EditorToolbar({
   onBaseFontChange,
   accentColor = "#2563EB",
   onAccentColorChange,
+  onTextColorChange,
   proofreadDocumentLength = 0,
   proofreadStatus = { kind: "idle" },
   onProofread,
@@ -351,6 +353,13 @@ export function EditorToolbar({
     editor,
     selector: ({ editor: e }) => e?.isActive("table") ?? false,
   });
+  const activeTextColor =
+    useEditorState({
+      editor,
+      selector: ({ editor: e }) =>
+        (e?.getAttributes("textStyle").color as string | undefined) ??
+        "#111827",
+    }) || "#111827";
   const activeFontFamily = baseFontFamily;
   const fontOptions = activeFontFamily && !availableFonts.includes(activeFontFamily)
     ? [...availableFonts, activeFontFamily]
@@ -1207,6 +1216,34 @@ export function EditorToolbar({
                     type="color"
                     value={accentColor}
                     onChange={(e) => onAccentColorChange(e.target.value)}
+                    style={{ display: "none" }}
+                  />
+                </IconButton>
+              </Tooltip>
+            )}
+
+            {onTextColorChange && (
+              <Tooltip title="Text colour (selection)">
+                <IconButton
+                  component="label"
+                  size="small"
+                  aria-label="Text colour"
+                  sx={{ p: 0.6 }}
+                >
+                  <Box
+                    sx={{
+                      fontWeight: 800,
+                      fontSize: 16,
+                      lineHeight: 1,
+                      color: activeTextColor,
+                    }}
+                  >
+                    A
+                  </Box>
+                  <input
+                    type="color"
+                    value={activeTextColor}
+                    onChange={(e) => onTextColorChange(e.target.value)}
                     style={{ display: "none" }}
                   />
                 </IconButton>

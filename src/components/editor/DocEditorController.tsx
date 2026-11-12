@@ -34,7 +34,7 @@ import {
 } from "@tiptap/pm/model";
 import { closeHistory } from "@tiptap/pm/history";
 import StarterKit from "@tiptap/starter-kit";
-import { TextStyle, FontSize, LineHeight, Color } from "@tiptap/extension-text-style";
+import { TextStyle, FontSize, LineHeight } from "@tiptap/extension-text-style";
 import { FontFamily } from "@tiptap/extension-font-family";
 import TextAlign from "@tiptap/extension-text-align";
 import { Markdown } from "tiptap-markdown";
@@ -46,6 +46,7 @@ import { TableRow } from "@tiptap/extension-table-row";
 import { TableHeader } from "@tiptap/extension-table-header";
 import { TableCell } from "@tiptap/extension-table-cell";
 import { Columns, Column } from "./extensions/Columns";
+import { MarkdownColor } from "./extensions/MarkdownColor";
 import { EncryptedFileNode } from "./extensions/EncryptedFileNode";
 import { CommentHighlight } from "./extensions/CommentHighlight";
 import { FormNode } from "./extensions/FormNode";
@@ -939,7 +940,7 @@ Date: ${date} · Mood: ____
       // stay registered so older documents parse and round-trip unchanged.
       FontSize,
       LineHeight,
-      Color,
+      MarkdownColor,
       TextAlign.configure({ types: ["heading", "paragraph"] }),
       // html: true so <encrypted-file> tags round-trip through markdown storage.
       // transformPastedText: plain-text clipboard content (no text/html, e.g.
@@ -2114,6 +2115,21 @@ Date: ${date} · Mood: ____
     await createLinkedPage(editor, title, `# ${title}\n\n`);
   };
 
+  const handleTextColorChange = (color: string) => {
+    if (!editor) return;
+    const { selection } = editor.state;
+    if (selection.empty) {
+      const { $from } = selection;
+      const from = $from.start();
+      const to = $from.end();
+      if (to > from) {
+        editor.chain().focus().setTextSelection({ from, to }).setColor(color).run();
+        return;
+      }
+    }
+    editor.chain().focus().setColor(color).run();
+  };
+
   /* Build a FormsSigner adapter from the app's signerManager */
   const formsSigner: FormsSigner | null = user
     ? {
@@ -2338,6 +2354,7 @@ Date: ${date} · Mood: ____
             }
             accentColor={accentColor}
             onAccentColorChange={canEditLayout ? handleAccentColorChange : undefined}
+            onTextColorChange={!isViewOnly ? handleTextColorChange : undefined}
             proofreadDocumentLength={md.length}
             proofreadStatus={textSuggest.proofreadStatus}
             onProofread={handleProofread}

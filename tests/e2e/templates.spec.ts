@@ -79,6 +79,45 @@ test("accent colour can be changed from the toolbar", async ({ page }) => {
   expect(color).toBe("rgb(239, 68, 68)");
 });
 
+test("text colour applies to a single heading and survives reload", async ({ page }) => {
+  await loginAsGuest(page);
+  await page.getByRole("button", { name: "All pages" }).click();
+  await page.getByRole("button", { name: "New page" }).first().click();
+  const dialog = page.getByRole("dialog").filter({ hasText: "Start a new page" });
+  await dialog.getByRole("button", { name: "Start with Resume", exact: true }).click();
+  await page.waitForTimeout(500);
+
+  await page.getByText("Summary", { exact: true }).click();
+  const colorInput = page
+    .getByRole("button", { name: "Text colour" })
+    .locator('input[type="color"]');
+  await colorInput.evaluate((element) => {
+    const input = element as HTMLInputElement;
+    const setter = Object.getOwnPropertyDescriptor(
+      HTMLInputElement.prototype,
+      "value",
+    )?.set;
+    setter?.call(input, "#ef4444");
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+    input.dispatchEvent(new Event("change", { bubbles: true }));
+  });
+  await page.waitForTimeout(400);
+
+  const headingColor = async () =>
+    page
+      .locator("[data-pages-page] h2 span")
+      .first()
+      .evaluate((element) => getComputedStyle(element).color);
+  expect(await headingColor()).toBe("rgb(239, 68, 68)");
+
+  await page.getByRole("button", { name: "Save", exact: true }).click();
+  await expect(page.getByText("Saved", { exact: true })).toBeVisible({ timeout: 20_000 });
+  await page.reload();
+  await unlockAfterReload(page);
+
+  expect(await headingColor()).toBe("rgb(239, 68, 68)");
+});
+
 test("all starter templates open with their starter content", async ({ page }) => {
   page.on("dialog", (dialog) => void dialog.accept());
   await loginAsGuest(page);
