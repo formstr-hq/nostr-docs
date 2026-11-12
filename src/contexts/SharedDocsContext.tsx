@@ -15,7 +15,12 @@ import {
   type Event,
 } from "nostr-tools";
 import { hexToBytes } from "nostr-tools/utils";
-import { saveLocalDocState, loadAllLocalEvents, type LocalStoredEvent } from "../lib/localStore";
+import {
+  saveLocalDocState,
+  loadAllLocalEvents,
+  clearVisitedFlag,
+  type LocalStoredEvent,
+} from "../lib/localStore";
 import { KIND_FILE } from "../nostr/kinds";
 import { fetchAllDocMetadata, saveDocMetadata } from "../nostr/docMetadata";
 import { subscribe, resolveEventsByAddress, cacheLocalEvents, type Subscription } from "../dataLayer";
@@ -62,7 +67,7 @@ export const SharedPagesProvider: React.FC<{ children: React.ReactNode }> = ({
 }) => {
   const { relays } = useRelays();
   const { user } = useUser();
-  const { addDocument } = useDocumentContext();
+  const { addDocument, unmarkVisited } = useDocumentContext();
   const [sharedDocs, setSharedDocs] = useState<string[][]>([]);
   const [loading, setLoading] = useState(true);
   const [sharedDocuments, setSharedDocuments] = useState<
@@ -253,6 +258,22 @@ export const SharedPagesProvider: React.FC<{ children: React.ReactNode }> = ({
       fetchSharedDocuments(shared, pubkey).catch((err) =>
         console.error("Failed to subscribe to shared pages:", err),
       );
+
+      // A page in the user's Shared list is never a "visited" page. Earlier
+      // builds flagged some shared pages visited when they were reopened, which
+      // hides them from the local Shared list on startup. Clear the stale flag
+      // so they load from the local copy again.
+      try {
+        const localEntries = await loadAllLocalEvents();
+        for (const entry of localEntries) {
+          if (!entry.visited) continue;
+          if (!shared.some((s) => matchAddress(s[0], entry.address))) continue;
+          await clearVisitedFlag(entry.address);
+          unmarkVisited(entry.address);
+        }
+      } catch {
+        // local store unavailable — nothing to repair
+      }
     } catch (err) {
       console.error("Failed to fetch shared pages:", err);
     } finally {
