@@ -24,6 +24,7 @@ export const OoxmlBlock = Node.create({
   },
 
   renderHTML({ HTMLAttributes }) {
+    const label = String(HTMLAttributes.label ?? "Word content");
     return [
       "div",
       mergeAttributes(HTMLAttributes, {
@@ -33,7 +34,9 @@ export const OoxmlBlock = Node.create({
       [
         "div",
         { class: "ooxml-block-label" },
-        `Word content preserved: ${HTMLAttributes.label}`,
+        label === "Word content"
+          ? "Word content preserved"
+          : `Word content preserved: ${label}`,
       ],
       [
         "div",

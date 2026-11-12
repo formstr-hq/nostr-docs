@@ -70,8 +70,14 @@ function tableNode(table: OoxmlTable): JSONContent {
 }
 
 function rawLabel(xml: string): string {
+  if (
+    /<w:drawing[\s>]|<w:pict[\s>]|<mc:AlternateContent[\s>]|v:shape[\s>]|wps:wsp[\s>]/.test(
+      xml,
+    )
+  ) {
+    return "image or drawing";
+  }
   if (/<w:tbl[\s>]/.test(xml)) return "table";
-  if (/<w:drawing[\s>]|<w:pict[\s>]/.test(xml)) return "image or drawing";
   if (/<w:footnoteReference[\s>]/.test(xml)) return "footnote";
   if (/<w:commentReference[\s>]/.test(xml)) return "comment";
   if (/<w:ins[\s>]|<w:del[\s>]/.test(xml)) return "tracked change";
