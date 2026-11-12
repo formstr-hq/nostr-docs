@@ -80,7 +80,7 @@ interface DocumentContextValue {
    */
   addImportedDocument: (
     markdown: string,
-    options?: { publish?: boolean; doc?: JSONContent },
+    options?: { publish?: boolean; doc?: JSONContent; package?: string },
   ) => Promise<string>;
 
   removeDocument: (id: string) => void;
@@ -455,7 +455,7 @@ export const DocumentProvider: React.FC<{ children: React.ReactNode }> = ({
   const addImportedDocument = useCallback(
     async (
       markdown: string,
-      options?: { publish?: boolean; doc?: JSONContent },
+      options?: { publish?: boolean; doc?: JSONContent; package?: string },
     ): Promise<string> => {
       const publish = options?.publish ?? true;
       const signer = await signerManager.getSigner();
@@ -468,7 +468,10 @@ export const DocumentProvider: React.FC<{ children: React.ReactNode }> = ({
       // Markdown/DOCX are import adapters: parse them into the canonical rich
       // model before they are stored. Nothing writes Markdown into the new kind.
       const canonicalDoc = options?.doc ?? markdownToRichDocument(markdown);
-      const canonicalContent = serializeRichDocument(canonicalDoc);
+      const canonicalContent = serializeRichDocument(
+        canonicalDoc,
+        options?.package,
+      );
       const encryptedContent = await encryptContent(canonicalContent);
       const createdAt = Math.floor(Date.now() / 1000);
 

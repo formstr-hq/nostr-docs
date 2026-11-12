@@ -254,6 +254,33 @@
   }
 }
 
+/* ── Opaque OOXML blocks (preserved Word content) ─────────── */
+.ooxml-block,
+[data-ooxml-block] {
+  border: 1px dashed rgba(128, 128, 128, 0.45);
+  border-radius: 6px;
+  padding: 10px 12px;
+  margin: 1em 0;
+  background: rgba(128, 128, 128, 0.04);
+}
+.ooxml-block-label,
+[data-ooxml-block]:empty::before {
+  display: block;
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: inherit;
+  opacity: 0.75;
+}
+[data-ooxml-block]:empty::before {
+  content: "Word content preserved";
+}
+.ooxml-block-hint {
+  display: block;
+  margin-top: 4px;
+  font-size: 0.7rem;
+  opacity: 0.55;
+}
+
 /* ── Table styles ─────────────────────────────────────────── */
 /* TipTap wraps tables in .tableWrapper for overflow scrolling on mobile */
 .tiptap .tableWrapper {

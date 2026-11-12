@@ -10,6 +10,7 @@ import {
   queryLocalRelay,
   publishToLocalRelay,
   closeShareDialog,
+  showWorkspaceSidebar,
 } from "./helpers";
 import { encodeNKeys } from "../../src/utils/nkeys";
 
@@ -494,6 +495,7 @@ test("a participant sees a shared doc exactly once", async ({ page, browser }) =
   await expect(friend.getByText("Saved", { exact: true })).toBeVisible({ timeout: 20_000 });
 
   // The workspace must show the doc as a single card.
+  await showWorkspaceSidebar(friend);
   await friend.getByRole("button", { name: "All pages" }).click();
   await expect(friend.getByText(title, { exact: true })).toHaveCount(1, {
     timeout: 20_000,

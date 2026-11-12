@@ -1,7 +1,7 @@
 # OOXML adapter
 
-This is the replacement path for the Mammoth-based DOCX importer. The goal is a
-**package-preserving, editable OOXML adapter**, not an HTML converter.
+This is the package-preserving OOXML adapter used by the DOCX importer and
+exporter. It is not an HTML converter.
 
 The internal document model does not need to be OOXML. The adapter is the
 compiler boundary:
@@ -21,6 +21,10 @@ DOCX package -> OOXML body AST -> rich document nodes
 - `sections.ts` — parses `w:sectPr`, page size/margins and the referenced
   header/footer parts; projects them into the app's `PageLayout` (the raw parts
   stay in the package).
+- `rich.ts` — maps supported OOXML blocks into the canonical ProseMirror model.
+  Unsupported blocks become `ooxmlBlock` placeholders carrying their raw XML.
+- `writer.ts` — writes edited rich paragraphs/tables back into the original
+  OOXML body. Raw blocks are re-emitted; other package parts are untouched.
 - `scripts/ooxml-fidelity.ts` — round-trip harness:
   - package parts are preserved
   - `document.xml` round-trips without edits
@@ -28,7 +32,9 @@ DOCX package -> OOXML body AST -> rich document nodes
   - page size, margins, header and footer text are reported
   - other package parts stay byte-identical after an edit
 
-Run it with:
+The active import/export path uses this adapter. Mammoth has been removed.
+
+Run the harness with:
 
 ```sh
 npm run test:ooxml
@@ -58,8 +64,8 @@ This gives us a lossless floor while the editable surface grows.
 3. Field results and page numbers in headers/footers (`w:fldChar`/`w:instrText`).
 4. Footnotes/endnotes, comments and tracked changes as explicit sidecars.
 5. Floating objects and content controls.
-6. Rich → OOXML writer for edited structured nodes, then swap the import path
-   from Mammoth to this adapter and remove Mammoth.
+6. Write PageLayout/header/footer edits back into the DOCX package.
+7. Preserve richer run formatting when editing imported text.
 
 Every step should add a fixture to `tests/fixtures/docx/` and a fidelity check to
 `scripts/ooxml-fidelity.ts`.

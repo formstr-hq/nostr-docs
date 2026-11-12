@@ -13,18 +13,24 @@ export interface RichDocumentPayload {
   format: typeof RICH_DOCUMENT_FORMAT;
   version: number;
   doc: JSONContent;
+  /** Original imported DOCX package, retained for lossless DOCX export. */
+  ooxml?: { package: string };
 }
 
 export type ParsedDocumentContent =
-  | { kind: "rich"; doc: JSONContent; raw: string }
+  | { kind: "rich"; doc: JSONContent; package?: string; raw: string }
   | { kind: "markdown"; markdown: string; raw: string };
 
 /** Serialize a ProseMirror doc into the encrypted payload for KIND_RICH_DOCUMENT. */
-export function serializeRichDocument(doc: JSONContent): string {
+export function serializeRichDocument(
+  doc: JSONContent,
+  ooxmlPackage?: string,
+): string {
   const payload: RichDocumentPayload = {
     format: RICH_DOCUMENT_FORMAT,
     version: RICH_DOCUMENT_VERSION,
     doc,
+    ...(ooxmlPackage ? { ooxml: { package: ooxmlPackage } } : {}),
   };
   return JSON.stringify(payload);
 }
@@ -48,7 +54,12 @@ export function parseDocumentContent(raw: string): ParsedDocumentContent {
         typeof parsed.doc === "object" &&
         typeof parsed.doc.type === "string"
       ) {
-        return { kind: "rich", doc: parsed.doc, raw };
+        return {
+          kind: "rich",
+          doc: parsed.doc,
+          ...(parsed.ooxml?.package ? { package: parsed.ooxml.package } : {}),
+          raw,
+        };
       }
       // Tolerate a bare ProseMirror doc (useful for imports/tests).
       if (parsed && typeof parsed.type === "string" && Array.isArray(parsed.content)) {
@@ -183,6 +194,13 @@ function blockToMarkdown(node: JSONContent, depth = 0): string {
       return "---";
     case "pageBreak":
       return '<div data-page-break="true"></div>';
+    case "ooxmlBlock": {
+      const label = String(node.attrs?.label ?? "Word content").replace(
+        /"/g,
+        "&quot;",
+      );
+      return `<div data-ooxml-block="true" data-label="${label}"></div>`;
+    }
     case "table": {
       const rows = (node.content ?? []).map((row) =>
         (row.content ?? []).map((cell) =>

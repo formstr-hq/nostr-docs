@@ -8,6 +8,7 @@
 
 import JSZip from "jszip";
 import type { JSONContent } from "@tiptap/core";
+import type { PageLayout } from "../lib/docLayout";
 import { docxToRichDocument } from "../lib/docxToDocument";
 
 export type ImportEntry = {
@@ -19,6 +20,10 @@ export type ImportEntry = {
   markdown: string;
   /** Canonical rich document for DOCX entries. */
   doc?: JSONContent;
+  /** Page setup parsed from the DOCX. */
+  layout?: PageLayout;
+  /** Original DOCX package, retained for export. */
+  package?: string;
   kind: "markdown" | "docx";
   /** DOCX import warnings (unsupported features, etc.). */
   warnings?: string[];
@@ -87,6 +92,8 @@ export async function readImportFiles(files: File[]): Promise<ImportReadResult> 
           name: basename(file.name),
           markdown: "",
           doc: result.doc,
+          layout: result.layout,
+          package: result.packageBase64,
           kind: "docx",
           warnings: result.messages,
           source: file.name,

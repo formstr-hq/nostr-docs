@@ -180,6 +180,14 @@ export function editorSurface(page: Page) {
   return page.locator(".tiptap").first();
 }
 
+/** Restore the desktop workspace sidebar after immersive typing hid it. */
+export async function showWorkspaceSidebar(page: Page): Promise<void> {
+  const show = page.getByRole("button", { name: "Show sidebar" });
+  if (await show.isVisible().catch(() => false)) {
+    await show.click();
+  }
+}
+
 /** Type text into the (empty) draft editor. */
 export async function typeIntoEditor(page: Page, text: string) {
   // New page now opens the template picker; tests that just want a blank draft
@@ -192,6 +200,9 @@ export async function typeIntoEditor(page: Page, text: string) {
   const surface = editorSurface(page);
   await surface.click();
   await page.keyboard.type(text);
+  // Typing hides the desktop workspace sidebar (immersive mode). Tests that
+  // need to navigate back should get the normal chrome back.
+  await showWorkspaceSidebar(page);
 }
 
 /**

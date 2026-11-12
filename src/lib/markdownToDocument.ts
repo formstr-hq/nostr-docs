@@ -10,6 +10,7 @@ import { TableHeader } from "@tiptap/extension-table-header";
 import { TableCell } from "@tiptap/extension-table-cell";
 import { Columns, Column } from "../components/editor/extensions/Columns";
 import { MarkdownColor } from "../components/editor/extensions/MarkdownColor";
+import { OoxmlBlock } from "../components/editor/extensions/OoxmlBlock";
 import MarkdownIt from "markdown-it";
 import { Indent } from "../components/editor/extensions/Indent";
 import { EncryptedFileNode } from "../components/editor/extensions/EncryptedFileNode";
@@ -38,6 +39,7 @@ const documentExtensions = [
   TableCell,
   Columns,
   Column,
+  OoxmlBlock,
   Indent,
   EncryptedFileNode,
   CommentHighlight,

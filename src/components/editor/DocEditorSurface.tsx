@@ -205,7 +205,7 @@ export function DocEditorSurface({
   /* ── Preview mode ─────────────────────────────────────── */
   if (mode === "preview") {
     return (
-      <Box sx={{ display: "flex", flex: 1, overflow: "hidden", bgcolor: "background.default" }}>
+      <Box data-pages-editor sx={{ display: "flex", flex: 1, overflow: "hidden", bgcolor: "background.default" }}>
         <Box
           onClick={handleHighlightClick}
           className="pages-preview"
@@ -296,7 +296,7 @@ export function DocEditorSurface({
     if (isMobile) return markdownPane;
 
     return (
-      <Box sx={{ display: "flex", flex: 1, overflow: "hidden", bgcolor: "background.default" }}>
+      <Box data-pages-editor sx={{ display: "flex", flex: 1, overflow: "hidden", bgcolor: "background.default" }}>
         {markdownPane}
         <Box
           className="pages-preview"
@@ -332,7 +332,7 @@ export function DocEditorSurface({
   };
 
   return (
-    <Box sx={{ display: "flex", flex: 1, overflow: "hidden", bgcolor: "background.default" }}>
+    <Box data-pages-editor sx={{ display: "flex", flex: 1, overflow: "hidden", bgcolor: "background.default" }}>
       <Box
         sx={{ flex: 1, overflowY: "auto", pb: { xs: 12, sm: 8 }, cursor: "text" }}
         onClick={handleEditorClick}

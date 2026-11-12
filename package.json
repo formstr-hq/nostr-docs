@@ -63,7 +63,6 @@
     "docx": "^9.6.1",
     "jszip": "^3.10.2",
     "lib0": "^0.2.117",
-    "mammoth": "^1.13.0",
     "markdown-it": "^14.1.1",
     "minisearch": "7.2.0",
     "nostr-signer-capacitor-plugin": "^0.0.5",

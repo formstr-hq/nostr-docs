@@ -22,7 +22,6 @@ import { useNavigate } from "react-router-dom";
 import { useDocumentContext } from "../contexts/DocumentContext";
 import { useDocMetadata } from "../contexts/DocMetadataContext";
 import { useUser } from "../contexts/UserContext";
-import { DEFAULT_PAGE_LAYOUT } from "../lib/docLayout";
 import { readImportFiles, type ImportEntry } from "../utils/importPages";
 
 /**
@@ -106,15 +105,11 @@ export default function ImportPagesDialog({
         const address = await addImportedDocument(entry.markdown, {
           publish: publishToRelays,
           doc: entry.doc,
+          package: entry.package,
         });
-        if (entry.kind === "docx" && publishToRelays) {
+        if (entry.kind === "docx" && entry.layout && publishToRelays) {
           try {
-            await setDocLayout(address, {
-              ...DEFAULT_PAGE_LAYOUT,
-              canvas: "page",
-              pageSize: "Letter",
-              margins: { top: 1, right: 1, bottom: 1, left: 1 },
-            });
+            await setDocLayout(address, entry.layout);
           } catch (layoutError) {
             console.warn("Imported DOCX but could not set page layout:", layoutError);
           }

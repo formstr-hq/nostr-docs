@@ -29,6 +29,10 @@ export interface OoxmlParagraph {
   originalXml: string;
   pPrXml?: string;
   runs: OoxmlRun[];
+  /** Word paragraph style id (Title, Heading1, …). */
+  styleId?: string;
+  /** True when the paragraph carries Word list numbering. */
+  numbered?: boolean;
   dirty: boolean;
 }
 
@@ -67,6 +71,8 @@ export interface OoxmlDocument {
   doc: Document;
   body: Element;
   blocks: OoxmlBlock[];
+  /** Final body-level section properties, re-emitted after the blocks. */
+  sectPrXml?: string;
 }
 
 const RUN_CHILDREN = new Set([
@@ -148,6 +154,13 @@ function parseParagraph(paragraph: Element): OoxmlParagraph | null {
     originalXml: outerXml(paragraph),
     pPrXml: pPr ? innerXml(pPr) : undefined,
     runs,
+    styleId: pPr
+      ? (() => {
+          const style = firstElement(pPr, "pStyle");
+          return style ? wAttr(style, "val") ?? undefined : undefined;
+        })()
+      : undefined,
+    numbered: pPr ? !!firstElement(pPr, "numPr") : false,
     dirty: false,
   };
 }
@@ -231,9 +244,14 @@ export function parseDocumentXml(xml: string): OoxmlDocument {
   if (!body) throw new Error("DOCX document.xml has no w:body");
 
   const blocks: OoxmlBlock[] = [];
+  let sectPrXml: string | undefined;
   for (let i = 0; i < body.childNodes.length; i += 1) {
     const node = body.childNodes.item(i);
     if (!node || !isElement(node)) continue;
+    if (node.localName === "sectPr") {
+      sectPrXml = outerXml(node);
+      continue;
+    }
     if (node.localName === "p") {
       const paragraph = parseParagraph(node);
       if (paragraph) {
@@ -251,7 +269,7 @@ export function parseDocumentXml(xml: string): OoxmlDocument {
     blocks.push({ kind: "raw", xml: outerXml(node) });
   }
 
-  return { doc, body, blocks };
+  return { doc, body, blocks, sectPrXml };
 }
 
 function appendText(doc: Document, run: Element, text: string): void {
@@ -357,7 +375,7 @@ function appendTable(doc: Document, body: Element, table: OoxmlTable): void {
 
 /** Serialize the body back into the original document root. */
 export function serializeDocumentXml(parsed: OoxmlDocument): string {
-  const { doc, body, blocks } = parsed;
+  const { doc, body, blocks, sectPrXml } = parsed;
   while (body.firstChild) body.removeChild(body.firstChild);
 
   for (const block of blocks) {
@@ -369,6 +387,7 @@ export function serializeDocumentXml(parsed: OoxmlDocument): string {
       appendParagraph(doc, body, block);
     }
   }
+  if (sectPrXml) appendRaw(doc, body, sectPrXml);
 
   return serializeXml(doc);
 }

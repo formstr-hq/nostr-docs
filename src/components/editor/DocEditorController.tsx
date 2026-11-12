@@ -47,6 +47,7 @@ import { TableHeader } from "@tiptap/extension-table-header";
 import { TableCell } from "@tiptap/extension-table-cell";
 import { Columns, Column } from "./extensions/Columns";
 import { MarkdownColor } from "./extensions/MarkdownColor";
+import { OoxmlBlock } from "./extensions/OoxmlBlock";
 import { EncryptedFileNode } from "./extensions/EncryptedFileNode";
 import { CommentHighlight } from "./extensions/CommentHighlight";
 import { FormNode } from "./extensions/FormNode";
@@ -128,6 +129,7 @@ import {
   parseDocumentContent,
   serializeRichDocument,
 } from "../../lib/documentFormat";
+import { richDocumentToDocxBlob } from "../../lib/docxToDocument";
 import { heuristicTitle } from "../../lib/docSearch";
 import {
   DEFAULT_PAGE_LAYOUT,
@@ -728,6 +730,11 @@ export function DocumentEditorController({
   // Canonical stored payload for the last save/load. For rich docs this is the
   // JSON envelope; for legacy docs it is the Markdown body.
   const lastSavedContentRef = useRef<string>(initialRawContent);
+  // Original imported DOCX package, retained so rich edits can be written back
+  // into the OOXML package on export.
+  const sourcePackageRef = useRef<string | undefined>(
+    initialParsed.kind === "rich" ? initialParsed.package : undefined,
+  );
   // Always-current markdown projection — avoids stale closures in effects/save
   const mdRef = useRef<string>(initialMarkdown);
   const editorRef = useRef<Editor | null>(null);
@@ -966,6 +973,7 @@ Date: ${date} · Mood: ____
       TableCell,
       Columns,
       Column,
+      OoxmlBlock,
       Indent,
       PageBreak,
       GhostTextSuggestion,
@@ -1282,6 +1290,13 @@ Date: ${date} · Mood: ____
     if (!lastSavedMdRef.current) lastSavedMdRef.current = markdown;
   }, [editor]);
 
+  useEffect(() => {
+    if (!activeVersion) return;
+    const parsed = parseDocumentContent(activeVersion.decryptedContent ?? "");
+    sourcePackageRef.current =
+      parsed.kind === "rich" ? parsed.package : undefined;
+  }, [activeVersion?.event.id]);
+
   /* ── Persist the in-progress draft ───────────────────────── */
   // A draft has no address until it is saved, so it lives only in component
   // state. Stash it (debounced) so the account-subtree remount on login/logout
@@ -1296,7 +1311,7 @@ Date: ${date} · Mood: ____
         saveDraft({
           content:
             isRichDocument && editor
-              ? serializeRichDocument(editor.getJSON())
+              ? serializeRichDocument(editor.getJSON(), sourcePackageRef.current)
               : md,
           format: isRichDocument ? "prosemirror-json" : "markdown",
           localOnly: draftLocalOnly,
@@ -1975,6 +1990,7 @@ Date: ${date} · Mood: ____
             mode === "split"
               ? parseMarkdownDocument(editor, mdToSave).toJSON()
               : editor.getJSON(),
+            sourcePackageRef.current,
           )
         : lastSavedContentRef.current
       : mdToSave;
@@ -2091,8 +2107,27 @@ Date: ${date} · Mood: ____
     void exportAsPdf(editor.getHTML(), getDocTitle(), layout);
   };
 
-  const handleExportDoc = () => {
+  const handleExportDoc = async () => {
     if (!editor) return;
+    const source = sourcePackageRef.current;
+    if (source) {
+      try {
+        const blob = await richDocumentToDocxBlob(source, editor.getJSON());
+        const url = URL.createObjectURL(blob);
+        const anchor = document.createElement("a");
+        anchor.href = url;
+        anchor.download = `${getDocTitle()}.docx`;
+        document.body.appendChild(anchor);
+        anchor.click();
+        setTimeout(() => {
+          document.body.removeChild(anchor);
+          URL.revokeObjectURL(url);
+        }, 100);
+        return;
+      } catch (err) {
+        console.warn("OOXML export failed; falling back to HTML->DOCX:", err);
+      }
+    }
     void exportAsDocx(editor.getHTML(), getDocTitle(), layout);
   };
 
@@ -2751,7 +2786,7 @@ Date: ${date} · Mood: ____
               const createdAt = nextContentCreatedAt(lastAt);
               const shareContent =
                 isRichDocument && editor
-                  ? serializeRichDocument(editor.getJSON())
+                  ? serializeRichDocument(editor.getJSON(), sourcePackageRef.current)
                   : md;
               const sharedEvent = await enableGroupSharing(
                 target.owner,
@@ -2795,7 +2830,7 @@ Date: ${date} · Mood: ____
 
           const shareContent =
             isRichDocument && editor
-              ? serializeRichDocument(editor.getJSON())
+              ? serializeRichDocument(editor.getJSON(), sourcePackageRef.current)
               : md;
           const result = await handleGeneratePrivateLink(
             canEdit,
