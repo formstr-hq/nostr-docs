@@ -1,4 +1,5 @@
 import type { JSONContent } from "@tiptap/core";
+import type { EncryptedBlobRef } from "./encryptedBlob";
 
 /**
  * Versioned envelope for the rich document body stored in KIND_RICH_DOCUMENT.
@@ -9,28 +10,49 @@ import type { JSONContent } from "@tiptap/core";
 export const RICH_DOCUMENT_FORMAT = "prosemirror-json";
 export const RICH_DOCUMENT_VERSION = 1;
 
+/** Original imported DOCX package, either inline (legacy/device-only) or on Blossom. */
+export interface OoxmlSource {
+  package?: string;
+  packageRef?: EncryptedBlobRef;
+}
+
 export interface RichDocumentPayload {
   format: typeof RICH_DOCUMENT_FORMAT;
   version: number;
   doc: JSONContent;
-  /** Original imported DOCX package, retained for lossless DOCX export. */
-  ooxml?: { package: string };
+  ooxml?: OoxmlSource;
 }
 
 export type ParsedDocumentContent =
-  | { kind: "rich"; doc: JSONContent; package?: string; raw: string }
+  | {
+      kind: "rich";
+      doc: JSONContent;
+      package?: string;
+      packageRef?: EncryptedBlobRef;
+      raw: string;
+    }
   | { kind: "markdown"; markdown: string; raw: string };
 
 /** Serialize a ProseMirror doc into the encrypted payload for KIND_RICH_DOCUMENT. */
 export function serializeRichDocument(
   doc: JSONContent,
-  ooxmlPackage?: string,
+  ooxml?: string | OoxmlSource,
 ): string {
+  const source = typeof ooxml === "string" ? { package: ooxml } : ooxml;
+  const ooxmlPayload =
+    source && (source.package || source.packageRef)
+      ? {
+          ooxml: {
+            ...(source.package ? { package: source.package } : {}),
+            ...(source.packageRef ? { packageRef: source.packageRef } : {}),
+          },
+        }
+      : {};
   const payload: RichDocumentPayload = {
     format: RICH_DOCUMENT_FORMAT,
     version: RICH_DOCUMENT_VERSION,
     doc,
-    ...(ooxmlPackage ? { ooxml: { package: ooxmlPackage } } : {}),
+    ...ooxmlPayload,
   };
   return JSON.stringify(payload);
 }
@@ -58,6 +80,9 @@ export function parseDocumentContent(raw: string): ParsedDocumentContent {
           kind: "rich",
           doc: parsed.doc,
           ...(parsed.ooxml?.package ? { package: parsed.ooxml.package } : {}),
+          ...(parsed.ooxml?.packageRef
+            ? { packageRef: parsed.ooxml.packageRef }
+            : {}),
           raw,
         };
       }
@@ -202,8 +227,21 @@ function blockToMarkdown(node: JSONContent, depth = 0): string {
       return `<div data-ooxml-block="true" data-label="${label}"></div>`;
     }
     case "ooxmlImage": {
-      const src = String(node.attrs?.src ?? "");
-      return src ? `![${String(node.attrs?.alt ?? "")}](${src})` : "";
+      const attrs = node.attrs ?? {};
+      const src = String(attrs.src ?? "");
+      if (!src) return "";
+      if (src.startsWith("data:")) {
+        return `![${String(attrs.alt ?? "")}](${src})`;
+      }
+      const width = attrs.width != null ? ` data-width="${attrs.width}"` : "";
+      const height = attrs.height != null ? ` data-height="${attrs.height}"` : "";
+      return `<encrypted-file data-ooxml-image="true" data-src="${src}" data-key="${String(
+        attrs.decryptionKey ?? "",
+      )}" data-nonce="${String(attrs.decryptionNonce ?? "")}" data-mime="${String(
+        attrs.mimeType ?? "image/png",
+      )}" data-filename="${encodeURIComponent(
+        String(attrs.filename ?? attrs.alt ?? "Word image"),
+      )}"${width}${height}></encrypted-file>`;
     }
     case "table": {
       const rows = (node.content ?? []).map((row) =>

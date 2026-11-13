@@ -1,7 +1,14 @@
 import { createContext, useContext, useState, type ReactNode } from "react";
 
 const STORAGE_KEY = "formstr:blossom-servers";
-const DEFAULT_SERVERS = ["https://blossom.primal.net"];
+const envServers = (import.meta.env.VITE_DEFAULT_BLOSSOM as string | undefined)
+  ?.split(",")
+  .map((server) => server.trim().replace(/\/$/, ""))
+  .filter(Boolean);
+const DEFAULT_SERVERS =
+  envServers && envServers.length > 0
+    ? envServers
+    : ["https://blossom.primal.net"];
 
 interface BlossomContextType {
   servers: string[];

@@ -22,7 +22,14 @@ import { useNavigate } from "react-router-dom";
 import { useDocumentContext } from "../contexts/DocumentContext";
 import { useDocMetadata } from "../contexts/DocMetadataContext";
 import { useUser } from "../contexts/UserContext";
+import { useBlossomServers } from "../contexts/BlossomContext";
+import { base64ToBytes } from "../lib/base64";
+import { uploadEncryptedBytes } from "../lib/encryptedBlob";
+import { replaceEmbeddedImagesWithBlossom } from "../lib/ooxml/blobRefs";
 import { readImportFiles, type ImportEntry } from "../utils/importPages";
+
+const DOCX_MIME =
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
 
 /**
  * Import one or more pages from Markdown files, or from a .zip of Markdown
@@ -40,6 +47,7 @@ export default function ImportPagesDialog({
   const { user } = useUser();
   const { addImportedDocument } = useDocumentContext();
   const { setDocLayout } = useDocMetadata();
+  const { servers: blossomServers } = useBlossomServers();
   const navigate = useNavigate();
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -102,10 +110,34 @@ export default function ImportPagesDialog({
 
     for (const entry of entries) {
       try {
+        let doc = entry.doc;
+        let packageRef;
+        if (entry.kind === "docx" && publishToRelays) {
+          if (blossomServers.length === 0) {
+            throw new Error(
+              "Add a Blossom server before importing DOCX files so the original package and images can be stored privately.",
+            );
+          }
+          if (entry.package) {
+            packageRef = await uploadEncryptedBytes(
+              blossomServers,
+              base64ToBytes(entry.package),
+              DOCX_MIME,
+              `${entry.name}.docx`,
+            );
+          }
+          if (doc) {
+            doc = await replaceEmbeddedImagesWithBlossom(doc, blossomServers);
+          }
+        }
+
         const address = await addImportedDocument(entry.markdown, {
           publish: publishToRelays,
-          doc: entry.doc,
-          package: entry.package,
+          doc,
+          // Device-only pages stay local and keep their inline package; public
+          // pages store only the encrypted Blossom reference.
+          package: publishToRelays ? undefined : entry.package,
+          packageRef,
         });
         if (entry.kind === "docx" && entry.layout && publishToRelays) {
           try {
@@ -117,6 +149,7 @@ export default function ImportPagesDialog({
         ok += 1;
       } catch (err) {
         console.error("Failed to import page:", entry.source, err);
+        setError(err instanceof Error ? err.message : "Could not import this file.");
         failedEntries.push(entry);
       } finally {
         setProgress((p) => ({ ...p, done: p.done + 1 }));

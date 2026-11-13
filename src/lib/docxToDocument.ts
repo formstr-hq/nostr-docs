@@ -1,5 +1,8 @@
 import type { JSONContent } from "@tiptap/core";
 import { DEFAULT_PAGE_LAYOUT, type PageLayout } from "./docLayout";
+import { base64ToBytes, bytesToBase64 } from "./base64";
+import { fetchEncryptedBase64 } from "./encryptedBlob";
+import type { OoxmlSource } from "./documentFormat";
 import { DocxPackage } from "./ooxml/package";
 import { parseDocumentXml, serializeDocumentXml } from "./ooxml/body";
 import { resolveImageBlocks } from "./ooxml/images";
@@ -15,22 +18,17 @@ export interface DocxImportResult {
   messages: string[];
 }
 
-function bytesToBase64(bytes: Uint8Array): string {
-  let binary = "";
-  const chunk = 0x8000;
-  for (let i = 0; i < bytes.length; i += chunk) {
-    binary += String.fromCharCode(...bytes.subarray(i, i + chunk));
-  }
-  return btoa(binary);
-}
-
-function base64ToBytes(base64: string): Uint8Array {
-  const binary = atob(base64);
-  const bytes = new Uint8Array(binary.length);
-  for (let i = 0; i < binary.length; i += 1) {
-    bytes[i] = binary.charCodeAt(i);
-  }
-  return bytes;
+/**
+ * Resolve the package bytes for export. New imports store an encrypted Blossom
+ * reference; older/device-only imports may still carry the inline base64.
+ */
+export async function resolveOoxmlPackageBase64(
+  source?: string | OoxmlSource,
+): Promise<string | undefined> {
+  const inline = typeof source === "string" ? source : source?.package;
+  if (inline) return inline;
+  const ref = typeof source === "object" ? source?.packageRef : undefined;
+  return ref ? fetchEncryptedBase64(ref) : undefined;
 }
 
 function countRawBlocks(doc: JSONContent): number {

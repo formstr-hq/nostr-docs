@@ -19,8 +19,10 @@ DOCX package -> OOXML body AST -> rich document nodes
 - `body.ts` — parses `word/document.xml` into editable paragraphs and simple
   tables while keeping unsupported blocks as opaque raw XML. Horizontal merges
   (`w:gridSpan`) map to table-cell spans; vertical merges stay raw.
-- `images.ts` — resolves drawing relationships to media parts, renders them as
-  data-URL image nodes and keeps the original drawing XML for export.
+- `images.ts` — resolves drawing relationships to media parts and keeps the
+  original drawing XML for export. The import dialog uploads the extracted bytes
+  as encrypted Blossom blobs, so the stored document holds only a blob
+  reference; legacy/device-only imports may still carry data URLs.
 - `sections.ts` — parses `w:sectPr`, page size/margins and the referenced
   header/footer parts; projects them into the app's `PageLayout`, and writes
   page size/orientation/margins back on export. The raw parts stay in the
@@ -53,8 +55,11 @@ Fixtures live in `tests/fixtures/docx/`.
 - A table is editable when it has `w:tc` cells containing paragraphs. Horizontal
   merges (`w:gridSpan`) are preserved as `colspan`; vertical merges, nested
   tables and other complex content stay raw.
-- Drawings/images are rendered as data-URL image nodes; the raw drawing XML is
-  re-emitted on export. Replacing or resizing an image is a later slice.
+- Drawings/images are stored as encrypted Blossom refs (new imports) or data
+  URLs (legacy/device-only imports); the raw drawing XML is re-emitted on
+  export. Replacing or resizing an image is a later slice.
+- The original DOCX package is uploaded once to Blossom and referenced from the
+  envelope when the page is published; device-only imports keep it inline.
 - Anything else (drawings, hyperlinks, bookmarks, fields, content controls,
   footnotes, …) is a **raw block** and is re-emitted verbatim.
 - Non-dirty paragraphs are re-emitted from their original XML, so no attributes

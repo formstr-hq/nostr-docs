@@ -286,6 +286,10 @@
   height: auto;
   margin: 1em 0;
 }
+.ooxml-image-missing {
+  font-size: 0.85rem;
+  opacity: 0.6;
+}
 
 /* ── Table styles ─────────────────────────────────────────── */
 /* TipTap wraps tables in .tableWrapper for overflow scrolling on mobile */

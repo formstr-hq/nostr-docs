@@ -129,8 +129,12 @@ import {
 import {
   parseDocumentContent,
   serializeRichDocument,
+  type OoxmlSource,
 } from "../../lib/documentFormat";
-import { richDocumentToDocxBlob } from "../../lib/docxToDocument";
+import {
+  resolveOoxmlPackageBase64,
+  richDocumentToDocxBlob,
+} from "../../lib/docxToDocument";
 import { heuristicTitle } from "../../lib/docSearch";
 import {
   DEFAULT_PAGE_LAYOUT,
@@ -733,8 +737,16 @@ export function DocumentEditorController({
   const lastSavedContentRef = useRef<string>(initialRawContent);
   // Original imported DOCX package, retained so rich edits can be written back
   // into the OOXML package on export.
-  const sourcePackageRef = useRef<string | undefined>(
-    initialParsed.kind === "rich" ? initialParsed.package : undefined,
+  const sourcePackageRef = useRef<OoxmlSource | undefined>(
+    initialParsed.kind === "rich" &&
+      (initialParsed.package || initialParsed.packageRef)
+      ? {
+          ...(initialParsed.package ? { package: initialParsed.package } : {}),
+          ...(initialParsed.packageRef
+            ? { packageRef: initialParsed.packageRef }
+            : {}),
+        }
+      : undefined,
   );
   // Always-current markdown projection — avoids stale closures in effects/save
   const mdRef = useRef<string>(initialMarkdown);
@@ -1297,7 +1309,12 @@ Date: ${date} · Mood: ____
     if (!activeVersion) return;
     const parsed = parseDocumentContent(activeVersion.decryptedContent ?? "");
     sourcePackageRef.current =
-      parsed.kind === "rich" ? parsed.package : undefined;
+      parsed.kind === "rich" && (parsed.package || parsed.packageRef)
+        ? {
+            ...(parsed.package ? { package: parsed.package } : {}),
+            ...(parsed.packageRef ? { packageRef: parsed.packageRef } : {}),
+          }
+        : undefined;
   }, [activeVersion?.event.id]);
 
   /* ── Persist the in-progress draft ───────────────────────── */
@@ -2121,10 +2138,16 @@ Date: ${date} · Mood: ____
   const handleExportDoc = async () => {
     if (!editor) return;
     const source = sourcePackageRef.current;
-    if (source) {
+    let packageBase64: string | undefined;
+    try {
+      packageBase64 = await resolveOoxmlPackageBase64(source);
+    } catch (err) {
+      console.warn("Could not load the original DOCX package:", err);
+    }
+    if (packageBase64) {
       try {
         const blob = await richDocumentToDocxBlob(
-          source,
+          packageBase64,
           editor.getJSON(),
           layout,
         );

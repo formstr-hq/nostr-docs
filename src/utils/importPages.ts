@@ -22,7 +22,7 @@ export type ImportEntry = {
   doc?: JSONContent;
   /** Page setup parsed from the DOCX. */
   layout?: PageLayout;
-  /** Original DOCX package, retained for export. */
+  /** Original DOCX package, uploaded to Blossom during import when published. */
   package?: string;
   kind: "markdown" | "docx";
   /** DOCX import warnings (unsupported features, etc.). */
