@@ -30,6 +30,29 @@ test("new documents default to the notes canvas and can switch to page", async (
   await expect(page.locator("[data-pages-page]")).toHaveCount(0);
 });
 
+test("page view can append a blank page", async ({ page }) => {
+  await loginAsGuest(page);
+  await editorSurface(page).click();
+  await page.keyboard.type("First page");
+
+  await page.getByRole("button", { name: "More actions" }).click();
+  await page.getByRole("menuitem", { name: "Page view" }).click();
+  await expect(page.locator("[data-pages-page]")).toBeVisible();
+
+  await page.getByRole("button", { name: "Add page" }).click();
+  await expect(page.locator(".tiptap div[data-page-break]")).toHaveCount(1);
+
+  await editorSurface(page).click();
+  await page.keyboard.press("Control+End");
+  await page.keyboard.type("Second page");
+  await save(page);
+  await page.reload();
+  await unlockAfterReload(page);
+  await expect(page.getByText("Second page", { exact: false })).toBeVisible({
+    timeout: 20_000,
+  });
+});
+
 test("page layout, alignment, and page breaks survive save + reload", async ({
   page,
 }) => {

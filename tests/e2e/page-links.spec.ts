@@ -20,9 +20,9 @@ test("creates and links a new page from the editor", async ({ page }) => {
   await page.getByRole("menuitem", { name: "Visual editor" }).click();
 
   await page.getByRole("button", { name: "More actions" }).click();
-  await page.getByRole("menuitem", { name: "Link to page" }).click();
+  await page.getByRole("menuitem", { name: "Link to another page" }).click();
 
-  const dialog = page.getByRole("dialog").filter({ hasText: "Link a page" });
+  const dialog = page.getByRole("dialog").filter({ hasText: "Link to another page" });
   await expect(dialog).toBeVisible();
   await dialog.getByLabel("Page title").fill("Linked page");
   await dialog.getByRole("button", { name: "Create & link" }).click();

@@ -1,11 +1,12 @@
 import { useEffect, useRef } from "react";
-import { Box, Typography, useTheme, Fab } from "@mui/material";
+import { Box, Button, Typography, useTheme, Fab } from "@mui/material";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import rehypeRaw from "rehype-raw";
 import { EditorContent } from "@tiptap/react";
 import type { Editor } from "@tiptap/react";
 import EditIcon from "@mui/icons-material/Edit";
+import AddIcon from "@mui/icons-material/Add";
 import { EncryptedFilePreview } from "./EncryptedFilePreview";
 import type { EncryptedFileAttrs } from "./EncryptedFilePreview";
 import { FormFiller } from "./FormFiller";
@@ -331,6 +332,17 @@ export function DocEditorSurface({
     if (!handled && isMobile && showComments) onCloseComments();
   };
 
+  const handleAddPage = () => {
+    if (!editor) return;
+    const end = editor.state.doc.content.size;
+    editor
+      .chain()
+      .focus()
+      .insertContentAt(end, [{ type: "pageBreak" }, { type: "paragraph" }])
+      .scrollIntoView()
+      .run();
+  };
+
   return (
     <Box data-pages-editor sx={{ display: "flex", flex: 1, overflow: "hidden", bgcolor: "background.default" }}>
       <Box
@@ -339,6 +351,25 @@ export function DocEditorSurface({
       >
         <DocumentPage layout={layout} viewMode={viewMode}>
           <EditorContent editor={editor} />
+          {canEdit && editor && layout.canvas === "page" && (
+            <Box sx={{ display: "flex", justifyContent: "center", pt: 2, pb: 1 }}>
+              <Button
+                size="small"
+                variant="outlined"
+                startIcon={<AddIcon />}
+                onClick={handleAddPage}
+                aria-label="Add page"
+                sx={{
+                  borderStyle: "dashed",
+                  color: "text.secondary",
+                  borderColor: "divider",
+                  "&:hover": { borderColor: "secondary.main", color: "secondary.main" },
+                }}
+              >
+                Add page
+              </Button>
+            </Box>
+          )}
         </DocumentPage>
         {commentsEnabled && (
           <CommentComposer editor={editor} docEventId={docEventId} isMobile={isMobile} />

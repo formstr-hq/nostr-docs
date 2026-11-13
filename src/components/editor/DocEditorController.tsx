@@ -1083,7 +1083,7 @@ Date: ${date} · Mood: ____
               },
               {
                 id: "page-link",
-                label: "Link to page",
+                label: "Link to another page",
                 description: "Link or create another page",
                 icon: "🔗",
                 keywords: ["page", "link", "internal", "wiki", "reference"],

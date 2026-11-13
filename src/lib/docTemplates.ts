@@ -350,7 +350,7 @@ const journalIndexDoc: JSONContent = {
     heading(2, "Entries"),
     paragraph(
       text(
-        "No entries yet. Use /journal-entry, or Link to page from the More actions menu.",
+        "No entries yet. Use /journal-entry, or Link to another page from the More actions menu.",
       ),
     ),
     rule,

@@ -97,7 +97,7 @@ export function PageLinkDialog({
 
   return (
     <Dialog open={open} onClose={busy ? undefined : onClose} maxWidth="sm" fullWidth>
-      <DialogTitle sx={{ fontWeight: 800 }}>Link a page</DialogTitle>
+      <DialogTitle sx={{ fontWeight: 800 }}>Link to another page</DialogTitle>
       <DialogContent sx={{ pt: 1 }}>
         <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5 }}>
           Link one of your pages, or create a new page and link it. Cmd/Ctrl-click

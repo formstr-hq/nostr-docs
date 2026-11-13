@@ -807,7 +807,7 @@ export function EditorToolbar({
                   <LinkIcon fontSize="small" />
                 </ListItemIcon>
                 <ListItemText
-                  primary="Link to page"
+                  primary="Link to another page"
                   secondary="Link or create another page"
                   primaryTypographyProps={{ fontSize: "0.84rem", fontWeight: 500 }}
                   secondaryTypographyProps={{ sx: { fontSize: "0.72rem" } }}
