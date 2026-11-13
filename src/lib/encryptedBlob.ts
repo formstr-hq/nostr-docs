@@ -29,6 +29,7 @@ export async function uploadEncryptedBytes(
   bytes: Uint8Array,
   mimeType: string,
   filename: string,
+  authSecret?: Uint8Array,
 ): Promise<EncryptedBlobRef> {
   if (servers.length === 0) {
     throw new Error("No Blossom server configured");
@@ -42,7 +43,7 @@ export async function uploadEncryptedBytes(
   });
   const { encryptedData, decryptionKey, decryptionNonce, x } =
     await encryptFile(file);
-  const src = await uploadToBlossom(servers, encryptedData, x);
+  const src = await uploadToBlossom(servers, encryptedData, x, authSecret);
   return {
     src,
     decryptionKey,

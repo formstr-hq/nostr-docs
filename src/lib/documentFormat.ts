@@ -16,17 +16,38 @@ export interface OoxmlSource {
   packageRef?: EncryptedBlobRef;
 }
 
+export interface BodyChunkRef extends EncryptedBlobRef {
+  /** Hash of the plaintext chunk, used to reuse unchanged chunks. */
+  plainHash?: string;
+  plainSize?: number;
+}
+
+export interface BodyManifest {
+  version: 1;
+  chunks: BodyChunkRef[];
+  plaintextBytes: number;
+}
+
 export interface RichDocumentPayload {
   format: typeof RICH_DOCUMENT_FORMAT;
   version: number;
-  doc: JSONContent;
+  /** Small metadata kept in the event even when the body is chunked. */
+  title?: string;
+  preview?: string;
+  doc?: JSONContent;
+  bodyManifest?: BodyManifest;
+  blossomKey?: string;
   ooxml?: OoxmlSource;
 }
 
 export type ParsedDocumentContent =
   | {
       kind: "rich";
-      doc: JSONContent;
+      doc?: JSONContent;
+      bodyManifest?: BodyManifest;
+      blossomKey?: string;
+      title?: string;
+      preview?: string;
       package?: string;
       packageRef?: EncryptedBlobRef;
       raw: string;
@@ -57,6 +78,36 @@ export function serializeRichDocument(
   return JSON.stringify(payload);
 }
 
+/** Serialize an event manifest whose body lives in chunked Blossom blobs. */
+export function serializeRichDocumentManifest(options: {
+  title: string;
+  preview: string;
+  bodyManifest: BodyManifest;
+  ooxml?: OoxmlSource;
+  blossomKey?: string;
+}): string {
+  const ooxmlPayload = options.ooxml
+    ? {
+        ooxml: {
+          ...(options.ooxml.package ? { package: options.ooxml.package } : {}),
+          ...(options.ooxml.packageRef
+            ? { packageRef: options.ooxml.packageRef }
+            : {}),
+        },
+      }
+    : {};
+  const payload: RichDocumentPayload = {
+    format: RICH_DOCUMENT_FORMAT,
+    version: RICH_DOCUMENT_VERSION,
+    title: options.title,
+    preview: options.preview,
+    bodyManifest: options.bodyManifest,
+    ...(options.blossomKey ? { blossomKey: options.blossomKey } : {}),
+    ...ooxmlPayload,
+  };
+  return JSON.stringify(payload);
+}
+
 /**
  * Detect the stored content format.
  *
@@ -69,16 +120,24 @@ export function parseDocumentContent(raw: string): ParsedDocumentContent {
   if (trimmed.startsWith("{")) {
     try {
       const parsed = JSON.parse(trimmed) as Partial<RichDocumentPayload> & JSONContent;
+      const hasDoc =
+        parsed.doc &&
+        typeof parsed.doc === "object" &&
+        typeof parsed.doc.type === "string";
       if (
         parsed &&
         parsed.format === RICH_DOCUMENT_FORMAT &&
-        parsed.doc &&
-        typeof parsed.doc === "object" &&
-        typeof parsed.doc.type === "string"
+        (hasDoc || parsed.bodyManifest)
       ) {
         return {
           kind: "rich",
-          doc: parsed.doc,
+          ...(hasDoc ? { doc: parsed.doc } : {}),
+          ...(parsed.bodyManifest
+            ? { bodyManifest: parsed.bodyManifest }
+            : {}),
+          ...(parsed.blossomKey ? { blossomKey: parsed.blossomKey } : {}),
+          ...(parsed.title ? { title: parsed.title } : {}),
+          ...(parsed.preview ? { preview: parsed.preview } : {}),
           ...(parsed.ooxml?.package ? { package: parsed.ooxml.package } : {}),
           ...(parsed.ooxml?.packageRef
             ? { packageRef: parsed.ooxml.packageRef }
@@ -128,17 +187,17 @@ export function richDocumentToPlainText(doc: JSONContent): string {
 /** Plain text for either stored format. */
 export function documentToPlainText(raw: string): string {
   const parsed = parseDocumentContent(raw);
-  return parsed.kind === "rich"
-    ? richDocumentToPlainText(parsed.doc)
-    : markdownToPlainText(parsed.markdown);
+  if (parsed.kind !== "rich") return markdownToPlainText(parsed.markdown);
+  if (parsed.doc) return richDocumentToPlainText(parsed.doc);
+  return (parsed.preview || parsed.title || "").trim();
 }
 
 /** Markdown projection for either stored format — an export/import adapter. */
 export function documentToMarkdown(raw: string): string {
   const parsed = parseDocumentContent(raw);
-  return parsed.kind === "rich"
-    ? richDocumentToMarkdown(parsed.doc)
-    : parsed.markdown;
+  if (parsed.kind !== "rich") return parsed.markdown;
+  if (parsed.doc) return richDocumentToMarkdown(parsed.doc);
+  return parsed.preview || parsed.title || "";
 }
 
 function inlineToMarkdown(node: JSONContent): string {
@@ -294,6 +353,10 @@ export function markdownToPlainText(markdown: string): string {
 
 /** First meaningful line, used for page titles and export filenames. */
 export function documentTitle(raw: string): string {
+  const parsed = parseDocumentContent(raw);
+  if (parsed.kind === "rich" && parsed.title) {
+    return parsed.title.trim().slice(0, 120);
+  }
   const text = documentToPlainText(raw);
   const firstLine = text.split("\n").find((line) => line.trim());
   return (firstLine ?? "").trim().slice(0, 120);

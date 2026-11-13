@@ -33,8 +33,9 @@ import { saveFontResource } from "../lib/fontStore";
 import { registerFontFaceFromBlob } from "../lib/fontRegister";
 import { sha256Hex } from "../utils/fileEncryption";
 import type { JSONContent } from "@tiptap/core";
-import { serializeRichDocument, type OoxmlSource } from "../lib/documentFormat";
 import type { EncryptedBlobRef } from "../lib/encryptedBlob";
+import { prepareRichDocumentForStorage } from "../lib/bodyChunking";
+import { useBlossomServers } from "./BlossomContext";
 import { markdownToRichDocument } from "../lib/markdownToDocument";
 import { extractLegacyLayout, type PageLayout } from "../lib/docLayout";
 
@@ -151,6 +152,7 @@ export const DocumentProvider: React.FC<{ children: React.ReactNode }> = ({
 }) => {
   const { user } = useUser();
   const { relays } = useRelays();
+  const { servers: blossomServers } = useBlossomServers();
   const [documents, setDocuments] = useState<Map<string, DocumentHistory>>(
     new Map(),
   );
@@ -479,14 +481,19 @@ export const DocumentProvider: React.FC<{ children: React.ReactNode }> = ({
       // Markdown/DOCX are import adapters: parse them into the canonical rich
       // model before they are stored. Nothing writes Markdown into the new kind.
       const canonicalDoc = options?.doc ?? markdownToRichDocument(markdown);
-      const ooxml: OoxmlSource | undefined =
+      const ooxml =
         options?.package || options?.packageRef
           ? {
               ...(options.package ? { package: options.package } : {}),
               ...(options.packageRef ? { packageRef: options.packageRef } : {}),
             }
           : undefined;
-      const canonicalContent = serializeRichDocument(canonicalDoc, ooxml);
+      const prepared = await prepareRichDocumentForStorage(canonicalDoc, {
+        ooxml,
+        servers: blossomServers,
+        localOnly: !publish,
+      });
+      const canonicalContent = prepared.content;
       const encryptedContent = await encryptContent(canonicalContent);
       const createdAt = Math.floor(Date.now() / 1000);
 
@@ -542,7 +549,7 @@ export const DocumentProvider: React.FC<{ children: React.ReactNode }> = ({
 
       return address;
     },
-    [relays, addDocument],
+    [relays, addDocument, blossomServers],
   );
 
   // Hydrate visited pages from IndexedDB on mount so they survive a reload.

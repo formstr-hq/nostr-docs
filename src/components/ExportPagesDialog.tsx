@@ -22,13 +22,17 @@ import { useSharedPages } from "../contexts/SharedDocsContext";
 import { usePublished } from "../contexts/PublishedContext";
 import { useDocMetadata } from "../contexts/DocMetadataContext";
 import { heuristicTitle, type DocOrigin, type DocumentHistory } from "../lib/docSearch";
-import { documentToMarkdown } from "../lib/documentFormat";
+import {
+  documentToMarkdown,
+  richDocumentToMarkdown,
+} from "../lib/documentFormat";
+import { resolveRichDocument } from "../lib/bodyChunking";
 import { exportPagesAsZip } from "../utils/exportPagesZip";
 
 type PageItem = {
   address: string;
   title: string;
-  markdown: string;
+  raw: string;
   origin: DocOrigin;
 };
 
@@ -92,7 +96,7 @@ export default function ExportPagesDialog({
         out.set(address, {
           address,
           title,
-          markdown: documentToMarkdown(latest.decryptedContent ?? ""),
+          raw: latest.decryptedContent ?? "",
           origin,
         });
       }
@@ -150,9 +154,17 @@ export default function ExportPagesDialog({
     setBusy(true);
     setError(null);
     try {
-      await exportPagesAsZip(
-        selected.map(({ address, title, markdown }) => ({ address, title, markdown })),
+      const pages = await Promise.all(
+        selected.map(async ({ address, title, raw }) => {
+          const resolved = await resolveRichDocument(raw);
+          const markdown =
+            resolved.kind === "rich" && resolved.doc
+              ? richDocumentToMarkdown(resolved.doc)
+              : documentToMarkdown(raw);
+          return { address, title, markdown };
+        }),
       );
+      await exportPagesAsZip(pages);
       onClose();
     } catch (err) {
       console.error("Failed to export pages:", err);

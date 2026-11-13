@@ -129,8 +129,13 @@ import {
 import {
   parseDocumentContent,
   serializeRichDocument,
+  type BodyManifest,
   type OoxmlSource,
 } from "../../lib/documentFormat";
+import {
+  prepareRichDocumentForStorage,
+  resolveRichDocument,
+} from "../../lib/bodyChunking";
 import {
   resolveOoxmlPackageBase64,
   richDocumentToDocxBlob,
@@ -442,7 +447,12 @@ export function DocumentEditorController({
     initialParsed.kind === "markdown" ? initialParsed.markdown : "";
   // TipTap accepts either a Markdown string (legacy) or a ProseMirror JSON doc.
   const initialEditorContent =
-    initialParsed.kind === "rich" ? initialParsed.doc : initialParsed.markdown;
+    initialParsed.kind === "rich"
+      ? initialParsed.doc ?? {
+          type: "doc",
+          content: [{ type: "paragraph" }],
+        }
+      : initialParsed.markdown;
 
   const [md, setMd] = useState(initialMarkdown);
   const [layout, setLayout] = useState<PageLayout>(
@@ -747,6 +757,20 @@ export function DocumentEditorController({
             : {}),
         }
       : undefined,
+  );
+  const bodyManifestRef = useRef<BodyManifest | undefined>(
+    initialParsed.kind === "rich" ? initialParsed.bodyManifest : undefined,
+  );
+  const blossomKeyRef = useRef<string | undefined>(
+    initialParsed.kind === "rich" ? initialParsed.blossomKey : undefined,
+  );
+  const lastSavedDocRef = useRef<string>(
+    initialParsed.kind === "rich" && initialParsed.doc
+      ? JSON.stringify(initialParsed.doc)
+      : "",
+  );
+  const [hydratingBody, setHydratingBody] = useState(
+    initialParsed.kind === "rich" && !!initialParsed.bodyManifest,
   );
   // Always-current markdown projection — avoids stale closures in effects/save
   const mdRef = useRef<string>(initialMarkdown);
@@ -1315,7 +1339,43 @@ Date: ${date} · Mood: ____
             ...(parsed.packageRef ? { packageRef: parsed.packageRef } : {}),
           }
         : undefined;
+    bodyManifestRef.current =
+      parsed.kind === "rich" ? parsed.bodyManifest : undefined;
+    blossomKeyRef.current =
+      parsed.kind === "rich" ? parsed.blossomKey : undefined;
   }, [activeVersion?.event.id]);
+
+  /* ── Hydrate a chunked body from Blossom ───────────────── */
+  const initialBodyManifest =
+    initialParsed.kind === "rich" ? initialParsed.bodyManifest : undefined;
+  const initialBodyManifestKey = initialBodyManifest ? initialRawContent : "";
+  useEffect(() => {
+    if (!editor || !initialBodyManifestKey) return;
+    let cancelled = false;
+    setHydratingBody(true);
+    (async () => {
+      try {
+        const resolved = await resolveRichDocument(initialRawContent);
+        if (cancelled || resolved.kind !== "rich" || !resolved.doc) return;
+        editor.commands.setContent(resolved.doc, { emitUpdate: false });
+        const markdown = getEditorMarkdown(editor);
+        mdRef.current = markdown;
+        setMd(markdown);
+        lastSavedMdRef.current = markdown;
+        lastSavedContentRef.current = initialRawContent;
+        lastSavedDocRef.current = JSON.stringify(resolved.doc);
+        bodyManifestRef.current = resolved.bodyManifest;
+        blossomKeyRef.current = resolved.blossomKey;
+      } catch (err) {
+        console.error("Could not load page body:", err);
+      } finally {
+        if (!cancelled) setHydratingBody(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [editor, initialBodyManifestKey, initialRawContent]);
 
   /* ── Persist the in-progress draft ───────────────────────── */
   // A draft has no address until it is saved, so it lives only in component
@@ -1364,7 +1424,10 @@ Date: ${date} · Mood: ____
         : mdRef.current.trim()
           ? mdRef.current
           : initialParsed.markdown;
-    if (typeof seedSource === "string" ? seedSource.trim() : seedSource) {
+    if (
+      seedSource &&
+      (typeof seedSource === "string" ? seedSource.trim() : true)
+    ) {
       editor.commands.setContent(seedSource);
     }
   }, [isCollabReady, editor, initialParsed]);
@@ -1727,31 +1790,42 @@ Date: ${date} · Mood: ____
     // Never clobber unsaved changes the user is currently editing
     if (mdRef.current !== lastSavedMdRef.current) return;
     const content = activeVersion.decryptedContent ?? "";
-    const parsed = parseDocumentContent(content);
-    if (editor) {
-      const { from, to } = editor.state.selection;
-      if (parsed.kind === "rich") {
-        editor.commands.setContent(parsed.doc, { emitUpdate: false });
+    let cancelled = false;
+    (async () => {
+      try {
+        const parsed = await resolveRichDocument(content);
+        if (cancelled || !editor) return;
+        const { from, to } = editor.state.selection;
+        if (parsed.kind === "rich") {
+          if (!parsed.doc) return;
+          editor.commands.setContent(parsed.doc, { emitUpdate: false });
+          lastSavedDocRef.current = JSON.stringify(parsed.doc);
+          bodyManifestRef.current = parsed.bodyManifest;
+          blossomKeyRef.current = parsed.blossomKey;
+        } else {
+          editor.commands.setContent(parsed.markdown, { emitUpdate: false });
+          lastSavedDocRef.current = "";
+        }
         const markdown = getEditorMarkdown(editor);
         mdRef.current = markdown;
         setMd(markdown);
         lastSavedMdRef.current = markdown;
-      } else {
-        mdRef.current = parsed.markdown;
-        setMd(parsed.markdown);
-        lastSavedMdRef.current = parsed.markdown;
-        editor.commands.setContent(parsed.markdown, { emitUpdate: false });
+        lastSavedContentRef.current = content;
+        // Restore cursor, clamped to new doc length in case content shrank
+        const docSize = editor.state.doc.content.size;
+        editor.commands.setTextSelection({
+          from: Math.min(from, docSize),
+          to: Math.min(to, docSize),
+        });
+        setWordCount(editor.storage.characterCount.words());
+        setCharCount(editor.storage.characterCount.characters());
+      } catch (err) {
+        console.error("Could not resync page body:", err);
       }
-      lastSavedContentRef.current = content;
-      // Restore cursor, clamped to new doc length in case content shrank
-      const docSize = editor.state.doc.content.size;
-      editor.commands.setTextSelection({
-        from: Math.min(from, docSize),
-        to: Math.min(to, docSize),
-      });
-      setWordCount(editor.storage.characterCount.words());
-      setCharCount(editor.storage.characterCount.characters());
-    }
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, [activeVersion?.event.id]);
 
   const handleSelectVersion = (eventId: string) => {
@@ -1759,7 +1833,7 @@ Date: ${date} · Mood: ____
     setHistoryConfirmOpen(true);
   };
 
-  const applyHistoricalVersion = () => {
+  const applyHistoricalVersion = async () => {
     if (!history || !pendingVersionId) return;
 
     const version = history.versions.find(
@@ -1768,20 +1842,22 @@ Date: ${date} · Mood: ____
     if (!version) return;
 
     const content = version.decryptedContent ?? "";
-    const parsed = parseDocumentContent(content);
+    const parsed = await resolveRichDocument(content);
     if (editor) {
       if (parsed.kind === "rich") {
+        if (!parsed.doc) return;
         editor.commands.setContent(parsed.doc, { emitUpdate: false });
-        const markdown = getEditorMarkdown(editor);
-        mdRef.current = markdown;
-        setMd(markdown);
-        lastSavedMdRef.current = markdown;
+        lastSavedDocRef.current = JSON.stringify(parsed.doc);
+        bodyManifestRef.current = parsed.bodyManifest;
+        blossomKeyRef.current = parsed.blossomKey;
       } else {
-        mdRef.current = parsed.markdown;
-        setMd(parsed.markdown);
-        lastSavedMdRef.current = parsed.markdown;
         editor.commands.setContent(parsed.markdown, { emitUpdate: false });
+        lastSavedDocRef.current = "";
       }
+      const markdown = getEditorMarkdown(editor);
+      mdRef.current = markdown;
+      setMd(markdown);
+      lastSavedMdRef.current = markdown;
     }
     lastSavedContentRef.current = content;
     setMode("preview");
@@ -2000,7 +2076,7 @@ Date: ${date} · Mood: ____
   };
 
   const handleSave = async (silent = false): Promise<boolean> => {
-    if (saving) return false;
+    if (saving || hydratingBody) return false;
 
     // In WYSIWYG mode, read from editor (avoids stale React state).
     // In split/preview mode, mdRef is updated by the textarea onChange.
@@ -2009,40 +2085,54 @@ Date: ${date} · Mood: ____
         ? getEditorMarkdown(editor)
         : mdRef.current;
 
-    // Canonical payload: rich docs save ProseMirror JSON; legacy docs keep
-    // saving Markdown for backward compatibility. Split mode is a Markdown
-    // adapter view, so parse its source back into the canonical model on save.
-    const contentToSave = isRichDocument
-      ? editor
-        ? serializeRichDocument(
-            mode === "split"
-              ? parseMarkdownDocument(editor, mdToSave).toJSON()
-              : editor.getJSON(),
-            sourcePackageRef.current,
-          )
-        : lastSavedContentRef.current
-      : mdToSave;
-
-    const contentChanged = isRichDocument
-      ? contentToSave !== lastSavedContentRef.current
+    const docToSave =
+      isRichDocument && editor
+        ? mode === "split"
+          ? parseMarkdownDocument(editor, mdToSave).toJSON()
+          : editor.getJSON()
+        : undefined;
+    const docChanged = isRichDocument
+      ? !!docToSave && JSON.stringify(docToSave) !== lastSavedDocRef.current
       : mdToSave !== lastSavedMdRef.current;
     const layoutChanged = !layoutEquals(layout, lastSavedLayoutRef.current);
-    if (!contentChanged && !layoutChanged) return true;
+    if (!docChanged && !layoutChanged) return true;
 
     setSaving(true);
     const prevSavedMd = lastSavedMdRef.current;
     const prevSavedContent = lastSavedContentRef.current;
+    const prevSavedDoc = lastSavedDocRef.current;
+    const prevSavedManifest = bodyManifestRef.current;
+    const prevBlossomKey = blossomKeyRef.current;
     const prevSavedLayout = lastSavedLayoutRef.current;
-    lastSavedMdRef.current = mdToSave; // update before navigate() fires in saveNewDocument
-    lastSavedContentRef.current = contentToSave;
-    // The navigation below is synchronous with the save; mark both saved now so
-    // the unsaved-changes blocker sees the page as saved.
-    lastSavedLayoutRef.current = layout;
+    let contentToSave = lastSavedContentRef.current;
+
     try {
+      if (isRichDocument && docToSave) {
+        const prepared = await prepareRichDocumentForStorage(docToSave, {
+          ooxml: sourcePackageRef.current,
+          servers: blossomServers,
+          localOnly: isLocalOnly || (isDraft && draftLocalOnly),
+          previous: bodyManifestRef.current,
+          blossomKey: blossomKeyRef.current,
+        });
+        contentToSave = prepared.content;
+        bodyManifestRef.current = prepared.bodyManifest;
+        blossomKeyRef.current = prepared.blossomKey;
+        lastSavedDocRef.current = JSON.stringify(docToSave);
+      } else if (!isRichDocument) {
+        contentToSave = mdToSave;
+      }
+
+      lastSavedMdRef.current = mdToSave; // update before navigate() fires in saveNewDocument
+      lastSavedContentRef.current = contentToSave;
+      // The navigation below is synchronous with the save; mark both saved now so
+      // the unsaved-changes blocker sees the page as saved.
+      lastSavedLayoutRef.current = layout;
+
       if (isDraft) {
         await saveNewDocument(contentToSave);
       } else {
-        if (contentChanged) await saveExistingDocument(selectedDocumentId!, contentToSave);
+        if (docChanged) await saveExistingDocument(selectedDocumentId!, contentToSave);
         if (layoutChanged) await setDocLayout(selectedDocumentId!, layout);
       }
       setLastSavedAt(new Date());
@@ -2068,6 +2158,9 @@ Date: ${date} · Mood: ____
     } catch (err) {
       lastSavedMdRef.current = prevSavedMd; // restore so unsaved indicator reappears
       lastSavedContentRef.current = prevSavedContent;
+      lastSavedDocRef.current = prevSavedDoc;
+      bodyManifestRef.current = prevSavedManifest;
+      blossomKeyRef.current = prevBlossomKey;
       lastSavedLayoutRef.current = prevSavedLayout;
       console.error("Save failed:", err);
       setToast({
@@ -2820,10 +2913,9 @@ Date: ${date} · Mood: ____
               // owner's last version (relays drop equal-or-older replaceables).
               const lastAt = history?.versions.at(-1)?.event.created_at ?? 0;
               const createdAt = nextContentCreatedAt(lastAt);
-              const shareContent =
-                isRichDocument && editor
-                  ? serializeRichDocument(editor.getJSON(), sourcePackageRef.current)
-                  : md;
+              const shareContent = isRichDocument
+                ? lastSavedContentRef.current
+                : md;
               const sharedEvent = await enableGroupSharing(
                 target.owner,
                 target.d,
@@ -2864,10 +2956,9 @@ Date: ${date} · Mood: ____
             }
           }
 
-          const shareContent =
-            isRichDocument && editor
-              ? serializeRichDocument(editor.getJSON(), sourcePackageRef.current)
-              : md;
+          const shareContent = isRichDocument
+            ? lastSavedContentRef.current
+            : md;
           const result = await handleGeneratePrivateLink(
             canEdit,
             selectedDocumentId,
