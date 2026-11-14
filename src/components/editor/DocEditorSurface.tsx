@@ -15,6 +15,10 @@ import { CommentSidebar } from "../comments/CommentSidebar";
 import { useComments } from "../../contexts/CommentContext";
 import { applyDomHighlights } from "../../utils/domHighlighting";
 import { DocumentPage } from "./DocumentPage";
+import {
+  PageCanvasProvider,
+  wrapInPages,
+} from "./extensions/Page";
 import type { PageLayout } from "../../lib/docLayout";
 
 type Props = {
@@ -377,14 +381,28 @@ export function DocEditorSurface({
 
   const handleAddPage = () => {
     if (!editor) return;
+    const current = editor.getJSON();
+    const hasPages = (current.content ?? []).some(
+      (node) => node.type === "page",
+    );
+    if (!hasPages) {
+      editor.commands.setContent(wrapInPages(current), { emitUpdate: false });
+    }
     const end = editor.state.doc.content.size;
     editor
       .chain()
       .focus()
-      .insertContentAt(end, [{ type: "pageBreak" }, { type: "paragraph" }])
+      .insertContentAt(end, {
+        type: "page",
+        content: [{ type: "paragraph" }],
+      })
       .scrollIntoView()
       .run();
   };
+
+  const hasPageNodes = (editor?.getJSON().content ?? []).some(
+    (node) => node.type === "page",
+  );
 
   return (
     <Box data-pages-editor sx={{ display: "flex", flex: 1, overflow: "hidden", bgcolor: "background.default" }}>
@@ -392,9 +410,30 @@ export function DocEditorSurface({
         sx={{ flex: 1, overflowY: "auto", pb: { xs: 12, sm: 8 }, cursor: "text" }}
         onClick={handleEditorClick}
       >
-        <DocumentPage layout={layout} viewMode={viewMode}>
-          <EditorContent editor={editor} />
-        </DocumentPage>
+        {layout.canvas === "page" && hasPageNodes ? (
+          <Box
+            data-page-stack
+            sx={{
+              display: "flex",
+              flexDirection: "column",
+              alignItems: "center",
+              gap: 3,
+              py: { xs: 1, sm: 2 },
+              bgcolor: (theme) =>
+                theme.palette.mode === "dark"
+                  ? "rgba(0,0,0,0.22)"
+                  : "rgba(0,0,0,0.045)",
+            }}
+          >
+            <PageCanvasProvider layout={layout} viewMode={viewMode}>
+              <EditorContent editor={editor} />
+            </PageCanvasProvider>
+          </Box>
+        ) : (
+          <DocumentPage layout={layout} viewMode={viewMode}>
+            <EditorContent editor={editor} />
+          </DocumentPage>
+        )}
         {canEdit && editor && layout.canvas === "page" && (
           <Box
             data-pages-add-page

@@ -58,7 +58,9 @@ test("imports, edits and exports a DOCX with headers preserved", async ({ page }
   ).at(-1);
   expect(latest?.content.length ?? Infinity).toBeLessThan(20_000);
   // The original header/footer should be projected into the page layout.
-  await expect(page.getByText("NORTHWIND STUDIO", { exact: true })).toBeVisible({
+  await expect(
+    page.getByText("NORTHWIND STUDIO", { exact: true }).first(),
+  ).toBeVisible({
     timeout: 20_000,
   });
   // Extracted DOCX images are fetched/decrypted from Blossom, not embedded as

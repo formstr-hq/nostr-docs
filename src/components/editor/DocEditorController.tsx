@@ -49,6 +49,7 @@ import { Columns, Column } from "./extensions/Columns";
 import { MarkdownColor } from "./extensions/MarkdownColor";
 import { OoxmlBlock } from "./extensions/OoxmlBlock";
 import { OoxmlImage } from "./extensions/OoxmlImage";
+import { Page, unwrapPages, wrapInPages } from "./extensions/Page";
 import { EncryptedFileNode } from "./extensions/EncryptedFileNode";
 import { CommentHighlight } from "./extensions/CommentHighlight";
 import { FormNode } from "./extensions/FormNode";
@@ -448,10 +449,17 @@ export function DocumentEditorController({
   // TipTap accepts either a Markdown string (legacy) or a ProseMirror JSON doc.
   const initialEditorContent =
     initialParsed.kind === "rich"
-      ? initialParsed.doc ?? {
-          type: "doc",
-          content: [{ type: "paragraph" }],
-        }
+      ? (savedLayout ?? draftLayout).canvas === "page"
+        ? wrapInPages(
+            initialParsed.doc ?? {
+              type: "doc",
+              content: [{ type: "paragraph" }],
+            },
+          )
+        : initialParsed.doc ?? {
+            type: "doc",
+            content: [{ type: "paragraph" }],
+          }
       : initialParsed.markdown;
 
   const [md, setMd] = useState(initialMarkdown);
@@ -1013,6 +1021,7 @@ Date: ${date} · Mood: ____
       Column,
       OoxmlBlock,
       OoxmlImage,
+      Page,
       Indent,
       PageBreak,
       GhostTextSuggestion,
@@ -1357,7 +1366,10 @@ Date: ${date} · Mood: ____
       try {
         const resolved = await resolveRichDocument(initialRawContent);
         if (cancelled || resolved.kind !== "rich" || !resolved.doc) return;
-        editor.commands.setContent(resolved.doc, { emitUpdate: false });
+        editor.commands.setContent(
+          layout.canvas === "page" ? wrapInPages(resolved.doc) : resolved.doc,
+          { emitUpdate: false },
+        );
         const markdown = getEditorMarkdown(editor);
         mdRef.current = markdown;
         setMd(markdown);
@@ -1376,6 +1388,18 @@ Date: ${date} · Mood: ____
       cancelled = true;
     };
   }, [editor, initialBodyManifestKey, initialRawContent]);
+
+  /* ── Keep page containers in sync with the canvas mode ─── */
+  useEffect(() => {
+    if (!editor) return;
+    const json = editor.getJSON();
+    const hasPages = (json.content ?? []).some((node) => node.type === "page");
+    if (layout.canvas === "page" && !hasPages) {
+      editor.commands.setContent(wrapInPages(json), { emitUpdate: false });
+    } else if (layout.canvas !== "page" && hasPages) {
+      editor.commands.setContent(unwrapPages(json), { emitUpdate: false });
+    }
+  }, [layout.canvas, editor]);
 
   /* ── Persist the in-progress draft ───────────────────────── */
   // A draft has no address until it is saved, so it lives only in component
@@ -1428,7 +1452,11 @@ Date: ${date} · Mood: ____
       seedSource &&
       (typeof seedSource === "string" ? seedSource.trim() : true)
     ) {
-      editor.commands.setContent(seedSource);
+      editor.commands.setContent(
+        typeof seedSource === "string" || layout.canvas !== "page"
+          ? seedSource
+          : wrapInPages(seedSource),
+      );
     }
   }, [isCollabReady, editor, initialParsed]);
 
@@ -1515,10 +1543,13 @@ Date: ${date} · Mood: ____
     // split textarea. Preview→edit keeps the canonical rich JSON untouched so
     // images, columns and opaque OOXML nodes are not round-tripped through
     // Markdown.
+    const nextContent = isRichDocument
+      ? parseMarkdownDocument(editor, mdRef.current).toJSON()
+      : mdRef.current;
     editor.commands.setContent(
-      isRichDocument
-        ? parseMarkdownDocument(editor, mdRef.current)
-        : mdRef.current,
+      typeof nextContent !== "string" && layout.canvas === "page"
+        ? wrapInPages(nextContent)
+        : nextContent,
       { emitUpdate: false },
     );
     setWordCount(editor.storage.characterCount.words());
@@ -1798,7 +1829,10 @@ Date: ${date} · Mood: ____
         const { from, to } = editor.state.selection;
         if (parsed.kind === "rich") {
           if (!parsed.doc) return;
-          editor.commands.setContent(parsed.doc, { emitUpdate: false });
+          editor.commands.setContent(
+            layout.canvas === "page" ? wrapInPages(parsed.doc) : parsed.doc,
+            { emitUpdate: false },
+          );
           lastSavedDocRef.current = JSON.stringify(parsed.doc);
           bodyManifestRef.current = parsed.bodyManifest;
           blossomKeyRef.current = parsed.blossomKey;
@@ -1846,7 +1880,10 @@ Date: ${date} · Mood: ____
     if (editor) {
       if (parsed.kind === "rich") {
         if (!parsed.doc) return;
-        editor.commands.setContent(parsed.doc, { emitUpdate: false });
+        editor.commands.setContent(
+          layout.canvas === "page" ? wrapInPages(parsed.doc) : parsed.doc,
+          { emitUpdate: false },
+        );
         lastSavedDocRef.current = JSON.stringify(parsed.doc);
         bodyManifestRef.current = parsed.bodyManifest;
         blossomKeyRef.current = parsed.blossomKey;
@@ -2085,12 +2122,14 @@ Date: ${date} · Mood: ____
         ? getEditorMarkdown(editor)
         : mdRef.current;
 
-    const docToSave =
+    const rawDoc =
       isRichDocument && editor
         ? mode === "split"
           ? parseMarkdownDocument(editor, mdToSave).toJSON()
           : editor.getJSON()
         : undefined;
+    const docToSave =
+      rawDoc && layout.canvas === "page" ? unwrapPages(rawDoc) : rawDoc;
     const docChanged = isRichDocument
       ? !!docToSave && JSON.stringify(docToSave) !== lastSavedDocRef.current
       : mdToSave !== lastSavedMdRef.current;
@@ -2241,7 +2280,9 @@ Date: ${date} · Mood: ____
       try {
         const blob = await richDocumentToDocxBlob(
           packageBase64,
-          editor.getJSON(),
+          layout.canvas === "page"
+            ? unwrapPages(editor.getJSON())
+            : editor.getJSON(),
           layout,
         );
         const url = URL.createObjectURL(blob);

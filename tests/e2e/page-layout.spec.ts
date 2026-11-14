@@ -40,7 +40,7 @@ test("page view can append a blank page", async ({ page }) => {
   await expect(page.locator("[data-pages-page]")).toBeVisible();
 
   await page.getByRole("button", { name: "Add page" }).click();
-  await expect(page.locator(".tiptap div[data-page-break]")).toHaveCount(1);
+  await expect(page.locator("[data-pages-page]")).toHaveCount(2);
 
   await editorSurface(page).click();
   await page.keyboard.press("Control+End");

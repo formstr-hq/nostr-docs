@@ -223,6 +223,25 @@ function waitForImageDecode(src: string): Promise<boolean> {
   });
 }
 
+/** Page nodes are an editor view wrapper. Export adapters use page breaks. */
+function flattenPageSheetsForExport(html: string): string {
+  if (!html.includes("data-page-sheet")) return html;
+  const doc = new DOMParser().parseFromString(`<body>${html}</body>`, "text/html");
+  const sheets = Array.from(doc.querySelectorAll("[data-page-sheet]"));
+  sheets.forEach((sheet, index) => {
+    if (index > 0) {
+      const breakNode = doc.createElement("div");
+      breakNode.setAttribute("data-page-break", "true");
+      sheet.parentNode?.insertBefore(breakNode, sheet);
+    }
+    while (sheet.firstChild) {
+      sheet.parentNode?.insertBefore(sheet.firstChild, sheet);
+    }
+    sheet.remove();
+  });
+  return doc.body.innerHTML;
+}
+
 async function inlineEncryptedImagesForExport(html: string): Promise<string> {
   const doc = new DOMParser().parseFromString(`<body>${html}</body>`, "text/html");
   console.debug("inlineEncryptedImagesForExport: start", { length: html.length });
@@ -915,7 +934,9 @@ export async function exportAsHtml(
     .replace(/\s+/g, "-")
     .toLowerCase();
   const name = filename ?? (derived || "untitled");
-  const exportHtml = await inlineEncryptedImagesForExport(html);
+  const exportHtml = await inlineEncryptedImagesForExport(
+    flattenPageSheetsForExport(html),
+  );
   const fullHtml = styledHtmlDocument(exportHtml, title, layout);
   const blob = new Blob([fullHtml], { type: "text/html;charset=utf-8" });
   downloadBlob(blob, `${name}.html`);
@@ -930,7 +951,9 @@ export async function exportAsPdf(
   title: string,
   layout?: PageLayout,
 ) {
-  const exportHtml = await inlineEncryptedImagesForExport(html);
+  const exportHtml = await inlineEncryptedImagesForExport(
+    flattenPageSheetsForExport(html),
+  );
   const fullHtml = styledHtmlDocument(exportHtml, title, layout);
   const printWindow = window.open("", "_blank");
   if (!printWindow) return;
@@ -987,7 +1010,10 @@ export async function exportAsDocx(
     // sibling images when multiple <encrypted-file> tags share the same parent.
     // htmlToDocxParagraphs handles <encrypted-file> tags natively by fetching,
     // decrypting, and creating ImageRun objects from the raw binary data.
-    const paragraphs = await htmlToDocxParagraphs(html, layout);
+    const paragraphs = await htmlToDocxParagraphs(
+      flattenPageSheetsForExport(html),
+      layout,
+    );
 
     const headerParagraph = docxHeaderFooterParagraph(layout.header);
     const footerParagraph = docxHeaderFooterParagraph(layout.footer);

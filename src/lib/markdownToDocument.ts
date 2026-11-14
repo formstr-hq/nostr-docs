@@ -12,6 +12,7 @@ import { Columns, Column } from "../components/editor/extensions/Columns";
 import { MarkdownColor } from "../components/editor/extensions/MarkdownColor";
 import { OoxmlBlock } from "../components/editor/extensions/OoxmlBlock";
 import { OoxmlImage } from "../components/editor/extensions/OoxmlImage";
+import { Page } from "../components/editor/extensions/Page";
 import MarkdownIt from "markdown-it";
 import { Indent } from "../components/editor/extensions/Indent";
 import { EncryptedFileNode } from "../components/editor/extensions/EncryptedFileNode";
@@ -42,6 +43,7 @@ const documentExtensions = [
   Column,
   OoxmlBlock,
   OoxmlImage,
+  Page,
   Indent,
   EncryptedFileNode,
   CommentHighlight,
