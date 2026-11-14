@@ -131,9 +131,9 @@ test("page layout, alignment, and page breaks survive save + reload", async ({
   await expect(page.getByRole("heading", { name: unique })).toBeVisible({
     timeout: 20_000,
   });
-  await expect(page.getByText("ACME Inc")).toBeVisible();
-  await expect(page.getByText("Footer text")).toBeVisible();
-  await expect(page.locator("[data-page-break]")).toHaveCount(1);
+  await expect(page.getByText("ACME Inc").first()).toBeVisible();
+  await expect(page.getByText("Footer text").first()).toBeVisible();
+  await expect(page.locator("[data-pages-page]")).toHaveCount(2);
 
   const headingAlign = await page
     .getByRole("heading", { name: unique })
@@ -153,6 +153,7 @@ test("page layout, alignment, and page breaks survive save + reload", async ({
 
   const reloadedWidth = await page
     .locator("[data-pages-page]")
+    .first()
     .evaluate((el) => Number.parseFloat(getComputedStyle(el).width));
   expect(reloadedWidth).toBeGreaterThan(900);
 

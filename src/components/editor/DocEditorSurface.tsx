@@ -112,6 +112,15 @@ const markdownSxBase = {
 // Cast to any: react-markdown's Components type only covers known HTML tags,
 // but rehype-raw passes custom elements through as-is.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
+/** Split the Markdown projection on explicit page-break nodes so preview page
+ * view renders actual page sheets instead of one continuous canvas. */
+function splitPreviewPages(value: string): string[] {
+  const parts = value
+    .split(/<div[^>]*\bdata-page-break\b[^>]*>\s*<\/div>|<hr[^>]*\bdata-page-break\b[^>]*\/?>/i)
+    .map((part) => part.trim());
+  return parts.length > 0 ? parts : [value];
+}
+
 const markdownComponents: any = {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   table: ({ children, ...props }: any) => (
@@ -232,25 +241,42 @@ export function DocEditorSurface({
             </Fab>
           )}
 
-          <DocumentPage layout={layout} viewMode={viewMode} contentRef={previewRef}>
+          <Box ref={previewRef}>
             {value.trim() ? (
-              // Keyed by content: applyDomHighlights mutates this rendered DOM
-              // (splitting text nodes and wrapping them in highlight spans), so
-              // React must never diff into the subtree after the content
-              // changes — it would call removeChild/insertBefore against nodes
-              // whose parents changed and crash. The key swap makes React drop
-              // the old subtree wholesale and mount fresh nodes instead.
-              <div key={value}>
-                <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeRaw]} urlTransform={(url) => url} components={markdownComponents}>{value}</ReactMarkdown>
-              </div>
+              splitPreviewPages(value).map((page, index) => (
+                // Keyed by content: applyDomHighlights mutates this rendered DOM
+                // (splitting text nodes and wrapping them in highlight spans), so
+                // React must never diff into the subtree after the content
+                // changes — it would call removeChild/insertBefore against nodes
+                // whose parents changed and crash. The key swap makes React drop
+                // the old subtree wholesale and mount fresh nodes instead.
+                <DocumentPage
+                  key={`${index}-${value}`}
+                  layout={layout}
+                  viewMode={viewMode}
+                >
+                  {page ? (
+                    <ReactMarkdown
+                      remarkPlugins={[remarkGfm]}
+                      rehypePlugins={[rehypeRaw]}
+                      urlTransform={(url) => url}
+                      components={markdownComponents}
+                    >
+                      {page}
+                    </ReactMarkdown>
+                  ) : null}
+                </DocumentPage>
+              ))
             ) : (
-              <Typography color="text.secondary">
-                Nothing to preview yet —{" "}
-                {isMobile ? "tap the edit button" : "click the edit button"} to
-                start writing.
-              </Typography>
+              <DocumentPage layout={layout} viewMode={viewMode}>
+                <Typography color="text.secondary">
+                  Nothing to preview yet —{" "}
+                  {isMobile ? "tap the edit button" : "click the edit button"} to
+                  start writing.
+                </Typography>
+              </DocumentPage>
             )}
-          </DocumentPage>
+          </Box>
         </Box>
         {commentsEnabled && (
           <>
@@ -310,15 +336,32 @@ export function DocEditorSurface({
             color: theme.palette.text.primary,
           }}
         >
-          <DocumentPage layout={layout} viewMode={viewMode}>
-            {value.trim() ? (
-              <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeRaw]} urlTransform={(url) => url} components={markdownComponents}>{value}</ReactMarkdown>
-            ) : (
+          {value.trim() ? (
+            splitPreviewPages(value).map((page, index) => (
+              <DocumentPage
+                key={`${index}-${value}`}
+                layout={layout}
+                viewMode={viewMode}
+              >
+                {page ? (
+                  <ReactMarkdown
+                    remarkPlugins={[remarkGfm]}
+                    rehypePlugins={[rehypeRaw]}
+                    urlTransform={(url) => url}
+                    components={markdownComponents}
+                  >
+                    {page}
+                  </ReactMarkdown>
+                ) : null}
+              </DocumentPage>
+            ))
+          ) : (
+            <DocumentPage layout={layout} viewMode={viewMode}>
               <Typography color="text.secondary" fontStyle="italic">
                 Preview will appear here as you type…
               </Typography>
-            )}
-          </DocumentPage>
+            </DocumentPage>
+          )}
         </Box>
         {showComments && <CommentSidebar onClose={onCloseComments} activeCommentId={activeCommentId} isMobile={isMobile} />}
       </Box>
@@ -351,26 +394,34 @@ export function DocEditorSurface({
       >
         <DocumentPage layout={layout} viewMode={viewMode}>
           <EditorContent editor={editor} />
-          {canEdit && editor && layout.canvas === "page" && (
-            <Box sx={{ display: "flex", justifyContent: "center", pt: 2, pb: 1 }}>
-              <Button
-                size="small"
-                variant="outlined"
-                startIcon={<AddIcon />}
-                onClick={handleAddPage}
-                aria-label="Add page"
-                sx={{
-                  borderStyle: "dashed",
-                  color: "text.secondary",
-                  borderColor: "divider",
-                  "&:hover": { borderColor: "secondary.main", color: "secondary.main" },
-                }}
-              >
-                Add page
-              </Button>
-            </Box>
-          )}
         </DocumentPage>
+        {canEdit && editor && layout.canvas === "page" && (
+          <Box
+            data-pages-add-page
+            sx={{
+              display: "flex",
+              justifyContent: "center",
+              py: 1.5,
+              bgcolor: "background.default",
+            }}
+          >
+            <Button
+              size="small"
+              variant="outlined"
+              startIcon={<AddIcon />}
+              onClick={handleAddPage}
+              aria-label="Add page"
+              sx={{
+                borderStyle: "dashed",
+                color: "text.secondary",
+                borderColor: "divider",
+                "&:hover": { borderColor: "secondary.main", color: "secondary.main" },
+              }}
+            >
+              Add page
+            </Button>
+          </Box>
+        )}
         {commentsEnabled && (
           <CommentComposer editor={editor} docEventId={docEventId} isMobile={isMobile} />
         )}

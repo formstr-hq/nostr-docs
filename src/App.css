@@ -200,24 +200,14 @@
 .tiptap div[data-page-break] {
   position: relative;
   display: block;
-  height: 0;
-  margin: 2.2em 0;
-  border-top: 2px dashed rgba(139, 92, 246, 0.45);
+  height: 18px;
+  margin: 1.4em 0;
+  border: 0;
+  border-radius: 3px;
+  background: rgba(128, 128, 128, 0.08);
 }
 .tiptap div[data-page-break]::after {
-  content: "Page break";
-  position: absolute;
-  top: -0.85em;
-  left: 50%;
-  transform: translateX(-50%);
-  padding: 0 0.5em;
-  background: inherit;
-  color: rgba(139, 92, 246, 0.8);
-  font-size: 0.68em;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  white-space: nowrap;
+  display: none;
 }
 
 /* ── Two-column sections (rich templates) ─────────────────── */
