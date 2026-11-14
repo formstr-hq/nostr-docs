@@ -16,7 +16,6 @@ import {
 } from "nostr-tools";
 import { hexToBytes } from "nostr-tools/utils";
 import { saveLocalDocState, loadAllLocalEvents, type LocalStoredEvent } from "../lib/localStore";
-import { KIND_FILE } from "../nostr/kinds";
 import { fetchAllDocMetadata, saveDocMetadata } from "../nostr/docMetadata";
 import { subscribe, resolveEventsByAddress, cacheLocalEvents, type Subscription } from "../dataLayer";
 import { getEventAddress } from "../utils/helpers";
@@ -111,7 +110,7 @@ export const SharedPagesProvider: React.FC<{ children: React.ReactNode }> = ({
 
       let roster = null;
       try {
-        roster = await fetchRoster(parsed.owner, parsed.d, viewKey, relays);
+        roster = await fetchRoster(parsed.owner, parsed.d, viewKey, relays, parsed.kind);
       } catch {
         roster = null;
       }
@@ -132,9 +131,9 @@ export const SharedPagesProvider: React.FC<{ children: React.ReactNode }> = ({
       // `open` mode has no author set to filter on: discover versions by the
       // capability-derived room tag. Restricted/legacy keeps the author filter.
       if (open) {
-        filters.push({ kinds: [KIND_FILE], "#a": [room] });
+        filters.push({ kinds: [parsed.kind], "#a": [room] });
       } else {
-        filters.push({ kinds: [KIND_FILE], authors: authorsList, "#d": [parsed.d] });
+        filters.push({ kinds: [parsed.kind], authors: authorsList, "#d": [parsed.d] });
       }
     }
 

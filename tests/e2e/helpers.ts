@@ -5,6 +5,7 @@ import { nip19, type Event, type Filter } from "nostr-tools";
 export const LOCAL_RELAY = "localhost:7449";
 export const LOCAL_RELAY_URL = "ws://localhost:7449";
 export const LOCAL_RELAY_CONTROL = "http://localhost:7449";
+export const LOCAL_BLOSSOM = "http://localhost:7450";
 
 /**
  * Empty matching events from the test relay via its HTTP control surface. Pass
@@ -36,9 +37,8 @@ export function pubkeyFromDocUrl(url: string): string {
  * Shared building blocks for the e2e tests.
  *
  * Everything here interacts the way a real user would — by visible text, roles,
- * placeholders and labels — rather than test-only hooks. Tests never touch
- * localStorage or signer internals, so they stay valid as the signer layer
- * evolves.
+ * placeholders and labels — rather than test-only hooks. The only storage setup
+ * is pointing Blossom at the local test server so binary uploads stay local.
  */
 
 /**
@@ -110,6 +110,11 @@ export const TEST_PASSPHRASE = "e2e-test-passphrase";
  * internals or storage seeding are needed.
  */
 export async function loginAsGuest(page: Page) {
+  // Keep binary uploads inside the test process even if a dev server was
+  // reused without VITE_DEFAULT_BLOSSOM set.
+  await page.addInitScript((server) => {
+    localStorage.setItem("formstr:blossom-servers", JSON.stringify([server]));
+  }, LOCAL_BLOSSOM);
   await page.goto("/new");
   await page.getByRole("button", { name: "Login", exact: true }).click();
   await createAccountFromOpenModal(page);
@@ -180,11 +185,29 @@ export function editorSurface(page: Page) {
   return page.locator(".tiptap").first();
 }
 
+/** Restore the desktop workspace sidebar after immersive typing hid it. */
+export async function showWorkspaceSidebar(page: Page): Promise<void> {
+  const show = page.getByRole("button", { name: "Show sidebar" });
+  if (await show.isVisible().catch(() => false)) {
+    await show.click();
+  }
+}
+
 /** Type text into the (empty) draft editor. */
 export async function typeIntoEditor(page: Page, text: string) {
+  // New page now opens the template picker; tests that just want a blank draft
+  // should choose Blank page first.
+  const picker = page.getByRole("dialog").filter({ hasText: "Start a new page" });
+  if (await picker.isVisible().catch(() => false)) {
+    await picker.getByRole("button", { name: "Start with Blank page" }).click();
+    await expect(picker).toBeHidden();
+  }
   const surface = editorSurface(page);
   await surface.click();
   await page.keyboard.type(text);
+  // Typing hides the desktop workspace sidebar (immersive mode). Tests that
+  // need to navigate back should get the normal chrome back.
+  await showWorkspaceSidebar(page);
 }
 
 /**

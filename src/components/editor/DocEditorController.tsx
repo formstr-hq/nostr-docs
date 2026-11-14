@@ -34,8 +34,9 @@ import {
 } from "@tiptap/pm/model";
 import { closeHistory } from "@tiptap/pm/history";
 import StarterKit from "@tiptap/starter-kit";
-import { TextStyle } from "@tiptap/extension-text-style";
+import { TextStyle, FontSize, LineHeight } from "@tiptap/extension-text-style";
 import { FontFamily } from "@tiptap/extension-font-family";
+import TextAlign from "@tiptap/extension-text-align";
 import { Markdown } from "tiptap-markdown";
 import Link from "@tiptap/extension-link";
 import Placeholder from "@tiptap/extension-placeholder";
@@ -44,12 +45,19 @@ import { Table } from "@tiptap/extension-table";
 import { TableRow } from "@tiptap/extension-table-row";
 import { TableHeader } from "@tiptap/extension-table-header";
 import { TableCell } from "@tiptap/extension-table-cell";
+import { Columns, Column } from "./extensions/Columns";
+import { MarkdownColor } from "./extensions/MarkdownColor";
+import { OoxmlBlock } from "./extensions/OoxmlBlock";
+import { OoxmlImage } from "./extensions/OoxmlImage";
+import { Page, unwrapPages, wrapInPages } from "./extensions/Page";
 import { EncryptedFileNode } from "./extensions/EncryptedFileNode";
 import { CommentHighlight } from "./extensions/CommentHighlight";
 import { FormNode } from "./extensions/FormNode";
 import { SlashCommand } from "./extensions/SlashCommand";
 import { Indent } from "./extensions/Indent";
 import { TableHandles } from "./extensions/TableHandles";
+import { AlignableParagraph, AlignableHeading } from "./extensions/AlignableBlocks";
+import { PageBreak } from "./extensions/PageBreak";
 import {
   GhostTextSuggestion,
   setGhostSuggestion,
@@ -66,6 +74,7 @@ import type { SlashCommandItem } from "./extensions/SlashCommand";
 import type { SlashCommandMenuHandle } from "./SlashCommandMenu";
 import CreateFormDialog from "../CreateFormDialog";
 import MyFormsPickerDialog from "../MyFormsPickerDialog";
+import { PageLinkDialog } from "../PageLinkDialog";
 import type { FormsSigner } from "@formstr/sdk";
 import { createPortal } from "react-dom";
 
@@ -90,6 +99,7 @@ import { cacheLocalEvents } from "../../dataLayer";
 
 import { EditorToolbar } from "./EditorToolbar";
 import { DocEditorSurface } from "./DocEditorSurface";
+import { PageSetupDialog } from "./PageSetupDialog";
 import { PresenceAvatars } from "./PresenceAvatars";
 import { createCollaborationCaretRenderers } from "./extensions/collaborationCaret";
 import { useCollabSession } from "../../collab/useCollabSession";
@@ -103,10 +113,11 @@ import { encryptContent } from "../../utils/encryption";
 import { encryptFile } from "../../utils/fileEncryption";
 import { uploadToBlossom } from "../../blossom/client";
 import { useBlossomServers } from "../../contexts/BlossomContext";
-import { KIND_FILE } from "../../nostr/kinds";
+import { KIND_FILE, KIND_RICH_DOCUMENT } from "../../nostr/kinds";
 import { getLatestVersion } from "../../utils/helpers";
 import { enableGroupSharing, updateRosterMembers, upsertMember, removeMember } from "../../nostr/shareV2";
 import { fetchRoster, parseRootAddress, collabRoom, type DocMember, type DocMode } from "../../nostr/sharedDoc";
+import { fetchSharedLayout } from "../../nostr/docMetadata";
 import { fetchProfile } from "../../nostr/fetchProfile";
 import { encodeNKeys } from "../../utils/nkeys";
 import {
@@ -116,6 +127,31 @@ import {
   exportAsPdf,
   exportAsDocx,
 } from "../../utils/exportDocument";
+import {
+  parseDocumentContent,
+  serializeRichDocument,
+  type BodyManifest,
+  type OoxmlSource,
+} from "../../lib/documentFormat";
+import {
+  prepareRichDocumentForStorage,
+  resolveRichDocument,
+} from "../../lib/bodyChunking";
+import {
+  resolveOoxmlPackageBase64,
+  richDocumentToDocxBlob,
+} from "../../lib/docxToDocument";
+import { heuristicTitle } from "../../lib/docSearch";
+import {
+  DEFAULT_PAGE_LAYOUT,
+  layoutEquals,
+  type PageLayout,
+} from "../../lib/docLayout";
+import {
+  loadPageViewMode,
+  savePageViewMode,
+  type PageViewMode,
+} from "../../lib/pageViewMode";
 
 // Delay after the last edit before auto-save fires (ms)
 const AUTO_SAVE_DELAY_MS = 30_000;
@@ -162,6 +198,23 @@ function parseMarkdownDocument(editor: Editor, markdown: string): ProseMirrorNod
   // document would load resources and fire handlers like <img onerror>.
   const body = new DOMParser().parseFromString(html, "text/html").body;
   return ProseMirrorDOMParser.fromSchema(editor.schema).parse(body);
+}
+
+/** Insert a Markdown-native internal link: [title](page:<kind:pubkey:d>). */
+function insertPageLinkMark(
+  target: Editor,
+  address: string,
+  title: string,
+): void {
+  target
+    .chain()
+    .focus()
+    .insertContent({
+      type: "text",
+      text: title,
+      marks: [{ type: "link", attrs: { href: `page:${address}` } }],
+    })
+    .run();
 }
 
 function TagRow({ address }: { address: string }) {
@@ -260,17 +313,29 @@ export function DocumentEditorController({
     setSelectedDocumentId,
     removeDocument,
     addDocument,
+    addImportedDocument,
     localOnlyAddresses,
     markLocalOnly,
     unmarkVisited,
   } = useDocumentContext();
   const { addSharedDoc, getKeys } = useSharedPages();
-  const { setDocSharedAs, docSharedAs, docTags } = useDocMetadata();
+  const { setDocSharedAs, docSharedAs, docTags, docLayouts, setDocLayout } = useDocMetadata();
 
   const navigate = useNavigate();
   const { relays } = useRelays();
 
   const isDraft = selectedDocumentId === null;
+  // New drafts are rich documents. Existing docs keep their kind: legacy
+  // KIND_FILE pages stay Markdown, rich pages stay ProseMirror JSON.
+  const selectedKind = selectedDocumentId
+    ? Number(selectedDocumentId.split(":")[0])
+    : null;
+  const documentKind =
+    selectedKind === KIND_FILE || selectedKind === KIND_RICH_DOCUMENT
+      ? selectedKind
+      : KIND_RICH_DOCUMENT;
+  const isRichDocument = documentKind === KIND_RICH_DOCUMENT;
+
   const isMobile = useMediaQuery("(max-width:900px)");
   const theme = useTheme();
 
@@ -304,7 +369,7 @@ export function DocumentEditorController({
     if (!target) return;
     let cancelled = false;
     (async () => {
-      const roster = await fetchRoster(target.owner, target.d, viewKey, relays).catch(() => null);
+      const roster = await fetchRoster(target.owner, target.d, viewKey, relays, target.kind).catch(() => null);
       if (cancelled || !roster) return;
       setGroupCanWrite(
         roster.mode === "open" ||
@@ -320,6 +385,10 @@ export function DocumentEditorController({
   // Only shared documents (a viewKey or a legacy backup link) can be view-only;
   // drafts and personal docs must keep their editing UI (the original rule).
   const isViewOnly = (!!viewKey && !canWrite) || !!sharedAsAddress;
+  // Layout is owner-controlled for v2 group docs (like the roster/title). A
+  // non-owner editor can still edit content, but must not silently keep a
+  // different page setup. Legacy edit-key shares keep their old local behavior.
+  const canEditLayout = !isViewOnly && (!viewKey || isOwner || !!editKey);
   const commentsEnabled = !!viewKey && !!selectedDocumentId;
 
   // Realtime collaboration (Yjs over Nostr) for writers on a shared document.
@@ -367,9 +436,48 @@ export function DocumentEditorController({
     // Re-read only when entering or leaving the draft state.
     [isDraft],
   );
-  const draftSeed = restoredDraft?.markdown ?? "";
+  const draftContent = restoredDraft?.content ?? "";
+  const draftLayout = restoredDraft?.layout ?? DEFAULT_PAGE_LAYOUT;
+  const legacyLayout = activeVersion?.legacyLayout;
+  const savedLayout =
+    (selectedDocumentId ? docLayouts.get(selectedDocumentId) : undefined) ??
+    legacyLayout;
+  const initialRawContent = draftContent || initialContent;
+  const initialParsed = parseDocumentContent(initialRawContent);
+  const initialMarkdown =
+    initialParsed.kind === "markdown" ? initialParsed.markdown : "";
+  // TipTap accepts either a Markdown string (legacy) or a ProseMirror JSON doc.
+  const initialEditorContent =
+    initialParsed.kind === "rich"
+      ? (savedLayout ?? draftLayout).canvas === "page"
+        ? wrapInPages(
+            initialParsed.doc ?? {
+              type: "doc",
+              content: [{ type: "paragraph" }],
+            },
+          )
+        : initialParsed.doc ?? {
+            type: "doc",
+            content: [{ type: "paragraph" }],
+          }
+      : initialParsed.markdown;
 
-  const [md, setMd] = useState(draftSeed || initialContent);
+  const [md, setMd] = useState(initialMarkdown);
+  const [layout, setLayout] = useState<PageLayout>(
+    savedLayout ?? draftLayout,
+  );
+  // Layout changes are rare but must still mark the page dirty and trigger a
+  // save (the Markdown body alone is unchanged when only page setup changes).
+  const [pageSetupOpen, setPageSetupOpen] = useState(false);
+  const [pageViewMode, setPageViewMode] = useState<PageViewMode>(loadPageViewMode);
+  const togglePageViewMode = () => {
+    setPageViewMode((current) => {
+      const next: PageViewMode =
+        current === "fixed" ? "responsive" : "fixed";
+      savePageViewMode(next);
+      return next;
+    });
+  };
   const [mode, setMode] = useState<EditorMode>(
     isViewOnly || !isDraft ? "preview" : "edit",
   );
@@ -450,6 +558,26 @@ export function DocumentEditorController({
     };
   }, []);
 
+  const handleApplyLayout = (next: PageLayout) => {
+    setPageSetupOpen(false);
+    if (layoutEquals(next, layout)) return;
+    setLayout(next);
+  };
+
+  const accentColor =
+    layout.ruleColor ?? layout.styles?.h2?.color ?? "#2563EB";
+  const handleAccentColorChange = (color: string) => {
+    handleApplyLayout({
+      ...layout,
+      ruleColor: color,
+      styles: {
+        ...layout.styles,
+        h2: { ...layout.styles?.h2, color },
+        h3: { ...layout.styles?.h3, color },
+      },
+    });
+  };
+
   const [wordCount, setWordCount] = useState(0);
   const [charCount, setCharCount] = useState(0);
   const [confirmOpen, setConfirmOpen] = useState(false);
@@ -479,9 +607,10 @@ export function DocumentEditorController({
     if (parsed.length < 3) return;
     const owner = parsed[1];
     const d = parsed.slice(2).join(":");
+    const kind = Number(parsed[0]);
     let cancelled = false;
     (async () => {
-      const roster = await fetchRoster(owner, d, viewKey, relays).catch(() => null);
+      const roster = await fetchRoster(owner, d, viewKey, relays, kind).catch(() => null);
       if (!cancelled) {
         setShareMembers(roster?.members ?? []);
         setShareMode(roster?.mode);
@@ -545,7 +674,7 @@ export function DocumentEditorController({
     const hex = decodeEditorInput(input);
     if (!hex) throw new Error("Enter a valid npub or 64-character hex pubkey.");
     const next = upsertMember(shareMembers, hex, "editor");
-    await updateRosterMembers(target.owner, target.d, viewKey, next, relays, "restricted");
+    await updateRosterMembers(target.owner, target.d, viewKey, next, relays, "restricted", target.kind);
     setShareMembers(next);
     setShareMode("restricted");
     setToast({ open: true, message: "Editor added.", severity: "success" });
@@ -555,7 +684,7 @@ export function DocumentEditorController({
     const target = parseShareTarget();
     if (!target || !viewKey) throw new Error("This page isn't shared yet.");
     const next = removeMember(shareMembers, pubkey);
-    await updateRosterMembers(target.owner, target.d, viewKey, next, relays);
+    await updateRosterMembers(target.owner, target.d, viewKey, next, relays, undefined, target.kind);
     setShareMembers(next);
     setToast({ open: true, message: "Editor removed.", severity: "success" });
   };
@@ -603,6 +732,7 @@ export function DocumentEditorController({
   };
   const [formDialogOpen, setFormDialogOpen] = useState(false);
   const [formsPickerOpen, setFormsPickerOpen] = useState(false);
+  const [pageLinkOpen, setPageLinkOpen] = useState(false);
 
   // Slash command menu state
   const slashMenuRef = useRef<SlashCommandMenuHandle | null>(null);
@@ -619,11 +749,47 @@ export function DocumentEditorController({
   const [uploadQueue, setUploadQueue] = useState<{ id: string; filename: string }[]>([]);
   const uploading = uploadQueue.length > 0;
 
-  const lastSavedMdRef = useRef<string>(activeVersion?.decryptedContent ?? "");
-  // Always-current markdown — avoids stale closures in effects/save
-  const mdRef = useRef<string>(draftSeed || initialContent);
+  const lastSavedMdRef = useRef<string>(initialMarkdown);
+  // Canonical stored payload for the last save/load. For rich docs this is the
+  // JSON envelope; for legacy docs it is the Markdown body.
+  const lastSavedContentRef = useRef<string>(initialRawContent);
+  // Original imported DOCX package, retained so rich edits can be written back
+  // into the OOXML package on export.
+  const sourcePackageRef = useRef<OoxmlSource | undefined>(
+    initialParsed.kind === "rich" &&
+      (initialParsed.package || initialParsed.packageRef)
+      ? {
+          ...(initialParsed.package ? { package: initialParsed.package } : {}),
+          ...(initialParsed.packageRef
+            ? { packageRef: initialParsed.packageRef }
+            : {}),
+        }
+      : undefined,
+  );
+  const bodyManifestRef = useRef<BodyManifest | undefined>(
+    initialParsed.kind === "rich" ? initialParsed.bodyManifest : undefined,
+  );
+  const blossomKeyRef = useRef<string | undefined>(
+    initialParsed.kind === "rich" ? initialParsed.blossomKey : undefined,
+  );
+  const lastSavedDocRef = useRef<string>(
+    initialParsed.kind === "rich" && initialParsed.doc
+      ? JSON.stringify(initialParsed.doc)
+      : "",
+  );
+  const [hydratingBody, setHydratingBody] = useState(
+    initialParsed.kind === "rich" && !!initialParsed.bodyManifest,
+  );
+  // Always-current markdown projection — avoids stale closures in effects/save
+  const mdRef = useRef<string>(initialMarkdown);
+  const editorRef = useRef<Editor | null>(null);
+  // Always-current layout / dirty flag for save paths and the nav blocker.
+  const lastSavedLayoutRef = useRef<PageLayout>(
+    savedLayout ?? draftLayout,
+  );
   // Always-current mode — used in onUpdate to guard against split-mode clobber
   const modeRef = useRef<EditorMode>(mode);
+  const previousModeRef = useRef<EditorMode>(mode);
   // Accepting a review from split mode already replaces TipTap with the final
   // candidate. Skip the normal split→edit sync once so Undo stays atomic.
   const skipNextEditModeSyncRef = useRef(false);
@@ -644,21 +810,54 @@ export function DocumentEditorController({
   isCollabDocRef.current = isCollabDoc;
   collabRef.current = collab;
 
-  /* ── Persist the in-progress draft ───────────────────────── */
-  // A draft has no address until it is saved, so it lives only in component
-  // state. Stash it (debounced) so the account-subtree remount on login/logout
-  // doesn't discard it. Cleared as soon as the page is saved or emptied.
+  // Migrate a layout recovered from the short-lived in-content format into the
+  // document's encrypted metadata the first time it is opened.
   useEffect(() => {
-    if (!isDraft || !md.trim()) {
-      clearDraft();
+    if (!selectedDocumentId || !legacyLayout) return;
+    if (docLayouts.get(selectedDocumentId)) return;
+    void setDocLayout(selectedDocumentId, legacyLayout).catch(() => {});
+  }, [selectedDocumentId, legacyLayout, docLayouts, setDocLayout]);
+
+  // Apply layout loaded from the document's metadata (personal docs, or the
+  // owner's roster once DocMetadataContext has decrypted it). Never clobber an
+  // unsaved local layout change.
+  useEffect(() => {
+    const next = selectedDocumentId
+      ? docLayouts.get(selectedDocumentId)
+      : undefined;
+    if (!next) return;
+    if (!layoutEquals(layout, lastSavedLayoutRef.current)) return;
+    if (layoutEquals(next, layout)) {
+      lastSavedLayoutRef.current = next;
       return;
     }
-    const timer = setTimeout(
-      () => saveDraft({ markdown: md, localOnly: draftLocalOnly }),
-      300,
-    );
-    return () => clearTimeout(timer);
-  }, [isDraft, md, draftLocalOnly]);
+    lastSavedLayoutRef.current = next;
+    setLayout(next);
+  }, [selectedDocumentId, docLayouts, layout]);
+
+  // A viewer of a shared document may not own the roster metadata, so fetch it
+  // explicitly to pick up the owner's layout.
+  useEffect(() => {
+    if (!selectedDocumentId || !viewKey) return;
+    // A locally-known metadata layout (owner metadata or a previous local
+    // choice) wins over the roster; only viewers without metadata need this.
+    if (docLayouts.get(selectedDocumentId)) return;
+    const target = parseRootAddress(selectedDocumentId);
+    if (!target) return;
+    let cancelled = false;
+    fetchSharedLayout(target.owner, target.d, viewKey, relays, target.kind)
+      .then((sharedLayout) => {
+        if (cancelled || !sharedLayout) return;
+        if (!layoutEquals(layout, lastSavedLayoutRef.current)) return;
+        if (layoutEquals(sharedLayout, layout)) return;
+        lastSavedLayoutRef.current = sharedLayout;
+        setLayout(sharedLayout);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedDocumentId, viewKey, relays, layout, docLayouts]);
 
   // Always-current upload function — avoids stale closures in editorProps handlers
   const uploadFileRef = useRef<(file: File) => Promise<void>>(async () => { });
@@ -686,6 +885,81 @@ export function DocumentEditorController({
     textSuggest.prefs,
   ]);
 
+  /* ── Internal page links ───────────────────────────────── */
+  const handleOpenPageLink = useCallback(
+    (address: string) => {
+      const [kindStr, pubkey, ...rest] = address.split(":");
+      const identifier = rest.join(":");
+      if (!kindStr || !pubkey || !identifier) return;
+      const naddr = nip19.naddrEncode({
+        kind: Number(kindStr),
+        pubkey,
+        identifier,
+      });
+      const keys = getKeys(address);
+      let path = `/doc/${naddr}`;
+      if (keys[0]) {
+        const nkeys: Record<string, string> = { viewKey: keys[0] };
+        if (keys[1]) nkeys.editKey = keys[1];
+        path += `#${encodeNKeys(nkeys)}`;
+      }
+      navigate(path);
+    },
+    [getKeys, navigate],
+  );
+  const openPageLinkRef = useRef(handleOpenPageLink);
+  openPageLinkRef.current = handleOpenPageLink;
+
+  const createLinkedPage = async (
+    target: Editor,
+    title: string,
+    markdown: string,
+  ) => {
+    const address = await addImportedDocument(markdown, { publish: true });
+    insertPageLinkMark(target, address, title);
+    setToast({
+      open: true,
+      message: "Page created and linked. Save this page to keep the link.",
+      severity: "success",
+    });
+    return address;
+  };
+
+  const createJournalEntry = async (target: Editor) => {
+    const date = new Date().toLocaleDateString(undefined, {
+      weekday: "long",
+      year: "numeric",
+      month: "long",
+      day: "numeric",
+    });
+    const title = `Journal — ${date}`;
+    const markdown = `# ${title}
+
+Date: ${date} · Mood: ____
+
+---
+
+## Today I'm grateful for
+- A person
+- A moment
+- Something small
+
+## What happened
+
+
+## What I learned
+
+
+## Tomorrow
+- One thing to look forward to
+- One thing to make easier
+
+---
+
+> A thought to keep:`;
+    await createLinkedPage(target, title, markdown);
+  };
+
   /* ── TipTap editor instance ────────────────────────────── */
   const editor = useEditor({
     extensions: [
@@ -693,8 +967,13 @@ export function DocumentEditorController({
       // so for solo docs (and collab docs still connecting) it — and
       // CollaborationCaret — must be absent, not configured empty. StarterKit's
       // undo/redo is incompatible with Collaboration, so only the collab path
-      // disables it.
-      isCollabReady ? StarterKit.configure({ undoRedo: false }) : StarterKit,
+      // disables it. Paragraph/heading variants keep old aligned blocks intact
+      // when an existing document is re-saved.
+      StarterKit.configure({
+        ...(isCollabReady ? { undoRedo: false } : {}),
+        paragraph: false,
+        heading: false,
+      }),
       ...(isCollabReady && collab
         ? [
             collab.CollaborationExt.configure({ document: collab.ydoc }),
@@ -705,8 +984,17 @@ export function DocumentEditorController({
             }),
           ]
         : []),
+      AlignableParagraph,
+      AlignableHeading,
       TextStyle,
       FontFamily,
+      // These legacy inline attributes are intentionally not exposed in the
+      // toolbar anymore (formatting now lives in kind-34579 metadata), but they
+      // stay registered so older documents parse and round-trip unchanged.
+      FontSize,
+      LineHeight,
+      MarkdownColor,
+      TextAlign.configure({ types: ["heading", "paragraph"] }),
       // html: true so <encrypted-file> tags round-trip through markdown storage.
       // transformPastedText: plain-text clipboard content (no text/html, e.g.
       // copied from a markdown file, README, chat, or terminal) is parsed as
@@ -714,7 +1002,13 @@ export function DocumentEditorController({
       // of landing as literal syntax. Rich paste (text/html, e.g. copying from
       // a webpage or another doc) is unaffected — that already parses as HTML.
       Markdown.configure({ html: true, tightLists: true, transformPastedText: true }),
-      Link.configure({ openOnClick: false }),
+      Link.configure({
+        openOnClick: false,
+        // Allow our internal `page:` links without re-registering linkify's
+        // built-in protocols (which would emit "already initialized" warnings).
+        isAllowedUri: (url, { defaultValidate }) =>
+          url.startsWith("page:") || defaultValidate(url),
+      }),
       Placeholder.configure({
         placeholder: "Start writing your page here…",
       }),
@@ -723,7 +1017,13 @@ export function DocumentEditorController({
       TableRow,
       TableHeader,
       TableCell,
+      Columns,
+      Column,
+      OoxmlBlock,
+      OoxmlImage,
+      Page,
       Indent,
+      PageBreak,
       GhostTextSuggestion,
       TableHandles,
       EncryptedFileNode,
@@ -804,6 +1104,39 @@ export function DocumentEditorController({
                 keywords: ["divider", "hr", "separator", "rule"],
                 command: ({ editor, range }) =>
                   editor.deleteRange(range).setHorizontalRule().run(),
+              },
+              {
+                id: "page-break",
+                label: "Page break",
+                description: "Start the next page here",
+                icon: "⤓",
+                keywords: ["page break", "break", "new page", "paginate"],
+                command: ({ editor, range }) =>
+                  editor.deleteRange(range).setPageBreak().run(),
+              },
+              {
+                id: "page-link",
+                label: "Link to another page",
+                description: "Link or create another page",
+                icon: "🔗",
+                keywords: ["page", "link", "internal", "wiki", "reference"],
+                command: ({ editor, range }) => {
+                  editor.deleteRange(range).run();
+                  setPageLinkOpen(true);
+                },
+              },
+              {
+                id: "journal-entry",
+                label: "Journal entry",
+                description: "Create today's journal page and link it",
+                icon: "📔",
+                keywords: ["journal", "diary", "today", "daily", "entry"],
+                command: ({ editor, range }) => {
+                  editor.deleteRange(range).run();
+                  if (editorRef.current) {
+                    void createJournalEntry(editorRef.current);
+                  }
+                },
               },
               {
                 id: "table",
@@ -889,6 +1222,19 @@ export function DocumentEditorController({
     ],
     editorProps: {
       attributes: { class: "tiptap" },
+      handleClick(_view, _pos, event) {
+        const target = event.target as HTMLElement | null;
+        const anchor = target?.closest?.(
+          'a[href^="page:"]',
+        ) as HTMLAnchorElement | null;
+        if (anchor && (event.metaKey || event.ctrlKey)) {
+          event.preventDefault();
+          const address = anchor.getAttribute("href")?.slice("page:".length);
+          if (address) openPageLinkRef.current(address);
+          return true;
+        }
+        return false;
+      },
       handlePaste(_view, event) {
         if (isViewOnlyRef.current) return false;
         const files = event.clipboardData?.files;
@@ -906,7 +1252,7 @@ export function DocumentEditorController({
     },
     // Collab docs get their content from the Yjs doc (via Collaboration), not
     // from the markdown snapshot.
-    content: isCollabReady ? undefined : draftSeed || initialContent,
+    content: isCollabReady ? undefined : initialEditorContent,
     // Editing is never blocked. While a collab session is still connecting the
     // user edits the plain-markdown editor; those keystrokes live in mdRef and
     // are carried into the shared doc by the seed effect when it becomes ready.
@@ -967,6 +1313,10 @@ export function DocumentEditorController({
     // recreate the editor exactly once, when the session flips to ready.
   }, [isCollabReady]);
 
+  useEffect(() => {
+    editorRef.current = editor;
+  }, [editor]);
+
   /* ── Sync word/char count on editor ready ──────────────── */
   useEffect(() => {
     if (editor) {
@@ -974,6 +1324,107 @@ export function DocumentEditorController({
       setCharCount(editor.storage.characterCount.characters());
     }
   }, [editor]);
+
+  /* ── Derive the Markdown projection for rich documents ── */
+  // Search, preview, proofreading and public articles still consume Markdown.
+  // That is an adapter view; the canonical body stays ProseMirror JSON.
+  const initialProjectionLoadedRef = useRef(false);
+  useEffect(() => {
+    if (!editor || initialProjectionLoadedRef.current) return;
+    initialProjectionLoadedRef.current = true;
+    const markdown = getEditorMarkdown(editor);
+    mdRef.current = markdown;
+    setMd(markdown);
+    if (!lastSavedMdRef.current) lastSavedMdRef.current = markdown;
+  }, [editor]);
+
+  useEffect(() => {
+    if (!activeVersion) return;
+    const parsed = parseDocumentContent(activeVersion.decryptedContent ?? "");
+    sourcePackageRef.current =
+      parsed.kind === "rich" && (parsed.package || parsed.packageRef)
+        ? {
+            ...(parsed.package ? { package: parsed.package } : {}),
+            ...(parsed.packageRef ? { packageRef: parsed.packageRef } : {}),
+          }
+        : undefined;
+    bodyManifestRef.current =
+      parsed.kind === "rich" ? parsed.bodyManifest : undefined;
+    blossomKeyRef.current =
+      parsed.kind === "rich" ? parsed.blossomKey : undefined;
+  }, [activeVersion?.event.id]);
+
+  /* ── Hydrate a chunked body from Blossom ───────────────── */
+  const initialBodyManifest =
+    initialParsed.kind === "rich" ? initialParsed.bodyManifest : undefined;
+  const initialBodyManifestKey = initialBodyManifest ? initialRawContent : "";
+  useEffect(() => {
+    if (!editor || !initialBodyManifestKey) return;
+    let cancelled = false;
+    setHydratingBody(true);
+    (async () => {
+      try {
+        const resolved = await resolveRichDocument(initialRawContent);
+        if (cancelled || resolved.kind !== "rich" || !resolved.doc) return;
+        editor.commands.setContent(
+          layout.canvas === "page" ? wrapInPages(resolved.doc) : resolved.doc,
+          { emitUpdate: false },
+        );
+        const markdown = getEditorMarkdown(editor);
+        mdRef.current = markdown;
+        setMd(markdown);
+        lastSavedMdRef.current = markdown;
+        lastSavedContentRef.current = initialRawContent;
+        lastSavedDocRef.current = JSON.stringify(resolved.doc);
+        bodyManifestRef.current = resolved.bodyManifest;
+        blossomKeyRef.current = resolved.blossomKey;
+      } catch (err) {
+        console.error("Could not load page body:", err);
+      } finally {
+        if (!cancelled) setHydratingBody(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [editor, initialBodyManifestKey, initialRawContent]);
+
+  /* ── Keep page containers in sync with the canvas mode ─── */
+  useEffect(() => {
+    if (!editor) return;
+    const json = editor.getJSON();
+    const hasPages = (json.content ?? []).some((node) => node.type === "page");
+    if (layout.canvas === "page" && !hasPages) {
+      editor.commands.setContent(wrapInPages(json), { emitUpdate: false });
+    } else if (layout.canvas !== "page" && hasPages) {
+      editor.commands.setContent(unwrapPages(json), { emitUpdate: false });
+    }
+  }, [layout.canvas, editor]);
+
+  /* ── Persist the in-progress draft ───────────────────────── */
+  // A draft has no address until it is saved, so it lives only in component
+  // state. Stash it (debounced) so the account-subtree remount on login/logout
+  // doesn't discard it. Cleared as soon as the page is saved or emptied.
+  useEffect(() => {
+    if (!isDraft || !md.trim()) {
+      clearDraft();
+      return;
+    }
+    const timer = setTimeout(
+      () =>
+        saveDraft({
+          content:
+            isRichDocument && editor
+              ? serializeRichDocument(editor.getJSON(), sourcePackageRef.current)
+              : md,
+          format: isRichDocument ? "prosemirror-json" : "markdown",
+          localOnly: draftLocalOnly,
+          layout,
+        }),
+      300,
+    );
+    return () => clearTimeout(timer);
+  }, [isDraft, md, draftLocalOnly, isRichDocument, editor, layout]);
 
   /* ── Seed a fresh Yjs doc from the existing snapshot ───── */
   // A brand-new collab session's Y.Doc starts empty and the Collaboration
@@ -991,11 +1442,23 @@ export function DocumentEditorController({
     if (!isCollabReady || !editor || seededCollabDocRef.current) return;
     seededCollabDocRef.current = true;
     if (editor.getText().trim()) return;
-    const seedSource = mdRef.current.trim() ? mdRef.current : initialContent;
-    if (seedSource.trim()) {
-      editor.commands.setContent(seedSource);
+    const seedSource =
+      initialParsed.kind === "rich"
+        ? initialParsed.doc
+        : mdRef.current.trim()
+          ? mdRef.current
+          : initialParsed.markdown;
+    if (
+      seedSource &&
+      (typeof seedSource === "string" ? seedSource.trim() : true)
+    ) {
+      editor.commands.setContent(
+        typeof seedSource === "string" || layout.canvas !== "page"
+          ? seedSource
+          : wrapInPages(seedSource),
+      );
     }
-  }, [isCollabReady, editor, initialContent]);
+  }, [isCollabReady, editor, initialParsed]);
 
   const activeTextSuggestion = textSuggest.suggestion;
   const localAIPrefs = textSuggest.prefs;
@@ -1067,7 +1530,9 @@ export function DocumentEditorController({
 
   /* ── Sync split-mode Markdown when returning to edit ──── */
   useEffect(() => {
-    if (!editor || mode !== "edit") return;
+    const previous = previousModeRef.current;
+    previousModeRef.current = mode;
+    if (!editor || mode !== "edit" || previous !== "split") return;
     if (skipNextEditModeSyncRef.current) {
       skipNextEditModeSyncRef.current = false;
       setWordCount(editor.storage.characterCount.words());
@@ -1075,12 +1540,21 @@ export function DocumentEditorController({
       return;
     }
     // Switching back to WYSIWYG: sync TipTap with whatever was typed in the
-    // split textarea. Pass `false` (not a truthy object) so onUpdate doesn't
-    // fire and clobber mdRef with a re-serialized version.
-    editor.commands.setContent(mdRef.current, { emitUpdate: false });
+    // split textarea. Preview→edit keeps the canonical rich JSON untouched so
+    // images, columns and opaque OOXML nodes are not round-tripped through
+    // Markdown.
+    const nextContent = isRichDocument
+      ? parseMarkdownDocument(editor, mdRef.current).toJSON()
+      : mdRef.current;
+    editor.commands.setContent(
+      typeof nextContent !== "string" && layout.canvas === "page"
+        ? wrapInPages(nextContent)
+        : nextContent,
+      { emitUpdate: false },
+    );
     setWordCount(editor.storage.characterCount.words());
     setCharCount(editor.storage.characterCount.characters());
-  }, [mode, editor]);
+  }, [mode, editor, isRichDocument]);
 
   const handleProofread = async (instruction: string) => {
     const before = mdRef.current;
@@ -1265,7 +1739,9 @@ export function DocumentEditorController({
   }, [focusMode, focusAnimation, handleToggleFocusMode]);
 
   /* ── Warn on browser close / refresh ───────────────────── */
-  const hasUnsavedChanges = md !== lastSavedMdRef.current;
+  const hasUnsavedChanges =
+    md !== lastSavedMdRef.current ||
+    !layoutEquals(layout, lastSavedLayoutRef.current);
 
   useEffect(() => {
     const onBeforeUnload = (e: BeforeUnloadEvent) => {
@@ -1284,7 +1760,11 @@ export function DocumentEditorController({
   // the content can mark it saved and navigate in the same tick (see the
   // view-only share path) — a plain boolean would be stale from the previous
   // render and still block.
-  const blocker = useBlocker(() => mdRef.current !== lastSavedMdRef.current);
+  const blocker = useBlocker(
+    () =>
+      mdRef.current !== lastSavedMdRef.current ||
+      !layoutEquals(layout, lastSavedLayoutRef.current),
+  );
 
   /* ── Auto-save: debounced 30s after last content change ── */
   // Only fires for existing (non-draft) documents that the user can edit.
@@ -1293,7 +1773,12 @@ export function DocumentEditorController({
   // to avoid stale closure issues.
   useEffect(() => {
     // Don't even set the timer if there's nothing to save
-    if (md === lastSavedMdRef.current) return;
+    if (
+      md === lastSavedMdRef.current &&
+      layoutEquals(layout, lastSavedLayoutRef.current)
+    ) {
+      return;
+    }
 
     // Bind this timer to the document that was active when the edit was made.
     // If the active document changes before the timer fires (e.g. the user
@@ -1320,7 +1805,7 @@ export function DocumentEditorController({
     }, AUTO_SAVE_DELAY_MS);
 
     return () => clearTimeout(timer);
-  }, [md]);
+  }, [md, layout]);
 
   /* ── Resync when active version changes (relay updates) ── */
   useEffect(() => {
@@ -1336,21 +1821,45 @@ export function DocumentEditorController({
     // Never clobber unsaved changes the user is currently editing
     if (mdRef.current !== lastSavedMdRef.current) return;
     const content = activeVersion.decryptedContent ?? "";
-    mdRef.current = content;
-    setMd(content);
-    lastSavedMdRef.current = content;
-    if (editor) {
-      const { from, to } = editor.state.selection;
-      editor.commands.setContent(content, { emitUpdate: false });
-      // Restore cursor, clamped to new doc length in case content shrank
-      const docSize = editor.state.doc.content.size;
-      editor.commands.setTextSelection({
-        from: Math.min(from, docSize),
-        to: Math.min(to, docSize),
-      });
-      setWordCount(editor.storage.characterCount.words());
-      setCharCount(editor.storage.characterCount.characters());
-    }
+    let cancelled = false;
+    (async () => {
+      try {
+        const parsed = await resolveRichDocument(content);
+        if (cancelled || !editor) return;
+        const { from, to } = editor.state.selection;
+        if (parsed.kind === "rich") {
+          if (!parsed.doc) return;
+          editor.commands.setContent(
+            layout.canvas === "page" ? wrapInPages(parsed.doc) : parsed.doc,
+            { emitUpdate: false },
+          );
+          lastSavedDocRef.current = JSON.stringify(parsed.doc);
+          bodyManifestRef.current = parsed.bodyManifest;
+          blossomKeyRef.current = parsed.blossomKey;
+        } else {
+          editor.commands.setContent(parsed.markdown, { emitUpdate: false });
+          lastSavedDocRef.current = "";
+        }
+        const markdown = getEditorMarkdown(editor);
+        mdRef.current = markdown;
+        setMd(markdown);
+        lastSavedMdRef.current = markdown;
+        lastSavedContentRef.current = content;
+        // Restore cursor, clamped to new doc length in case content shrank
+        const docSize = editor.state.doc.content.size;
+        editor.commands.setTextSelection({
+          from: Math.min(from, docSize),
+          to: Math.min(to, docSize),
+        });
+        setWordCount(editor.storage.characterCount.words());
+        setCharCount(editor.storage.characterCount.characters());
+      } catch (err) {
+        console.error("Could not resync page body:", err);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, [activeVersion?.event.id]);
 
   const handleSelectVersion = (eventId: string) => {
@@ -1358,7 +1867,7 @@ export function DocumentEditorController({
     setHistoryConfirmOpen(true);
   };
 
-  const applyHistoricalVersion = () => {
+  const applyHistoricalVersion = async () => {
     if (!history || !pendingVersionId) return;
 
     const version = history.versions.find(
@@ -1367,12 +1876,27 @@ export function DocumentEditorController({
     if (!version) return;
 
     const content = version.decryptedContent ?? "";
-    mdRef.current = content;
-    setMd(content);
-    lastSavedMdRef.current = content;
+    const parsed = await resolveRichDocument(content);
     if (editor) {
-      editor.commands.setContent(content, { emitUpdate: false });
+      if (parsed.kind === "rich") {
+        if (!parsed.doc) return;
+        editor.commands.setContent(
+          layout.canvas === "page" ? wrapInPages(parsed.doc) : parsed.doc,
+          { emitUpdate: false },
+        );
+        lastSavedDocRef.current = JSON.stringify(parsed.doc);
+        bodyManifestRef.current = parsed.bodyManifest;
+        blossomKeyRef.current = parsed.blossomKey;
+      } else {
+        editor.commands.setContent(parsed.markdown, { emitUpdate: false });
+        lastSavedDocRef.current = "";
+      }
+      const markdown = getEditorMarkdown(editor);
+      mdRef.current = markdown;
+      setMd(markdown);
+      lastSavedMdRef.current = markdown;
     }
+    lastSavedContentRef.current = content;
     setMode("preview");
     setHistoryConfirmOpen(false);
     setPendingVersionId(null);
@@ -1434,6 +1958,7 @@ export function DocumentEditorController({
     address: string,
     content: string,
     localOnly = false,
+    kind: number = documentKind,
   ) => {
     const dTag = address.split(":")?.[2];
     // v2: the content event's `a` tag is the capability-derived room (not the
@@ -1447,7 +1972,9 @@ export function DocumentEditorController({
     // Keep the timestamp strictly above this document's newest known version.
     const prevAt = documents.get(address)?.versions.at(-1)?.event.created_at ?? 0;
     const createdAt = nextContentCreatedAt(prevAt);
-    // Kind-33457 content is plain Markdown; Yjs is a live-only layer (not stored).
+    // KIND_FILE content is legacy Markdown; KIND_RICH_DOCUMENT content is the
+    // versioned ProseMirror JSON envelope. Yjs is a live-only layer (not stored).
+    // Layout/styles live in the document's encrypted kind-34579 metadata.
     const encryptedContent = await encryptContent(content, viewKey);
     if (!encryptedContent) throw new Error("Encryption failed");
 
@@ -1463,7 +1990,7 @@ export function DocumentEditorController({
         ? getPublicKey(hexToBytes(editKey))
         : await signer.getPublicKey();
       const template = {
-        kind: KIND_FILE,
+        kind,
         tags: eventTags,
         content: encryptedContent,
         created_at: createdAt,
@@ -1473,7 +2000,7 @@ export function DocumentEditorController({
     } else if (editKey) {
       stored = finalizeEvent(
         {
-          kind: KIND_FILE,
+          kind,
           tags: eventTags,
           content: encryptedContent,
           created_at: createdAt,
@@ -1484,7 +2011,7 @@ export function DocumentEditorController({
       const signer = await signerManager.getSigner();
       if (!signer) throw new Error("No signer available");
       stored = await signer.signEvent({
-        kind: KIND_FILE,
+        kind,
         tags: eventTags,
         content: encryptedContent,
         created_at: createdAt,
@@ -1536,13 +2063,16 @@ export function DocumentEditorController({
       const signer = await signerManager.getSigner();
       pubkey = await signer.getPublicKey();
     }
-    const address = `${KIND_FILE}:${pubkey}:${dTag}`;
-    await saveSnapshotWithAddress(address, content, draftLocalOnly);
+    const address = `${KIND_RICH_DOCUMENT}:${pubkey}:${dTag}`;
+    await saveSnapshotWithAddress(address, content, draftLocalOnly, KIND_RICH_DOCUMENT);
+    if (!layoutEquals(layout, DEFAULT_PAGE_LAYOUT)) {
+      await setDocLayout(address, layout);
+    }
     if (draftLocalOnly) markLocalOnly(address, true);
     setSelectedDocumentId(address);
     const naddr = nip19.naddrEncode({
       pubkey,
-      kind: KIND_FILE,
+      kind: KIND_RICH_DOCUMENT,
       identifier: dTag,
     });
 
@@ -1559,7 +2089,7 @@ export function DocumentEditorController({
   };
 
   const saveExistingDocument = async (address: string, content: string) => {
-    await saveSnapshotWithAddress(address, content, isLocalOnly);
+    await saveSnapshotWithAddress(address, content, isLocalOnly, documentKind);
   };
 
   const handleToggleLocalOnly = async () => {
@@ -1583,7 +2113,7 @@ export function DocumentEditorController({
   };
 
   const handleSave = async (silent = false): Promise<boolean> => {
-    if (saving) return false;
+    if (saving || hydratingBody) return false;
 
     // In WYSIWYG mode, read from editor (avoids stale React state).
     // In split/preview mode, mdRef is updated by the textarea onChange.
@@ -1592,16 +2122,57 @@ export function DocumentEditorController({
         ? getEditorMarkdown(editor)
         : mdRef.current;
 
-    if (mdToSave === lastSavedMdRef.current) return true;
+    const rawDoc =
+      isRichDocument && editor
+        ? mode === "split"
+          ? parseMarkdownDocument(editor, mdToSave).toJSON()
+          : editor.getJSON()
+        : undefined;
+    const docToSave =
+      rawDoc && layout.canvas === "page" ? unwrapPages(rawDoc) : rawDoc;
+    const docChanged = isRichDocument
+      ? !!docToSave && JSON.stringify(docToSave) !== lastSavedDocRef.current
+      : mdToSave !== lastSavedMdRef.current;
+    const layoutChanged = !layoutEquals(layout, lastSavedLayoutRef.current);
+    if (!docChanged && !layoutChanged) return true;
 
     setSaving(true);
     const prevSavedMd = lastSavedMdRef.current;
-    lastSavedMdRef.current = mdToSave; // update before navigate() fires in saveNewDocument
+    const prevSavedContent = lastSavedContentRef.current;
+    const prevSavedDoc = lastSavedDocRef.current;
+    const prevSavedManifest = bodyManifestRef.current;
+    const prevBlossomKey = blossomKeyRef.current;
+    const prevSavedLayout = lastSavedLayoutRef.current;
+    let contentToSave = lastSavedContentRef.current;
+
     try {
+      if (isRichDocument && docToSave) {
+        const prepared = await prepareRichDocumentForStorage(docToSave, {
+          ooxml: sourcePackageRef.current,
+          servers: blossomServers,
+          localOnly: isLocalOnly || (isDraft && draftLocalOnly),
+          previous: bodyManifestRef.current,
+          blossomKey: blossomKeyRef.current,
+        });
+        contentToSave = prepared.content;
+        bodyManifestRef.current = prepared.bodyManifest;
+        blossomKeyRef.current = prepared.blossomKey;
+        lastSavedDocRef.current = JSON.stringify(docToSave);
+      } else if (!isRichDocument) {
+        contentToSave = mdToSave;
+      }
+
+      lastSavedMdRef.current = mdToSave; // update before navigate() fires in saveNewDocument
+      lastSavedContentRef.current = contentToSave;
+      // The navigation below is synchronous with the save; mark both saved now so
+      // the unsaved-changes blocker sees the page as saved.
+      lastSavedLayoutRef.current = layout;
+
       if (isDraft) {
-        await saveNewDocument(mdToSave);
+        await saveNewDocument(contentToSave);
       } else {
-        await saveExistingDocument(selectedDocumentId!, mdToSave);
+        if (docChanged) await saveExistingDocument(selectedDocumentId!, contentToSave);
+        if (layoutChanged) await setDocLayout(selectedDocumentId!, layout);
       }
       setLastSavedAt(new Date());
       setWasAutoSaved(silent);
@@ -1625,6 +2196,11 @@ export function DocumentEditorController({
       return true;
     } catch (err) {
       lastSavedMdRef.current = prevSavedMd; // restore so unsaved indicator reappears
+      lastSavedContentRef.current = prevSavedContent;
+      lastSavedDocRef.current = prevSavedDoc;
+      bodyManifestRef.current = prevSavedManifest;
+      blossomKeyRef.current = prevBlossomKey;
+      lastSavedLayoutRef.current = prevSavedLayout;
       console.error("Save failed:", err);
       setToast({
         open: true,
@@ -1669,10 +2245,7 @@ export function DocumentEditorController({
   /* ── Export helpers ──────────────────────────────────────── */
 
   const getDocTitle = () => {
-    const firstLine = mdRef.current.split("\n").find((l) => l.trim());
-    return firstLine
-      ? firstLine.replace(/^#+\s*/, "").trim().slice(0, 60) || "Untitled"
-      : "Untitled";
+    return heuristicTitle(mdRef.current, 60) || "Untitled";
   };
 
   const handleExportMarkdown = () => {
@@ -1682,7 +2255,7 @@ export function DocumentEditorController({
   const handleExportHtml = () => {
     if (!editor) return;
     const html = editor.getHTML();
-    void exportAsHtml(html, getDocTitle());
+    void exportAsHtml(html, getDocTitle(), layout);
   };
 
   const handleExportPlainText = () => {
@@ -1691,12 +2264,43 @@ export function DocumentEditorController({
 
   const handleExportPdf = () => {
     if (!editor) return;
-    void exportAsPdf(editor.getHTML(), getDocTitle());
+    void exportAsPdf(editor.getHTML(), getDocTitle(), layout);
   };
 
-  const handleExportDoc = () => {
+  const handleExportDoc = async () => {
     if (!editor) return;
-    void exportAsDocx(editor.getHTML(), getDocTitle());
+    const source = sourcePackageRef.current;
+    let packageBase64: string | undefined;
+    try {
+      packageBase64 = await resolveOoxmlPackageBase64(source);
+    } catch (err) {
+      console.warn("Could not load the original DOCX package:", err);
+    }
+    if (packageBase64) {
+      try {
+        const blob = await richDocumentToDocxBlob(
+          packageBase64,
+          layout.canvas === "page"
+            ? unwrapPages(editor.getJSON())
+            : editor.getJSON(),
+          layout,
+        );
+        const url = URL.createObjectURL(blob);
+        const anchor = document.createElement("a");
+        anchor.href = url;
+        anchor.download = `${getDocTitle()}.docx`;
+        document.body.appendChild(anchor);
+        anchor.click();
+        setTimeout(() => {
+          document.body.removeChild(anchor);
+          URL.revokeObjectURL(url);
+        }, 100);
+        return;
+      } catch (err) {
+        console.warn("OOXML export failed; falling back to HTML->DOCX:", err);
+      }
+    }
+    void exportAsDocx(editor.getHTML(), getDocTitle(), layout);
   };
 
   const handleFormCreated = (naddr: string, nkeys?: string) => {
@@ -1706,6 +2310,31 @@ export function DocumentEditorController({
       .focus()
       .insertContent({ type: "nostrForm", attrs: { naddr, nkeys: nkeys ?? null } })
       .run();
+  };
+
+  const handleSelectPageLink = (address: string, title: string) => {
+    if (!editor) return;
+    insertPageLinkMark(editor, address, title);
+  };
+
+  const handleCreateLinkedPage = async (title: string) => {
+    if (!editor) throw new Error("Editor not ready");
+    await createLinkedPage(editor, title, `# ${title}\n\n`);
+  };
+
+  const handleTextColorChange = (color: string) => {
+    if (!editor) return;
+    const { selection } = editor.state;
+    if (selection.empty) {
+      const { $from } = selection;
+      const from = $from.start();
+      const to = $from.end();
+      if (to > from) {
+        editor.chain().focus().setTextSelection({ from, to }).setColor(color).run();
+        return;
+      }
+    }
+    editor.chain().focus().setColor(color).run();
   };
 
   /* Build a FormsSigner adapter from the app's signerManager */
@@ -1871,11 +2500,9 @@ export function DocumentEditorController({
             saving={saving}
             mode={mode}
             onSetMode={(newMode) => {
-              // Pre-sync TipTap before the re-render so that if onUpdate fires
-              // during EditorContent remount it fires with the correct content.
-              if (newMode === "edit" && editor) {
-                editor.commands.setContent(mdRef.current, { emitUpdate: false });
-              }
+              // The split→edit sync effect applies split-mode Markdown. Keeping
+              // this handler free of setContent preserves rich JSON nodes on
+              // preview→edit switches.
               setMode(newMode);
             }}
             onSave={() => handleSave(false)}
@@ -1910,6 +2537,29 @@ export function DocumentEditorController({
               void textSuggest.updatePrefs({ ...textSuggest.prefs, enabled: next });
             }}
             onTextSuggestSettingsSaved={() => void textSuggest.reload()}
+            onOpenPageSetup={canEditLayout ? () => setPageSetupOpen(true) : undefined}
+            canvas={layout.canvas}
+            onToggleCanvas={
+              canEditLayout
+                ? () =>
+                    handleApplyLayout({
+                      ...layout,
+                      canvas: layout.canvas === "page" ? "notes" : "page",
+                    })
+                : undefined
+            }
+            pageViewMode={pageViewMode}
+            onTogglePageViewMode={togglePageViewMode}
+            onInsertPageLink={!isViewOnly ? () => setPageLinkOpen(true) : undefined}
+            baseFontFamily={layout.fontFamily}
+            onBaseFontChange={
+              canEditLayout
+                ? (family) => handleApplyLayout({ ...layout, fontFamily: family })
+                : undefined
+            }
+            accentColor={accentColor}
+            onAccentColorChange={canEditLayout ? handleAccentColorChange : undefined}
+            onTextColorChange={!isViewOnly ? handleTextColorChange : undefined}
             proofreadDocumentLength={md.length}
             proofreadStatus={textSuggest.proofreadStatus}
             onProofread={handleProofread}
@@ -1945,6 +2595,8 @@ export function DocumentEditorController({
           <DocEditorSurface
             value={md}
             editor={editor}
+            layout={layout}
+            viewMode={pageViewMode}
             mode={mode}
             onChange={(value) => {
               // Used by the split-mode markdown textarea
@@ -1960,6 +2612,7 @@ export function DocumentEditorController({
             docEventId={activeVersion?.event.id ?? ""}
             onCommentClick={(id) => { setActiveCommentId(id); setShowComments(true); }}
             activeCommentId={activeCommentId}
+            onOpenPage={handleOpenPageLink}
           />
         )}
       </Paper>
@@ -2231,6 +2884,21 @@ export function DocumentEditorController({
         onPick={handleFormCreated}
       />
 
+      <PageLinkDialog
+        open={pageLinkOpen}
+        onClose={() => setPageLinkOpen(false)}
+        currentAddress={selectedDocumentId}
+        onSelect={handleSelectPageLink}
+        onCreate={handleCreateLinkedPage}
+      />
+
+      <PageSetupDialog
+        open={pageSetupOpen}
+        layout={layout}
+        onClose={() => setPageSetupOpen(false)}
+        onSave={handleApplyLayout}
+      />
+
       <PublishArticleDialog
         open={publishTarget !== null}
         target={publishTarget ?? "longform"}
@@ -2286,15 +2954,20 @@ export function DocumentEditorController({
               // owner's last version (relays drop equal-or-older replaceables).
               const lastAt = history?.versions.at(-1)?.event.created_at ?? 0;
               const createdAt = nextContentCreatedAt(lastAt);
+              const shareContent = isRichDocument
+                ? lastSavedContentRef.current
+                : md;
               const sharedEvent = await enableGroupSharing(
                 target.owner,
                 target.d,
                 vk,
-                md,
+                shareContent,
                 relays,
                 open ? [] : shareMembers,
                 mode,
                 createdAt,
+                target.kind,
+                layout,
               );
               // Register the viewKey+version locally right away so this session's
               // live/hydration paths decrypt the owner's own viewKey-encrypted
@@ -2309,9 +2982,11 @@ export function DocumentEditorController({
               // Mark the snapshot saved so the unsaved-changes blocker doesn't
               // intercept the navigation.
               lastSavedMdRef.current = md;
+              lastSavedContentRef.current = shareContent;
+              lastSavedLayoutRef.current = layout;
               setLastSavedAt(new Date());
               const naddr = nip19.naddrEncode({
-                kind: KIND_FILE,
+                kind: target.kind,
                 pubkey: target.owner,
                 identifier: target.d,
               });
@@ -2322,10 +2997,13 @@ export function DocumentEditorController({
             }
           }
 
+          const shareContent = isRichDocument
+            ? lastSavedContentRef.current
+            : md;
           const result = await handleGeneratePrivateLink(
             canEdit,
             selectedDocumentId,
-            md,
+            shareContent,
             relays,
             // Rotating a view link must mint a fresh viewKey — reusing the one
             // this session already adopted would leave every link handed out
@@ -2334,6 +3012,7 @@ export function DocumentEditorController({
             editKey,
             blossomServers,
             history?.versions.at(-1)?.event.created_at ?? 0,
+            layout,
           );
 
           const sharedDocTag = [
@@ -2368,7 +3047,8 @@ export function DocumentEditorController({
             // this navigation, and if the user picks "stay" the session
             // never adopts the viewKey and the next save silently breaks the
             // link that was just handed out.
-            lastSavedMdRef.current = md;
+            lastSavedMdRef.current = mdRef.current;
+            lastSavedLayoutRef.current = layout;
             setLastSavedAt(new Date());
             const [kind, pubkey, identifier] = result.address.split(":");
             const naddr = nip19.naddrEncode({

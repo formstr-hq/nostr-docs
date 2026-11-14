@@ -10,6 +10,7 @@ import {
   queryLocalRelay,
   publishToLocalRelay,
   closeShareDialog,
+  showWorkspaceSidebar,
 } from "./helpers";
 import { encodeNKeys } from "../../src/utils/nkeys";
 
@@ -152,7 +153,7 @@ test("open share: a collaborator edits and the owner sees it", async ({
   const p = decodedRoot.data as nip19.AddressPointer;
   const rootAddr = `${p.kind}:${p.pubkey}:${p.identifier}`;
   const collabEvents = [
-    ...(await queryLocalRelay({ kinds: [33457] })),
+    ...(await queryLocalRelay({ kinds: [p.kind] })),
     ...(await queryLocalRelay({ kinds: [22457] })),
     ...(await queryLocalRelay({ kinds: [24578] })),
     ...(await queryLocalRelay({ kinds: [34581] })),
@@ -494,6 +495,7 @@ test("a participant sees a shared doc exactly once", async ({ page, browser }) =
   await expect(friend.getByText("Saved", { exact: true })).toBeVisible({ timeout: 20_000 });
 
   // The workspace must show the doc as a single card.
+  await showWorkspaceSidebar(friend);
   await friend.getByRole("button", { name: "All pages" }).click();
   await expect(friend.getByText(title, { exact: true })).toHaveCount(1, {
     timeout: 20_000,

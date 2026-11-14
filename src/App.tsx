@@ -3,9 +3,12 @@ import "./App.css";
 import {
   Box,
   Drawer,
+  IconButton,
+  Tooltip,
   Typography,
   useMediaQuery,
 } from "@mui/material";
+import MenuOpenIcon from "@mui/icons-material/MenuOpen";
 import {
   createBrowserRouter,
   createHashRouter,
@@ -141,6 +144,41 @@ function AppLayout() {
   const textSuggest = useTextSuggest();
   const navigate = useNavigate();
   const location = useLocation();
+  const [sidebarHidden, setSidebarHidden] = React.useState(false);
+
+  // Immersive typing: hide the desktop sidebar as soon as the user types in the
+  // document surface. The left-edge tab and Cmd/Ctrl+Shift+B bring it back.
+  React.useEffect(() => {
+    if (!isDesktop) {
+      setSidebarHidden(false);
+      return;
+    }
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (
+        (event.metaKey || event.ctrlKey) &&
+        event.shiftKey &&
+        event.key.toLowerCase() === "b"
+      ) {
+        event.preventDefault();
+        setSidebarHidden((hidden) => !hidden);
+        return;
+      }
+      if (event.metaKey || event.ctrlKey || event.altKey) return;
+      const target = event.target as HTMLElement | null;
+      if (target?.closest("[data-pages-editor]")) {
+        setSidebarHidden(true);
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [isDesktop]);
+
+  // Leaving the editor restores the workspace sidebar.
+  React.useEffect(() => {
+    if (!location.pathname.startsWith("/doc/") && location.pathname !== "/new") {
+      setSidebarHidden(false);
+    }
+  }, [location.pathname]);
 
   // Android hardware/gesture back: navigate within the app instead of closing
   // it. Without a `backButton` listener Capacitor performs its default action
@@ -193,7 +231,7 @@ function AppLayout() {
       {/* ===== SIDEBAR + MAIN CONTENT ===== */}
       <Box sx={{ display: "flex", height: "100%", overflow: "hidden" }}>
         {/* DESKTOP DRAWER */}
-        {isDesktop && (
+        {isDesktop && !sidebarHidden && (
           <Drawer
             variant="permanent"
             open
@@ -224,6 +262,33 @@ function AppLayout() {
               <DocumentList onEdit={() => {}} />
             </Box>
           </Drawer>
+        )}
+
+        {isDesktop && sidebarHidden && (
+          <Tooltip title="Show sidebar (Ctrl/⌘+Shift+B)" placement="right">
+            <IconButton
+              aria-label="Show sidebar"
+              onClick={() => setSidebarHidden(false)}
+              sx={{
+                position: "fixed",
+                top: "50%",
+                left: 0,
+                transform: "translateY(-50%)",
+                zIndex: 1400,
+                borderRadius: "0 8px 8px 0",
+                border: "1px solid",
+                borderLeft: "none",
+                borderColor: "divider",
+                bgcolor: "background.paper",
+                boxShadow: 2,
+                px: 0.5,
+                py: 1,
+                "&:hover": { bgcolor: "background.paper" },
+              }}
+            >
+              <MenuOpenIcon fontSize="small" />
+            </IconButton>
+          </Tooltip>
         )}
 
         {/* MAIN CONTENT */}

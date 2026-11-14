@@ -11,6 +11,7 @@ import { defineConfig, devices } from "@playwright/test";
 // may already be running (reuseExistingServer would otherwise reuse a foreign
 // app on a common port like 5173).
 const RELAY_PORT = 7449;
+const BLOSSOM_PORT = 7450;
 const APP_PORT = 5181;
 
 export default defineConfig({
@@ -48,12 +49,19 @@ export default defineConfig({
       env: { RELAY_PORT: String(RELAY_PORT) },
     },
     {
+      command: "node tests/e2e/blossom-server.cjs",
+      port: BLOSSOM_PORT,
+      reuseExistingServer: !process.env.CI,
+      env: { BLOSSOM_PORT: String(BLOSSOM_PORT) },
+    },
+    {
       command: `npm run dev -- --port ${APP_PORT} --strictPort`,
       port: APP_PORT,
       reuseExistingServer: !process.env.CI,
       timeout: 180_000,
       env: {
         VITE_DEFAULT_RELAYS: `ws://localhost:${RELAY_PORT}`,
+        VITE_DEFAULT_BLOSSOM: `http://localhost:${BLOSSOM_PORT}`,
       },
     },
   ],

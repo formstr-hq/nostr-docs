@@ -1,6 +1,7 @@
 import { useMemo } from "react";
 import MiniSearch, { type SearchResult } from "minisearch";
 import type { Event } from "nostr-tools";
+import { documentTitle, documentToPlainText } from "./documentFormat";
 
 export type DocumentVersion = {
   event: Event;
@@ -29,8 +30,7 @@ type IndexEntry = {
 };
 
 export const heuristicTitle = (content: string, maxLength = 120): string => {
-  const firstLine = content.split("\n").find((l) => l.trim()) ?? "";
-  return firstLine.replace(/^#+\s*/, "").replace(/\\\s*$/, "").slice(0, maxLength).trim();
+  return documentTitle(content).slice(0, maxLength).trim();
 };
 
 const buildIndex = (
@@ -59,9 +59,10 @@ const buildIndex = (
       if (seen.has(address)) continue;
       const latest = history.versions.at(-1);
       if (!latest) continue;
-      const content = latest.decryptedContent ?? "";
+      const raw = latest.decryptedContent ?? "";
+      const content = documentToPlainText(raw);
       const customTitle = docTitles.get(address) ?? "";
-      const title = customTitle || heuristicTitle(content) || "Untitled";
+      const title = customTitle || heuristicTitle(raw) || "Untitled";
       const tags = (docTags.get(address) ?? []).join(" ");
       index.add({ id: address, origin, title, content, tags });
       seen.add(address);

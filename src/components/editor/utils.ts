@@ -11,11 +11,12 @@ import { bytesToHex, hexToBytes } from "nostr-tools/utils";
 import { signerManager } from "../../signer";
 import { publishEvent } from "../../nostr/publish";
 import { encodeNKeys } from "../../utils/nkeys";
-import { KIND_FILE } from "../../nostr/kinds";
 import { isNativePlatform } from "../../signer/secureStorage";
 import { loadFontResources, saveFontResource } from "../../lib/fontStore";
 import { sha256Hex } from "../../utils/fileEncryption";
 import { uploadBinaryToBlossom } from "../../blossom/client";
+import { saveSharedLayout } from "../../nostr/docMetadata";
+import type { PageLayout } from "../../lib/docLayout";
 
 export const handleSharePublic = () => {
   console.log("TODO: Share publicly");
@@ -98,6 +99,7 @@ export async function handleGeneratePrivateLink(
   editKey?: string,
   blossomServers: string[] = [],
   prevCreatedAt = 0,
+  layout?: PageLayout,
 ): Promise<ShareResult> {
   if (!selectedDocumentId) {
     throw new Error("No document selected");
@@ -172,7 +174,7 @@ export async function handleGeneratePrivateLink(
     (prevCreatedAt || 0) + 1,
   );
   const sharedEvent = {
-    kind: KIND_FILE,
+    kind: parsed.kind,
     tags: [["d", dTag], ...fontTags],
     content: encryptedContent,
     created_at: createdAt,
@@ -192,6 +194,27 @@ export async function handleGeneratePrivateLink(
   // 4️⃣ Publish the new shared event
   await publishEvent(signedEvent, relays);
 
+  // A view-only share keeps the owner's root address, so a viewKey-encrypted
+  // roster can carry the layout to viewers. Legacy edit-key copies have a
+  // different author and no roster; they fall back to the default layout.
+  if (layout && !editKeyUsed && signer) {
+    try {
+      const signerPubkey = await signer.getPublicKey();
+      if (signerPubkey === parsed.pubkey) {
+        await saveSharedLayout(
+          parsed.pubkey,
+          dTag,
+          bytesToHex(viewKeyUsed),
+          layout,
+          relays,
+          parsed.kind,
+        );
+      }
+    } catch (err) {
+      console.warn("Could not publish shared layout metadata:", err);
+    }
+  }
+
   // 5️⃣ Encode keys in one nkeys string
   const nkeysStr = encodeNKeys({
     viewKey: bytesToHex(viewKeyUsed),
@@ -199,9 +222,9 @@ export async function handleGeneratePrivateLink(
   });
 
   // 6️⃣ Build URL and address
-  const newAddress = `${KIND_FILE}:${signedEvent.pubkey}:${dTag}`;
+  const newAddress = `${parsed.kind}:${signedEvent.pubkey}:${dTag}`;
   const naddr = nip19.naddrEncode({
-    kind: KIND_FILE,
+    kind: parsed.kind,
     pubkey: signedEvent.pubkey,
     identifier: dTag,
   });

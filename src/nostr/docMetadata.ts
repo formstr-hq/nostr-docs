@@ -1,8 +1,8 @@
 import type { Event, EventTemplate } from "nostr-tools";
 import { publishEvent } from "./publish";
 import { signerManager } from "../signer";
-import { KIND_DOC_METADATA } from "./kinds";
-import { fetchMany } from "../dataLayer";
+import { KIND_DOC_METADATA, KIND_FILE } from "./kinds";
+import { fetchMany, fetchOne } from "../dataLayer";
 import {
   decryptWithViewKey,
   encryptWithViewKey,
@@ -10,10 +10,13 @@ import {
   type DocMember,
   type DocMode,
 } from "./sharedDoc";
+import { layoutEquals, normalizePageLayout, type PageLayout } from "../lib/docLayout";
 
 export interface DocMetadata {
   tags: string[];
   title?: string;
+  /** Page geometry, header/footer and document typography. */
+  layout?: PageLayout;
   viewKey?: string;
   editKey?: string;
   sharedAs?: string; // address of the shared (editKey-signed) copy
@@ -121,6 +124,14 @@ export function metadataEqual(a: DocMetadata | undefined, b: DocMetadata | undef
   if (a.sharedAs !== b.sharedAs) return false;
   if (a.v !== b.v) return false;
   if (a.mode !== b.mode) return false;
+  if (
+    !layoutEquals(
+      normalizePageLayout(a.layout ?? {}),
+      normalizePageLayout(b.layout ?? {}),
+    )
+  ) {
+    return false;
+  }
   const am = a.members ?? [];
   const bm = b.members ?? [];
   if (am.length !== bm.length) return false;
@@ -167,6 +178,7 @@ export async function saveRoster(
   viewKey: string,
   roster: DocMetadata,
   relays: string[],
+  kind: number = KIND_FILE,
 ): Promise<void> {
   const signer = await signerManager.getSigner();
   if (!signer) throw new Error("No signer");
@@ -174,7 +186,7 @@ export async function saveRoster(
   const pubkey = await signer.getPublicKey();
   if (pubkey !== owner) throw new Error("Only the document owner can write the roster");
 
-  const dTag = rosterDTag(owner, d);
+  const dTag = rosterDTag(owner, d, kind);
   const encrypted = encryptWithViewKey(JSON.stringify(roster), viewKey);
 
   const event: EventTemplate = {
@@ -186,4 +198,81 @@ export async function saveRoster(
 
   const signed = await signer.signEvent(event);
   await publishEvent(signed, relays);
+}
+
+/**
+ * d-tag for a shared document's dedicated layout event. Using a separate
+ * addressable slot (`<root>:layout`) keeps layout independent from the roster
+ * and from each user's self-encrypted metadata, so one can never overwrite the
+ * other.
+ */
+export function layoutDTag(
+  owner: string,
+  d: string,
+  kind: number = KIND_FILE,
+): string {
+  return `${rosterDTag(owner, d, kind)}:layout`;
+}
+
+/** Publish the owner-authored, viewKey-encrypted layout for a shared document. */
+export async function saveSharedLayout(
+  owner: string,
+  d: string,
+  viewKey: string,
+  layout: PageLayout,
+  relays: string[],
+  kind: number = KIND_FILE,
+): Promise<void> {
+  const signer = await signerManager.getSigner();
+  if (!signer) throw new Error("No signer");
+
+  const pubkey = await signer.getPublicKey();
+  if (pubkey !== owner) {
+    throw new Error("Only the document owner can write the shared layout");
+  }
+
+  const dTag = layoutDTag(owner, d, kind);
+  const encrypted = encryptWithViewKey(
+    JSON.stringify({ layout: normalizePageLayout(layout) }),
+    viewKey,
+  );
+
+  const event: EventTemplate = {
+    kind: KIND_DOC_METADATA,
+    tags: [["d", dTag]],
+    content: encrypted,
+    created_at: nextCreatedAt(dTag),
+  };
+
+  const signed = await signer.signEvent(event);
+  await publishEvent(signed, relays);
+}
+
+/** Fetch a shared document's layout, if the owner has published one. */
+export async function fetchSharedLayout(
+  owner: string,
+  d: string,
+  viewKey: string,
+  relays?: string[],
+  kind: number = KIND_FILE,
+): Promise<PageLayout | null> {
+  const event = await fetchOne(
+    [
+      {
+        kinds: [KIND_DOC_METADATA],
+        authors: [owner],
+        "#d": [layoutDTag(owner, d, kind)],
+      },
+    ],
+    relays,
+  );
+  if (!event) return null;
+  try {
+    const parsed = JSON.parse(decryptWithViewKey(event.content, viewKey)) as {
+      layout?: unknown;
+    };
+    return parsed.layout ? normalizePageLayout(parsed.layout) : null;
+  } catch {
+    return null;
+  }
 }

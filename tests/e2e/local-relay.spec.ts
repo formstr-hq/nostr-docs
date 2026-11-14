@@ -58,5 +58,5 @@ test("documents and their tag metadata are persisted in the local relay", async 
     .toBeGreaterThan(0);
 
   const kinds = await storedKinds(page);
-  expect(kinds[33457], "the document itself should be cached").toBeGreaterThan(0);
+  expect(kinds[33458], "the new rich document should be cached").toBeGreaterThan(0);
 });
