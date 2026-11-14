@@ -98,11 +98,15 @@ export async function prepareRichDocumentForStorage(
   },
 ): Promise<PreparedRichDocument> {
   const inline = serializeRichDocument(doc, options.ooxml);
-  if (
-    options.localOnly ||
-    options.servers.length === 0 ||
-    new TextEncoder().encode(inline).byteLength <= INLINE_ENVELOPE_LIMIT
-  ) {
+  const inlineBytes = new TextEncoder().encode(inline).byteLength;
+
+  // Local-only pages never leave the device. Once a published page has been
+  // promoted to chunked storage, keep it there even if it later shrinks; this
+  // avoids oscillating around the threshold and invalidating readers/caches.
+  if (options.localOnly || options.servers.length === 0) {
+    return { content: inline };
+  }
+  if (!options.previous && inlineBytes <= INLINE_ENVELOPE_LIMIT) {
     return { content: inline };
   }
 
