@@ -2130,9 +2130,11 @@ Date: ${date} · Mood: ____
         : undefined;
     const docToSave =
       rawDoc && layout.canvas === "page" ? unwrapPages(rawDoc) : rawDoc;
-    const docChanged = isRichDocument
-      ? !!docToSave && JSON.stringify(docToSave) !== lastSavedDocRef.current
-      : mdToSave !== lastSavedMdRef.current;
+    const docChanged = isDraft
+      ? true
+      : isRichDocument
+        ? !!docToSave && JSON.stringify(docToSave) !== lastSavedDocRef.current
+        : mdToSave !== lastSavedMdRef.current;
     const layoutChanged = !layoutEquals(layout, lastSavedLayoutRef.current);
     if (!docChanged && !layoutChanged) return true;
 
