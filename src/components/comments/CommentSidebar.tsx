@@ -3,8 +3,8 @@ import { Box, Button, Typography, Divider, IconButton, Tooltip, Snackbar, Alert,
 import CloseIcon from "@mui/icons-material/Close";
 import { useComments } from "../../contexts/CommentContext";
 import { scrollToComment } from "../../utils/scrollToComment";
-import { CommentCard } from "./CommentCard";
-import type { DecryptedComment } from "../../contexts/CommentContext";
+import { CommentThread } from "./CommentThread";
+import { buildCommentThreads } from "../../utils/commentThreads";
 
 type Props = {
   onClose: () => void;
@@ -33,28 +33,11 @@ export function CommentSidebar({ onClose, activeCommentId, isMobile }: Props) {
     el?.scrollIntoView({ behavior: "smooth", block: "nearest" });
   }, [activeCommentId]);
 
-  // Replies hang off their parent's card; only top-level comments are threads.
-  const { threads, repliesByParent } = useMemo(() => {
-    const byParent = new Map<string, DecryptedComment[]>();
-    const top: DecryptedComment[] = [];
-    for (const c of comments) {
-      if (!c.parentId) {
-        top.push(c);
-        continue;
-      }
-      const list = byParent.get(c.parentId) ?? [];
-      list.push(c);
-      byParent.set(c.parentId, list);
-    }
-    return { threads: top, repliesByParent: byParent };
-  }, [comments]);
+  const threads = useMemo(() => buildCommentThreads(comments), [comments]);
 
-  const handleReply = (parent: DecryptedComment) => (content: string) =>
-    replyToComment(parent, content);
-
-  const active = threads.filter((c) => !resolvedIds.has(c.id) && !isOutdated(c));
-  const outdated = threads.filter((c) => !resolvedIds.has(c.id) && isOutdated(c));
-  const resolved = threads.filter((c) => resolvedIds.has(c.id));
+  const active = threads.roots.filter((c) => !resolvedIds.has(c.id) && !isOutdated(c));
+  const outdated = threads.roots.filter((c) => !resolvedIds.has(c.id) && isOutdated(c));
+  const resolved = threads.roots.filter((c) => resolvedIds.has(c.id));
 
   // A section is only open while it has content, so an emptied section
   // collapses on its own — no state syncing needed.
@@ -169,14 +152,14 @@ export function CommentSidebar({ onClose, activeCommentId, isMobile }: Props) {
                 }}
                 sx={{ borderRadius: 2 }}
               >
-                <CommentCard
+                <CommentThread
                   comment={comment}
                   isResolved={false}
                   isOutdated={false}
                   onResolve={canResolve(comment) ? () => handleResolve(comment.id) : undefined}
                   onCardClick={comment.quote ? () => scrollToComment(comment.id) : undefined}
-                  replies={repliesByParent.get(comment.id)}
-                  onReply={handleReply(comment)}
+                  threads={threads}
+                  onReply={replyToComment}
                 />
               </Box>
             ))}
@@ -192,13 +175,13 @@ export function CommentSidebar({ onClose, activeCommentId, isMobile }: Props) {
                     }}
                     sx={{ borderRadius: 2 }}
                   >
-                    <CommentCard
+                    <CommentThread
                       comment={comment}
                       isResolved={false}
                       isOutdated={true}
                       onResolve={canResolve(comment) ? () => handleResolve(comment.id) : undefined}
-                      replies={repliesByParent.get(comment.id)}
-                      onReply={handleReply(comment)}
+                      threads={threads}
+                      onReply={replyToComment}
                     />
                   </Box>
                 ))}
@@ -216,13 +199,13 @@ export function CommentSidebar({ onClose, activeCommentId, isMobile }: Props) {
                     }}
                     sx={{ borderRadius: 2 }}
                   >
-                    <CommentCard
+                    <CommentThread
                       comment={comment}
                       isResolved={true}
                       isOutdated={isOutdated(comment)}
                       onUnresolve={canResolve(comment) ? () => handleUnresolve(comment.id) : undefined}
                       onCardClick={comment.quote ? () => scrollToComment(comment.id) : undefined}
-                      replies={repliesByParent.get(comment.id)}
+                      threads={threads}
                     />
                   </Box>
                 ))}

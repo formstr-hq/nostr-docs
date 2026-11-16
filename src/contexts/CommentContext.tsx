@@ -7,7 +7,9 @@ import React, {
   useRef,
   useState,
 } from "react";
-import { nip44, type Event } from "nostr-tools";
+import { nip19, nip44, type Event } from "nostr-tools";
+import { encodeNKeys } from "../utils/nkeys";
+import { parseRootAddress } from "../nostr/sharedDoc";
 import type { SubCloser } from "nostr-tools/abstract-pool";
 import type { Editor } from "@tiptap/react";
 import { Decoration, DecorationSet } from "@tiptap/pm/view";
@@ -40,6 +42,7 @@ export interface DecryptedComment {
 }
 
 interface CommentContextValue {
+  documentPath: string;
   comments: DecryptedComment[];
   addComment: (payload: CommentPayload, docEventId: string) => Promise<void>;
   /** Post a reply under an existing comment. */
@@ -206,6 +209,13 @@ export const CommentProvider: React.FC<{
   enabled = true,
 }) => {
   const { relays } = useRelays();
+  const documentPath = useMemo(() => {
+    const root = parseRootAddress(docAddress);
+    if (!root) return "";
+    const naddr = nip19.naddrEncode({ kind: root.kind, pubkey: root.owner, identifier: root.d });
+    const hash = viewKey ? `#${encodeNKeys({ viewKey, ...(editKey ? { editKey } : {}) })}` : "";
+    return `/doc/${naddr}${hash}`;
+  }, [docAddress, viewKey, editKey]);
   const [comments, setComments] = useState<DecryptedComment[]>([]);
   // commentId -> pubkey -> latest resolution from that pubkey (deduped for out-of-order relay delivery)
   const [resolverMap, setResolverMap] = useState<Map<string, Map<string, { resolved: boolean; createdAt: number }>>>(new Map());
@@ -353,7 +363,7 @@ export const CommentProvider: React.FC<{
 
   return (
     <CommentContext.Provider
-      value={{ comments, addComment, replyToComment, resolvedIds, resolveComment, unresolveComment, applyHighlights, isOutdated, canResolve }}
+      value={{ documentPath, comments, addComment, replyToComment, resolvedIds, resolveComment, unresolveComment, applyHighlights, isOutdated, canResolve }}
     >
       {children}
     </CommentContext.Provider>

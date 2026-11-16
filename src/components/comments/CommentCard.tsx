@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { Box, Button, Chip, IconButton, TextField, Tooltip, Typography, alpha } from "@mui/material";
 import CheckCircleIcon from "@mui/icons-material/CheckCircle";
 import CheckCircleOutlineIcon from "@mui/icons-material/CheckCircleOutline";
@@ -11,8 +11,7 @@ type Props = {
   onResolve?: () => void;
   onUnresolve?: () => void;
   onCardClick?: () => void;
-  /** Replies to this comment, oldest first. */
-  replies?: DecryptedComment[];
+  children?: ReactNode;
   /** Post a reply. Omit to hide the reply action (e.g. on resolved threads). */
   onReply?: (content: string) => Promise<void>;
 };
@@ -93,12 +92,15 @@ function ReplyBox({ onReply }: { onReply: (content: string) => Promise<void> }) 
   );
 }
 
-export function CommentCard({ comment, isResolved, isOutdated, onResolve, onUnresolve, onCardClick, replies = [], onReply }: Props) {
+export function CommentCard({ comment, isResolved, isOutdated, onResolve, onUnresolve, onCardClick, children, onReply }: Props) {
   const shortPubkey = shortKey(comment.pubkey);
   const timestamp = formatTime(comment.createdAt);
 
   return (
     <Box
+      component="article"
+      aria-label={`Comment by ${shortPubkey}`}
+      data-comment-id={comment.id}
       onClick={onCardClick}
       sx={{
         display: "flex",
@@ -116,7 +118,7 @@ export function CommentCard({ comment, isResolved, isOutdated, onResolve, onUnre
         ...(isResolved || isOutdated) && { opacity: isResolved ? 0.6 : isOutdated ? 0.5 : 1 },
       }}
     >
-      <Box sx={{ display: "flex", alignItems: "baseline", gap: 1 }}>
+      <Box sx={{ display: "flex", alignItems: "baseline", flexWrap: "wrap", gap: 0.5 }}>
         <Typography
           variant="caption"
           sx={{ fontWeight: 700, fontFamily: "monospace", color: "text.primary" }}
@@ -185,39 +187,8 @@ export function CommentCard({ comment, isResolved, isOutdated, onResolve, onUnre
         {comment.content}
       </Typography>
 
-      {replies.length > 0 && (
-        <Box
-          sx={{
-            display: "flex",
-            flexDirection: "column",
-            gap: 1,
-            pl: 1.25,
-            borderLeft: "2px solid",
-            borderColor: "divider",
-          }}
-        >
-          {replies.map((reply) => (
-            <Box key={reply.id} sx={{ display: "flex", flexDirection: "column", gap: 0.25 }}>
-              <Box sx={{ display: "flex", alignItems: "baseline", gap: 1 }}>
-                <Typography
-                  variant="caption"
-                  sx={{ fontWeight: 700, fontFamily: "monospace", color: "text.primary" }}
-                >
-                  {shortKey(reply.pubkey)}
-                </Typography>
-                <Typography variant="caption" color="text.secondary" sx={{ ml: "auto" }}>
-                  {formatTime(reply.createdAt)}
-                </Typography>
-              </Box>
-              <Typography variant="body2" sx={{ whiteSpace: "pre-wrap", wordBreak: "break-word" }}>
-                {reply.content}
-              </Typography>
-            </Box>
-          ))}
-        </Box>
-      )}
-
       {onReply && <ReplyBox onReply={onReply} />}
+      {children}
     </Box>
   );
 }

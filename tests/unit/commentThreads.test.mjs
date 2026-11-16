@@ -1,6 +1,12 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { buildCommentThreads, getCommentAncestors, getDiscussionRows } from "../../src/utils/commentThreads.ts";
+import { discussionPath } from "../../src/components/comments/discussionPath.ts";
+
+test("discussion links preserve capability keys in fragments", () => {
+  assert.equal(discussionPath("/doc/naddr1#nkeys1", "comment"), "/doc/naddr1/discussion/comment#nkeys1");
+  assert.equal(discussionPath("/doc/naddr1", "comment"), "/doc/naddr1/discussion/comment");
+});
 
 test("threads preserve parent links, chronological siblings and late parents", () => {
   const comments = [
