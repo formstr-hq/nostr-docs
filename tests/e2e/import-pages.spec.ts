@@ -1,6 +1,7 @@
 import { test, expect } from "@playwright/test";
 import { writeFileSync } from "node:fs";
 import JSZip from "jszip";
+import { Document, Packer, Paragraph, TextRun } from "docx";
 import { loginAsGuest } from "./helpers";
 
 /**
@@ -100,4 +101,50 @@ test("importing can keep pages on this device only", async ({ page }, testInfo) 
 
   await page.getByRole("button", { name: "Personal", exact: true }).click();
   await expect(page.getByText(title, { exact: true })).toBeHidden({ timeout: 5_000 });
+});
+
+test("imports a DOCX file as a rich editable page", async ({ page }, testInfo) => {
+  const stamp = Date.now();
+  const title = `DOCX Import ${stamp}`;
+  const body = `docx body ${stamp}`;
+
+  const docx = new Document({
+    sections: [
+      {
+        children: [
+          new Paragraph({
+            children: [new TextRun({ text: title, bold: true })],
+          }),
+          new Paragraph(body),
+        ],
+      },
+    ],
+  });
+  const docxPath = testInfo.outputPath("import.docx");
+  writeFileSync(docxPath, await Packer.toBuffer(docx));
+
+  await loginAsGuest(page);
+  await page.getByRole("button", { name: "Account menu" }).click();
+  await page.getByRole("menuitem", { name: /Import pages/ }).click();
+
+  const dialog = page.getByRole("dialog").filter({ hasText: "Import pages" });
+  await expect(dialog).toBeVisible();
+  await dialog.getByLabel("Choose Markdown or zip files").setInputFiles([docxPath]);
+
+  await expect(dialog.getByText("1 page ready to import")).toBeVisible({
+    timeout: 10_000,
+  });
+  await expect(dialog.getByText("DOCX", { exact: true })).toBeVisible();
+
+  await dialog.getByRole("button", { name: "Import 1 page" }).click();
+  await expect(dialog.getByText("Imported 1 page.")).toBeVisible({ timeout: 30_000 });
+  await dialog.getByRole("button", { name: "View pages" }).click();
+
+  await expect(page.getByText(title, { exact: true }).first()).toBeVisible({
+    timeout: 20_000,
+  });
+  await page.getByText(title, { exact: true }).first().click();
+  await expect(page.getByText(body, { exact: false })).toBeVisible({
+    timeout: 20_000,
+  });
 });

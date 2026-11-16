@@ -1,10 +1,34 @@
 // src/nostr/kinds.ts
 
 /**
- * Replaceable parameterized event containing the FULL Markdown file.
- * Uses tag: ["d", <docId>]
+ * Legacy encrypted document: NIP-44-encrypted Markdown.
+ *
+ * Kept for backward compatibility. Existing pages and public/shared links use
+ * this kind, and we must never change the meaning of its `content` field.
+ * Uses tag: ["d", <docId>].
  */
 export const KIND_FILE = 33457;
+
+/**
+ * Rich encrypted document: NIP-44-encrypted ProseMirror JSON.
+ *
+ * This is the default for new documents going forward. The content is a
+ * versioned payload:
+ *
+ *   { "format": "prosemirror-json", "version": 1, "doc": <ProseMirror JSON> }
+ *
+ * Same addressing as KIND_FILE: ["d", <docId>] plus the capability-derived
+ * ["a", <room>] tag for shared documents. KIND_FILE remains readable (and
+ * writable for legacy pages) so old links and other clients keep working.
+ */
+export const KIND_RICH_DOCUMENT = 33458;
+
+/** Every kind that stores an editable document body. */
+export const DOCUMENT_KINDS = [KIND_FILE, KIND_RICH_DOCUMENT] as const;
+
+export function isDocumentKind(kind: number): boolean {
+  return kind === KIND_FILE || kind === KIND_RICH_DOCUMENT;
+}
 
 /**
  * Ephemeral CRDT update events.

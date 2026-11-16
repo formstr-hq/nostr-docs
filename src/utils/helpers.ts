@@ -1,4 +1,5 @@
 import { type Event } from "nostr-tools";
+import type { PageLayout } from "../lib/docLayout";
 
 export const getEventAddress = (event: Event): string | null => {
   const dTag = event.tags.find((t) => t[0] === "d")?.[1];
@@ -8,5 +9,9 @@ export const getEventAddress = (event: Event): string | null => {
 };
 
 export const getLatestVersion = (history: {
-  versions: { event: Event; decryptedContent: string }[];
+  versions: {
+    event: Event;
+    decryptedContent: string;
+    legacyLayout?: PageLayout;
+  }[];
 }) => history.versions.at(-1) ?? null;

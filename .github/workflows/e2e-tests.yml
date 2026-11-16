@@ -20,6 +20,9 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Run OOXML adapter fidelity tests
+        run: npm run test:ooxml
+
       - name: Install Playwright browsers
         run: npx playwright install --with-deps chromium
 

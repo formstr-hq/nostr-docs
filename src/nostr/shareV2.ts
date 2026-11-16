@@ -19,8 +19,10 @@ import { cacheLocalEvents } from "../dataLayer";
 import { collabRoom, encryptWithViewKey, fetchRoster, type DocMember, type DocMode, type DocRole } from "./sharedDoc";
 import {
   saveRoster,
+  saveSharedLayout,
   type DocMetadata,
 } from "./docMetadata";
+import type { PageLayout } from "../lib/docLayout";
 
 /**
  * Re-publish the owner's own version of a document, encrypted with the shared
@@ -34,6 +36,7 @@ export async function publishOwnerContent(
   content: string,
   relays: string[],
   createdAt?: number,
+  kind: number = KIND_FILE,
 ): Promise<Event> {
   const signer = await signerManager.getSigner();
   if (!signer) throw new Error("No signer");
@@ -45,7 +48,7 @@ export async function publishOwnerContent(
 
   const encrypted = encryptWithViewKey(content, viewKey);
   const signed = await signer.signEvent({
-    kind: KIND_FILE,
+    kind,
     tags: [["d", d], ["a", collabRoom(viewKey)]],
     content: encrypted,
     created_at: createdAt ?? Math.floor(Date.now() / 1000),
@@ -70,9 +73,14 @@ export async function enableGroupSharing(
   members: DocMember[] = [],
   mode: DocMode = "restricted",
   createdAt?: number,
+  kind: number = KIND_FILE,
+  layout?: PageLayout,
 ): Promise<Event> {
-  const event = await publishOwnerContent(owner, d, viewKey, content, relays, createdAt);
-  await saveRoster(owner, d, viewKey, { v: 2, mode, tags: [], members }, relays);
+  const event = await publishOwnerContent(owner, d, viewKey, content, relays, createdAt, kind);
+  await saveRoster(owner, d, viewKey, { v: 2, mode, tags: [], members }, relays, kind);
+  if (layout) {
+    await saveSharedLayout(owner, d, viewKey, layout, relays, kind);
+  }
   return event;
 }
 
@@ -88,8 +96,9 @@ export async function updateRosterMembers(
   members: DocMember[],
   relays: string[],
   mode?: DocMode,
+  kind: number = KIND_FILE,
 ): Promise<void> {
-  const current = await fetchRoster(owner, d, viewKey, relays);
+  const current = await fetchRoster(owner, d, viewKey, relays, kind);
   const roster: DocMetadata = {
     v: 2,
     mode: mode ?? current?.mode ?? "restricted",
@@ -97,7 +106,7 @@ export async function updateRosterMembers(
     title: current?.title,
     members,
   };
-  await saveRoster(owner, d, viewKey, roster, relays);
+  await saveRoster(owner, d, viewKey, roster, relays, kind);
 }
 
 /** Switch the document's write-authorization mode, preserving everything else. */
@@ -107,15 +116,16 @@ export async function setDocMode(
   viewKey: string,
   mode: DocMode,
   relays: string[],
+  kind: number = KIND_FILE,
 ): Promise<void> {
-  const current = await fetchRoster(owner, d, viewKey, relays);
+  const current = await fetchRoster(owner, d, viewKey, relays, kind);
   await saveRoster(owner, d, viewKey, {
     v: 2,
     mode,
     tags: current?.tags ?? [],
     title: current?.title,
     members: current?.members ?? [],
-  }, relays);
+  }, relays, kind);
 }
 
 /** Insert or update a member (idempotent by pubkey). */

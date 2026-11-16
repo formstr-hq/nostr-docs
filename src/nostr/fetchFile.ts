@@ -2,7 +2,7 @@
 
 import type { AddressPointer } from "nostr-tools/nip19";
 import { nip19, type Event } from "nostr-tools";
-import { KIND_FILE } from "./kinds";
+import { DOCUMENT_KINDS } from "./kinds";
 import { fetchMany, fetchOne, seenOn } from "../dataLayer";
 
 export async function fetchAllDocuments(
@@ -11,19 +11,20 @@ export async function fetchAllDocuments(
   pubkey: string,
 ): Promise<{ relayMap: Map<string, string[]> }> {
   const events = await fetchMany(
-    [{ kinds: [KIND_FILE], authors: [pubkey] }],
+    [{ kinds: [...DOCUMENT_KINDS], authors: [pubkey] }],
     relays,
     8000,
   );
 
   // Stream every unique version to the caller (matches the old per-relay
-  // subscription behaviour), then group to the latest per d-tag for hints.
+  // subscription behaviour), then group to the latest per kind+d-tag for hints.
   const seenIds = new Set<string>();
   const latestByD: Record<string, Event> = {};
   for (const event of events) {
     const dTag = event.tags.find((t) => t[0] === "d")?.[1];
-    if (dTag && (!latestByD[dTag] || event.created_at > latestByD[dTag].created_at)) {
-      latestByD[dTag] = event;
+    const key = `${event.kind}:${dTag ?? ""}`;
+    if (dTag && (!latestByD[key] || event.created_at > latestByD[key].created_at)) {
+      latestByD[key] = event;
     }
     if (!seenIds.has(event.id)) {
       seenIds.add(event.id);

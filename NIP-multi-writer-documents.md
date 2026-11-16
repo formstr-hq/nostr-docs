@@ -11,7 +11,8 @@ owner controls who may write through an encrypted roster.
 
 - **viewKey**: random 32-byte key. NIP-44 conversation key =
   `nip44.getConversationKey(viewKey, getPublicKey(viewKey))`.
-- **root address**: `33457:<owner-pubkey>:<d>`.
+- **root address**: `<kind>:<owner-pubkey>:<d>`, where `<kind>` is `33458` for
+  new rich documents and `33457` for legacy Markdown documents.
 - **room**: `getPublicKey(viewKey)` — a capability identifier for the realtime
   channel (computable only by viewKey holders).
 - All `content` is NIP-44 encrypted with the viewKey.
@@ -22,19 +23,78 @@ owner controls who may write through an encrypted roster.
 /doc/<naddr>#<nkeys>
 ```
 
-- `<naddr>`: NIP-19 address of the root (`kind=33457`, `pubkey=owner`, `identifier=d`).
+- `<naddr>`: NIP-19 address of the root (`kind=33458` for new documents,
+  `kind=33457` for legacy documents; `pubkey=owner`, `identifier=d`).
 - `<nkeys>`: `bech32` string, prefix `nkeys`, over TLV pairs (`0` = field name,
   `1` = value). Fields: `viewKey` (hex, required); `editKey` (hex, legacy only).
 
 ## Events
 
-### Content — kind `33457` (parameterised replaceable on `d`)
+### Content — kind `33458` (parameterised replaceable on `d`)
+
+The canonical rich document format. New documents use this kind.
 
 - tags: `["d", <document id>]`, `["a", <room>]`
-- content: the document Markdown
+- content: NIP-44 encrypted JSON
+  ```json
+  { "format": "prosemirror-json", "version": 1, "doc": { ... } }
+  ```
+  `doc` is ProseMirror JSON. HTML, Markdown, DOCX and PDF are adapters around
+  this model; they are never the durable source of truth.
 - signed by the author
 - one event per author (their own replaceable slot); the newest across authors is
   the document
+
+### Content — kind `33457` (legacy, parameterised replaceable on `d`)
+
+Kept for backward compatibility. Do not write new documents to this kind, and do
+not change the meaning of its `content` field.
+
+- tags: `["d", <document id>]`, `["a", <room>]`
+- content: the document Markdown, with no presentation metadata
+- signed by the author
+- one event per author (their own replaceable slot); the newest across authors is
+  the document
+
+Page geometry, header/footer and document-level typography live in the encrypted
+kind-34579 metadata (for personal docs) or the owner-authored roster (for v2
+shared docs). The Markdown body stays parseable by any client.
+
+### Presentation metadata (kind `34579`)
+
+Personal documents keep `layout` in their self-encrypted metadata event. Shared
+docs keep it in a **dedicated owner-authored event** whose `d` is
+`<root address>:layout`, encrypted with the viewKey. A separate `d` slot is
+important: the roster and the user's self metadata share the root `d`, so
+storing layout there would let them overwrite each other.
+
+The JSON shape is:
+
+```json
+{
+  "layout": {
+    "version": 1,
+    "canvas": "notes",
+    "pageSize": "A4",
+    "orientation": "portrait",
+    "margins": { "top": 1, "right": 1, "bottom": 1, "left": 1 },
+    "fontFamily": "Inter",
+    "fontSizePt": 11,
+    "lineHeight": 1.6,
+    "styles": {
+      "h1": { "align": "center", "fontSizePt": 26, "fontWeight": 800 }
+    },
+    "header": { "left": "ACME Inc" },
+    "footer": { "center": "Confidential" }
+  }
+}
+```
+
+Layout changes are owner-controlled for v2 shared documents (the same rule as
+title and tags). They are eventual relative to content saves because they are a
+separate replaceable metadata event. `canvas` selects the screen experience:
+`notes` (continuous, borderless, the default) or `page` (paginated document
+canvas for letterheads/resumes). Print/PDF/DOCX always use the page geometry.
 
 ### Roster — kind `34579` (parameterised replaceable on `d`)
 

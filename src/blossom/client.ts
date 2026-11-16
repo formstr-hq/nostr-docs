@@ -1,9 +1,11 @@
+import { finalizeEvent, getPublicKey } from "nostr-tools";
 import { signerManager } from "../signer";
 
-async function buildAuthHeader(sha256: string, action: "upload" | "delete" = "upload"): Promise<string> {
-  const signer = await signerManager.getSigner();
-  if (!signer) throw new Error("No signer available");
-
+async function buildAuthHeader(
+  sha256: string,
+  action: "upload" | "delete" = "upload",
+  authSecret?: Uint8Array,
+): Promise<string> {
   const expiration = Math.floor(Date.now() / 1000) + 60 * 60; // 1 hour
   const eventTemplate = {
     kind: 24242,
@@ -14,10 +16,22 @@ async function buildAuthHeader(sha256: string, action: "upload" | "delete" = "up
     ],
     content: "Upload file",
     created_at: Math.floor(Date.now() / 1000),
-    pubkey: await signer.getPublicKey(),
+    pubkey: authSecret
+      ? getPublicKey(authSecret)
+      : await (async () => {
+          const signer = await signerManager.getSigner();
+          if (!signer) throw new Error("No signer available");
+          return signer.getPublicKey();
+        })(),
   };
 
-  const signed = await signer.signEvent(eventTemplate);
+  const signed = authSecret
+    ? finalizeEvent(eventTemplate, authSecret)
+    : await (async () => {
+        const signer = await signerManager.getSigner();
+        if (!signer) throw new Error("No signer available");
+        return signer.signEvent(eventTemplate);
+      })();
   return `Nostr ${btoa(JSON.stringify(signed))}`;
 }
 
@@ -26,10 +40,11 @@ export async function uploadBinaryToBlossom(
   data: Uint8Array,
   sha256: string,
   mimeType = "application/octet-stream",
+  authSecret?: Uint8Array,
 ): Promise<string> {
   if (servers.length === 0) throw new Error("No blossom servers configured");
 
-  const authorization = await buildAuthHeader(sha256, "upload");
+  const authorization = await buildAuthHeader(sha256, "upload", authSecret);
 
   const results = await Promise.allSettled(
     servers.map(async (server) => {
@@ -69,8 +84,15 @@ export async function uploadToBlossom(
   servers: string[],
   encryptedData: Uint8Array,
   sha256: string,
+  authSecret?: Uint8Array,
 ): Promise<string> {
-  return uploadBinaryToBlossom(servers, encryptedData, sha256, "application/octet-stream");
+  return uploadBinaryToBlossom(
+    servers,
+    encryptedData,
+    sha256,
+    "application/octet-stream",
+    authSecret,
+  );
 }
 
 /**

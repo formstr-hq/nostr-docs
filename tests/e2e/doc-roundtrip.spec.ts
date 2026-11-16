@@ -36,8 +36,9 @@ test("create a document, save it, and read it back from the relay", async ({
   // 2. Write a document in the draft editor.
   await typeIntoEditor(page, `# ${unique}\n\nhello from the e2e suite`);
 
-  // 3. Save. This encrypts the content, publishes a kind-33457 file event to the
-  //    relays, and navigates to the document's own /doc/<naddr> URL.
+  // 3. Save. This encrypts the canonical ProseMirror document, publishes a
+  //    kind-33458 rich document event to the relays, and navigates to the
+  //    document's own /doc/<naddr> URL.
   await save(page);
   await expect(page).toHaveURL(/\/doc\/naddr1/, { timeout: 20_000 });
 
@@ -47,6 +48,9 @@ test("create a document, save it, and read it back from the relay", async ({
   const decoded = nip19.decode(naddr);
   expect(decoded.type).toBe("naddr");
   const { kind, pubkey, identifier } = decoded.data as nip19.AddressPointer;
+
+  // New pages use the rich ProseMirror kind; KIND_FILE (33457) stays legacy.
+  expect(kind).toBe(33458);
 
   const stored = await queryLocalRelay({
     kinds: [kind],

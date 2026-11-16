@@ -25,13 +25,14 @@ ThemeProvider
 | Kind  | NIP / Purpose | Notes |
 |-------|--------------|-------|
 | **0** | NIP-01 User metadata | Fetched on login to populate name/avatar. Closed after first event received or EOSE. |
-| **5** | NIP-09 Deletion request | Fetched on startup with `#k: [33457]` filter so deleted documents are hidden. |
+| **5** | NIP-09 Deletion request | Fetched on startup with `#k: [33457, 33458]` filter so deleted documents are hidden. |
 | **10002** | NIP-65 Relay list | Fetched per-user to switch from default relays to user-preferred relays. |
 | **11234** | _(removed)_ | Was never implemented; the "shared with me" store is kind 34579 metadata carrying `viewKey` (see below). |
 | **22457** | CRDT op (realtime) | App-specific, ephemeral. NIP‑44(viewKey) of `{ a: <attestation token|null>, m: <base64 Yjs sync message> }`, tagged `["a", <room>]`, signed by a per-tab session key. Live in-session merging only — Yjs is not stored. |
 | **24578** | Presence (realtime) | Same shape as 22457 with a Yjs awareness update (remote carets). Ephemeral. |
-| **33457** | Encrypted document (replaceable) | Durable document. Content is the NIP‑44(viewKey) Markdown. Tags `["d", <document id>]` and `["a", <room>]` (the capability id, not the owner). For personal docs the author is the owner; for v2 shared docs **each author publishes to their own address** `33457:<author>:<d>`, and the newest valid version across the roster renders. |
-| **34579** | Per-document metadata / roster | Encrypted JSON. Authored by each user for their own view (`{tags, title, viewKey, editKey?, sharedAs?}`) **and**, for a v2 shared doc, by the **owner** as the shareable roster `{v:2, epoch, mode, title, tags, members[]}` encrypted with the document view key. Writes go through `nextCreatedAt()`. |
+| **33457** | Legacy encrypted document (replaceable) | Backward-compatible Markdown documents. Content is NIP‑44(viewKey) Markdown. New pages use **33458**; this kind remains readable and writable for legacy pages and links. Tags `["d", <document id>]` and `["a", <room>]`. |
+| **33458** | Rich encrypted document (replaceable) | Default for new documents. Content is NIP‑44(viewKey) JSON `{format:"prosemirror-json",version:1,doc:<ProseMirror JSON>}`. HTML/Markdown/DOCX/PDF are adapters around this model. Tags `["d", <document id>]` and `["a", <room>]`; the same roster/realtime/sharing rules apply. |
+| **34579** | Per-document metadata / roster | Encrypted JSON. Authored by each user for their own view (`{tags, title, layout, viewKey, editKey?, sharedAs?}`) **and**, for a v2 shared doc, by the **owner** as the shareable roster `{v:2, epoch, mode, title, tags, members[]}` encrypted with the document view key. Shared layout is a separate owner-authored `34579` event at `d = <root>:layout`, viewKey-encrypted, so it cannot overwrite the roster. `layout` holds canvas (notes/page), page size/margins/header-footer and document-level typography. Writes go through `nextCreatedAt()`. |
 | **34581** | Session attestation token | Not published. A real-key-signed event embedded inside 22457/24578 payloads, binding a session key to its real pubkey (presence attribution / restricted-mode authorisation). |
 
 ---
@@ -74,9 +75,14 @@ a live relay fetch (`resolveEventsByAddress`) when a page isn't on disk yet.
 
 ## Encryption Model
 
-### Document content (kind 33457)
+### Document content (kinds 33457 and 33458)
 
 All document content is NIP-44 encrypted **before** being sent to relays. Relays only ever see ciphertext.
+
+- **33458 (default)** stores a versioned ProseMirror JSON envelope:
+  `{ "format": "prosemirror-json", "version": 1, "doc": { ... } }`.
+- **33457 (legacy)** stores Markdown and remains readable/writable for old pages
+  and links. New documents never use it.
 
 Two encryption modes:
 
@@ -86,7 +92,7 @@ Two encryption modes:
 
 ### Multi-writer documents (v2)
 
-A shared document is a set of per-author replaceable events: every author publishes `33457:<their-pubkey>:<document-id>`, all encrypted with the same viewKey, each carrying `["a", <root address>]`. There is **no shared signing key**, so writers never overwrite each other. The document is resolved by fetching the versions (by roster author set, or by `["a", root]` in `open` mode) and rendering the newest valid one. The owner publishes a viewKey-encrypted **roster** (kind 34579) declaring the write `mode` (`restricted` = listed editors, `open` = any viewKey holder) and `members`. Only the owner's roster is authoritative; control metadata is always owner-authored.
+A shared document is a set of per-author replaceable events: every author publishes `<kind>:<their-pubkey>:<document-id>`, all encrypted with the same viewKey, each carrying `["a", <root address>]`. There is **no shared signing key**, so writers never overwrite each other. The document is resolved by fetching the versions (by roster author set, or by `["a", root]` in `open` mode) and rendering the newest valid one. The owner publishes a viewKey-encrypted **roster** (kind 34579) declaring the write `mode` (`restricted` = listed editors, `open` = any viewKey holder) and `members`. Only the owner's roster is authoritative; control metadata is always owner-authored.
 
 ### EditKey (legacy)
 
@@ -141,10 +147,11 @@ App mounts
 ```
 User edits Markdown in DocEditorSurface
   → handleSave()
-    → encryptContent(md, viewKey) → NIP-44 ciphertext
-    → signer.signEvent(event) → signed kind-33457
-    → publishEvent(signed, relays) → broadcast to relays
-    → addDocument(signed, keys) → decrypt + add to DocumentContext
+    → mdDirty: encryptContent(markdown, viewKey) → NIP-44 ciphertext
+    → sign kind-33457 → publishEvent → addDocument → decrypt + add to DocumentContext
+    → layoutDirty: setDocLayout(address, layout)
+        → personal doc: self-encrypted kind-34579 {tags, title, layout}
+        → shared owner: viewKey-encrypted kind-34579 at d=<root>:layout
 ```
 
 ### Share (v2)
@@ -197,5 +204,9 @@ handleDelete()
 | `src/utils/encryption.ts` | `encryptContent()` wrapper |
 | `src/utils/nkeys.ts` | URL hash encode/decode for view/edit keys |
 | `src/components/editor/DocEditorController.tsx` | Save / delete / share orchestration |
+| `src/lib/docLayout.ts` | Page layout + document block styles + normalization |
+| `src/components/editor/DocumentPage.tsx` | Notes/page canvases (page frame, margins, header/footer, block styles) |
+| `src/components/editor/PageSetupDialog.tsx` | Page setup + heading/body style UI |
+| `src/utils/exportDocument.ts` | MD/HTML/PDF/DOCX export with page layout + page breaks |
 | `src/components/DocPage.tsx` | Route-level document loader |
 | `src/components/LoginModal.tsx` | Login method picker dialog |

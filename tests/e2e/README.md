@@ -45,13 +45,16 @@ npm run test:e2e:ui         # Playwright UI mode
 npm run test:e2e doc-roundtrip   # a single file
 ```
 
-Playwright boots two servers itself (via the `webServer` config; both are reused
-if already running):
+Playwright boots three servers itself (via the `webServer` config; all are
+reused if already running):
 
-1. a **local in-memory nostr relay** (`tests/e2e/relay-server.cjs`) on port 7449, and
-2. the Vite dev server (`npm run dev` on port 5181), started with
-   `VITE_DEFAULT_RELAYS=ws://localhost:7449` so the whole app reads/writes
-   against the local relay only.
+1. a **local in-memory nostr relay** (`tests/e2e/relay-server.cjs`) on port 7449,
+2. a **local in-memory Blossom server** (`tests/e2e/blossom-server.cjs`) on port
+   7450, and
+3. the Vite dev server (`npm run dev` on port 5181), started with
+   `VITE_DEFAULT_RELAYS=ws://localhost:7449` and
+   `VITE_DEFAULT_BLOSSOM=http://localhost:7450` so the whole app reads/writes
+   against local test services only.
 
 Browsers are installed once with `npx playwright install chromium`.
 

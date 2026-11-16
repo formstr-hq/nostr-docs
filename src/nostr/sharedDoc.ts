@@ -2,11 +2,12 @@
 //
 // Multi-writer encrypted documents (NIP-XX, see NIP-multi-writer-documents.md).
 //
-// A document is identified by a root address `33457:<owner>:<d>`. Every author
-// publishes their own replaceable content event at `33457:<author>:<d>`, all
-// encrypted with one shared `viewKey`. The owner publishes a viewKey-encrypted
-// roster (kind 34579) listing the editors; clients fetch every author's slot and
-// render the newest valid one.
+// A document is identified by a root address `<kind>:<owner>:<d>` (33458 for
+// rich documents, 33457 for legacy Markdown). Every author publishes their own
+// replaceable content event at `<kind>:<author>:<d>`, all encrypted with one
+// shared `viewKey`. The owner publishes a viewKey-encrypted roster (kind 34579)
+// listing the editors; clients fetch every author's slot and render the newest
+// valid one.
 //
 // This module is the pure model + the small I/O helpers around it. It is
 // deliberately independent of React so the resolution logic can be unit-tested
@@ -20,6 +21,7 @@ import {
 import { hexToBytes } from "nostr-tools/utils";
 import { KIND_DOC_METADATA, KIND_FILE } from "./kinds";
 import { fetchMany, fetchOne } from "../dataLayer";
+import { normalizePageLayout, type PageLayout } from "../lib/docLayout";
 
 /** How far in the future an event's `created_at` may be before we ignore the
  *  excess when ordering (relays do not validate timestamps). */
@@ -49,10 +51,11 @@ export interface DocRoster {
   mode: DocMode;
   title?: string;
   tags: string[];
+  layout?: PageLayout;
   members: DocMember[];
 }
 
-/** Parsed components of a root address `33457:<owner>:<d>`. */
+/** Parsed components of a root address `<kind>:<owner>:<d>`. */
 export interface RootRef {
   kind: number;
   owner: string;
@@ -75,16 +78,24 @@ export function parseRootAddress(address: string): RootRef | null {
 }
 
 /** Canonical root address for a document owned by `owner` with id `d`. */
-export function rootAddress(owner: string, d: string): string {
-  return `${KIND_FILE}:${owner}:${d}`;
+export function rootAddress(
+  owner: string,
+  d: string,
+  kind: number = KIND_FILE,
+): string {
+  return `${kind}:${owner}:${d}`;
 }
 
 /**
  * `d` tag value for the owner's shared metadata event: the document's root
  * address. (The app keys all per-document metadata by the address it describes.)
  */
-export function rosterDTag(owner: string, d: string): string {
-  return rootAddress(owner, d);
+export function rosterDTag(
+  owner: string,
+  d: string,
+  kind: number = KIND_FILE,
+): string {
+  return rootAddress(owner, d, kind);
 }
 
 // ── viewKey crypto ────────────────────────────────────────────────────────────
@@ -142,6 +153,7 @@ export function parseRosterPayload(payload: string): DocRoster | null {
       tags: Array.isArray(parsed.tags)
         ? parsed.tags.filter((t): t is string => typeof t === "string")
         : [],
+      layout: parsed.layout ? normalizePageLayout(parsed.layout) : undefined,
       members: validMembers,
     };
   } catch {
@@ -187,13 +199,14 @@ export async function fetchRoster(
   d: string,
   viewKey: string,
   relays?: string[],
+  kind: number = KIND_FILE,
 ): Promise<DocRoster | null> {
   const event = await fetchOne(
     [
       {
         kinds: [KIND_DOC_METADATA],
         authors: [owner],
-        "#d": [rosterDTag(owner, d)],
+        "#d": [rosterDTag(owner, d, kind)],
       },
     ],
     relays,
@@ -235,18 +248,19 @@ export async function fetchGroupEvents(
   roster: DocRoster | null,
   viewKey: string,
   relays?: string[],
+  kind: number = KIND_FILE,
 ): Promise<Event[]> {
   if (isOpenRoster(roster)) {
     // Content events are tagged with the capability-derived room (not the root),
     // so the document owner is not named in the public footprint.
     return fetchMany(
-      [{ kinds: [KIND_FILE], "#a": [collabRoom(viewKey)] }],
+      [{ kinds: [kind], "#a": [collabRoom(viewKey)] }],
       relays,
     );
   }
   const authors = authorSet(owner, roster);
   return fetchMany(
-    [{ kinds: [KIND_FILE], authors, "#d": [d] }],
+    [{ kinds: [kind], authors, "#d": [d] }],
     relays,
   );
 }
@@ -272,10 +286,11 @@ export async function resolveSharedDocument(
   d: string,
   viewKey: string,
   relays?: string[],
+  kind: number = KIND_FILE,
 ): Promise<ResolvedDocument> {
-  const roster = await fetchRoster(owner, d, viewKey, relays);
+  const roster = await fetchRoster(owner, d, viewKey, relays, kind);
   const authors = authorSet(owner, roster);
-  const fetched = await fetchGroupEvents(owner, d, roster, viewKey, relays);
+  const fetched = await fetchGroupEvents(owner, d, roster, viewKey, relays, kind);
 
   const events = fetched.filter((e) => {
     try {

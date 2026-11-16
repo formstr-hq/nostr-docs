@@ -36,7 +36,8 @@ const base = selfChannel(
 const prunePolicy = defaultPrunePolicy();
 const DAY = 24 * 60 * 60;
 for (const kind of [
-  33457, // encrypted document (KIND_FILE) — never prune; it's the user's data
+  33457, // legacy encrypted document (KIND_FILE) — Markdown
+  33458, // rich encrypted document (KIND_RICH_DOCUMENT) — ProseMirror JSON
   34579, // per-document metadata: tags/title/keys (KIND_DOC_METADATA)
   1494, // inline comments (KIND_COMMENT)
   34580, // comment resolutions (KIND_COMMENT_RESOLUTION)

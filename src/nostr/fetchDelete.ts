@@ -1,5 +1,5 @@
 import type { Event } from "nostr-tools";
-import { KIND_FILE } from "./kinds";
+import { DOCUMENT_KINDS } from "./kinds";
 import { fetchMany } from "../dataLayer";
 
 export const fetchDeleteRequests = (
@@ -9,7 +9,7 @@ export const fetchDeleteRequests = (
 ) => {
   const deleteSubscriptionFilter = {
     kinds: [5], // NIP-09 deletion requests
-    "#k": [`${KIND_FILE}`],
+    "#k": DOCUMENT_KINDS.map(String),
     authors: [pubkey],
   };
   return fetchMany([deleteSubscriptionFilter], relays, 8000)

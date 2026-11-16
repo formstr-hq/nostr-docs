@@ -20,8 +20,16 @@ import UploadFileOutlinedIcon from "@mui/icons-material/UploadFileOutlined";
 import DeleteOutlineIcon from "@mui/icons-material/DeleteOutline";
 import { useNavigate } from "react-router-dom";
 import { useDocumentContext } from "../contexts/DocumentContext";
+import { useDocMetadata } from "../contexts/DocMetadataContext";
 import { useUser } from "../contexts/UserContext";
+import { useBlossomServers } from "../contexts/BlossomContext";
+import { base64ToBytes } from "../lib/base64";
+import { uploadEncryptedBytes } from "../lib/encryptedBlob";
+import { replaceEmbeddedImagesWithBlossom } from "../lib/ooxml/blobRefs";
 import { readImportFiles, type ImportEntry } from "../utils/importPages";
+
+const DOCX_MIME =
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
 
 /**
  * Import one or more pages from Markdown files, or from a .zip of Markdown
@@ -38,6 +46,8 @@ export default function ImportPagesDialog({
 }) {
   const { user } = useUser();
   const { addImportedDocument } = useDocumentContext();
+  const { setDocLayout } = useDocMetadata();
+  const { servers: blossomServers } = useBlossomServers();
   const navigate = useNavigate();
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -100,10 +110,46 @@ export default function ImportPagesDialog({
 
     for (const entry of entries) {
       try {
-        await addImportedDocument(entry.markdown, { publish: publishToRelays });
+        let doc = entry.doc;
+        let packageRef;
+        if (entry.kind === "docx" && publishToRelays) {
+          if (blossomServers.length === 0) {
+            throw new Error(
+              "Add a Blossom server before importing DOCX files so the original package and images can be stored privately.",
+            );
+          }
+          if (entry.package) {
+            packageRef = await uploadEncryptedBytes(
+              blossomServers,
+              base64ToBytes(entry.package),
+              DOCX_MIME,
+              `${entry.name}.docx`,
+            );
+          }
+          if (doc) {
+            doc = await replaceEmbeddedImagesWithBlossom(doc, blossomServers);
+          }
+        }
+
+        const address = await addImportedDocument(entry.markdown, {
+          publish: publishToRelays,
+          doc,
+          // Device-only pages stay local and keep their inline package; public
+          // pages store only the encrypted Blossom reference.
+          package: publishToRelays ? undefined : entry.package,
+          packageRef,
+        });
+        if (entry.kind === "docx" && entry.layout && publishToRelays) {
+          try {
+            await setDocLayout(address, entry.layout);
+          } catch (layoutError) {
+            console.warn("Imported DOCX but could not set page layout:", layoutError);
+          }
+        }
         ok += 1;
       } catch (err) {
         console.error("Failed to import page:", entry.source, err);
+        setError(err instanceof Error ? err.message : "Could not import this file.");
         failedEntries.push(entry);
       } finally {
         setProgress((p) => ({ ...p, done: p.done + 1 }));
@@ -149,8 +195,9 @@ export default function ImportPagesDialog({
 
       <DialogContent dividers sx={{ px: 2.5, py: 2 }}>
         <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5 }}>
-          Add Markdown (.md) files, or a .zip of Markdown files. Each file becomes
-          a new page.
+          Add Markdown (.md) or Word (.docx) files, or a .zip of Markdown files.
+          DOCX files are converted into editable rich pages; complex Word
+          features may be simplified.
         </Typography>
 
         <FormControlLabel
@@ -227,7 +274,7 @@ export default function ImportPagesDialog({
               hidden
               multiple
               aria-label="Choose Markdown or zip files"
-              accept=".md,.markdown,.mdown,.mkd,.txt,.zip,text/markdown,text/plain,application/zip"
+              accept=".md,.markdown,.mdown,.mkd,.txt,.docx,.zip,text/markdown,text/plain,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/zip"
               onChange={(e) => {
                 void addFiles(e.target.files);
                 // Allow re-selecting the same file later.
@@ -242,7 +289,7 @@ export default function ImportPagesDialog({
         {skipped.length > 0 && (
           <Alert severity="warning" sx={{ mt: 1.5 }} onClose={() => setSkipped([])}>
             Skipped {skipped.length} file{skipped.length === 1 ? "" : "s"} that
-            weren&apos;t Markdown: {skipped.slice(0, 3).join(", ")}
+            weren&apos;t Markdown or DOCX: {skipped.slice(0, 3).join(", ")}
             {skipped.length > 3 ? "…" : ""}
           </Alert>
         )}
@@ -295,7 +342,13 @@ export default function ImportPagesDialog({
                     {entry.name}
                   </Typography>
                   <Chip
-                    label={`${entry.markdown.length} chars`}
+                    label={
+                      entry.kind === "docx"
+                        ? entry.warnings?.length
+                          ? `DOCX · ${entry.warnings.length} note${entry.warnings.length === 1 ? "" : "s"}`
+                          : "DOCX"
+                        : `${entry.markdown.length} chars`
+                    }
                     size="small"
                     sx={{
                       height: 18,
