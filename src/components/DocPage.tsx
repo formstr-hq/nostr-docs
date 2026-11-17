@@ -13,11 +13,14 @@ import { resolveSharedDocument } from "../nostr/sharedDoc";
 import { useUser } from "../contexts/UserContext";
 
 import { useSharedPages } from "../contexts/SharedDocsContext";
+import { DiscussionPage } from "./comments/DiscussionPage";
 
 export default function DocPage({
   textSuggest: textSuggestOverride,
+  discussion = false,
 }: {
   textSuggest?: TextSuggestHook;
+  discussion?: boolean;
 }) {
   const { naddr } = useParams<{ naddr: string }>();
   const location = useLocation();
@@ -224,6 +227,10 @@ export default function DocPage({
   if (loading) return <div>Loading document...</div>;
   if (invalid) return <div>Invalid document URL</div>;
   if (notFound) return <div>Document not found. It may have been deleted or not yet propagated to relays.</div>;
+
+  if (discussion) {
+    return <DiscussionPage viewKey={decodedKeys.viewKey} editKey={decodedKeys.editKey} />;
+  }
 
   return (
     <DocumentEditorController

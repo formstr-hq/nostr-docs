@@ -35,6 +35,17 @@ nostr-docs flows end to end. These are **health checks**, not UI specs.
   and only pages shared *by* you appear under the Shared tab.
 - **draft-login** — an unsaved draft typed while logged out survives logging in
   (and a reload), and is cleared once the page is saved.
+- **comment-replies** — replies retain their immediate parent at any depth;
+  three reply levels appear in the sidebar, then Continue discussion opens a
+  dedicated page. Covers encrypted posting and reload, direct mobile links,
+  root resolution, late parents, and loading longer discussions in batches.
+
+The thread traversal helpers also have dependency-free unit tests (Node 22.18+
+or Node 24):
+
+```bash
+node --experimental-strip-types --test tests/unit/commentThreads.test.mjs
+```
 
 ## Running
 

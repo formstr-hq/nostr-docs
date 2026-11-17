@@ -12,6 +12,9 @@ export interface CommentPayload {
   type: CommentType;
   quote?: string;
   context?: { prefix: string; suffix: string };
+  /** Id of the comment this replies to. Kept inside the encrypted payload so
+   *  thread structure isn't visible to relays. */
+  parentId?: string;
 }
 
 export function viewKeyConversationKey(viewKey: string): Uint8Array {
@@ -43,6 +46,9 @@ export async function publishComment(
   }
   if (payload.context !== undefined) {
     innerTags.push(["context", payload.context.prefix, payload.context.suffix]);
+  }
+  if (payload.parentId !== undefined) {
+    innerTags.push(["parent", payload.parentId]);
   }
 
   const encryptedContent = encryptTags(innerTags, viewKey);

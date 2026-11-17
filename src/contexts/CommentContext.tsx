@@ -7,7 +7,9 @@ import React, {
   useRef,
   useState,
 } from "react";
-import { nip44, type Event } from "nostr-tools";
+import { nip19, nip44, type Event } from "nostr-tools";
+import { encodeNKeys } from "../utils/nkeys";
+import { parseRootAddress } from "../nostr/sharedDoc";
 import type { SubCloser } from "nostr-tools/abstract-pool";
 import type { Editor } from "@tiptap/react";
 import { Decoration, DecorationSet } from "@tiptap/pm/view";
@@ -34,12 +36,17 @@ export interface DecryptedComment {
   type: CommentType;
   quote?: string;
   context?: { prefix: string; suffix: string };
+  /** Set on replies: the id of the comment this replies to. */
+  parentId?: string;
   event: Event;
 }
 
 interface CommentContextValue {
+  documentPath: string;
   comments: DecryptedComment[];
   addComment: (payload: CommentPayload, docEventId: string) => Promise<void>;
+  /** Post a reply under an existing comment. */
+  replyToComment: (parent: DecryptedComment, content: string) => Promise<void>;
   resolvedIds: Set<string>;
   resolveComment: (commentId: string) => Promise<void>;
   unresolveComment: (commentId: string) => Promise<void>;
@@ -69,6 +76,7 @@ function decryptCommentEvent(
 
     const quoteTag = get("quote");
     const contextTag = get("context");
+    const parentTag = get("parent");
     const docEventId = event.tags.find((t) => t[0] === "e")?.[1] ?? "";
 
     return {
@@ -82,6 +90,7 @@ function decryptCommentEvent(
       context: contextTag
         ? { prefix: contextTag[1], suffix: contextTag[2] }
         : undefined,
+      parentId: parentTag?.[1] || undefined,
       event,
     };
   } catch {
@@ -200,6 +209,13 @@ export const CommentProvider: React.FC<{
   enabled = true,
 }) => {
   const { relays } = useRelays();
+  const documentPath = useMemo(() => {
+    const root = parseRootAddress(docAddress);
+    if (!root) return "";
+    const naddr = nip19.naddrEncode({ kind: root.kind, pubkey: root.owner, identifier: root.d });
+    const hash = viewKey ? `#${encodeNKeys({ viewKey, ...(editKey ? { editKey } : {}) })}` : "";
+    return `/doc/${naddr}${hash}`;
+  }, [docAddress, viewKey, editKey]);
   const [comments, setComments] = useState<DecryptedComment[]>([]);
   // commentId -> pubkey -> latest resolution from that pubkey (deduped for out-of-order relay delivery)
   const [resolverMap, setResolverMap] = useState<Map<string, Map<string, { resolved: boolean; createdAt: number }>>>(new Map());
@@ -283,10 +299,14 @@ export const CommentProvider: React.FC<{
       type: payload.type,
       quote: payload.quote,
       context: payload.context,
+      parentId: payload.parentId,
       event,
     };
     setComments((prev) => insertSorted(prev, comment));
   };
+
+  const replyToComment = (parent: DecryptedComment, content: string) =>
+    addComment({ content, type: "comment", parentId: parent.id }, parent.docEventId);
 
   const setCommentResolution = async (commentId: string, resolved: boolean): Promise<void> => {
     // Replaceable events with equal created_at are tie-broken by lowest id,
@@ -343,7 +363,7 @@ export const CommentProvider: React.FC<{
 
   return (
     <CommentContext.Provider
-      value={{ comments, addComment, resolvedIds, resolveComment, unresolveComment, applyHighlights, isOutdated, canResolve }}
+      value={{ documentPath, comments, addComment, replyToComment, resolvedIds, resolveComment, unresolveComment, applyHighlights, isOutdated, canResolve }}
     >
       {children}
     </CommentContext.Provider>

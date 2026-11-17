@@ -1,9 +1,10 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Box, Button, Typography, Divider, IconButton, Tooltip, Snackbar, Alert, alpha } from "@mui/material";
 import CloseIcon from "@mui/icons-material/Close";
 import { useComments } from "../../contexts/CommentContext";
 import { scrollToComment } from "../../utils/scrollToComment";
-import { CommentCard } from "./CommentCard";
+import { CommentThread } from "./CommentThread";
+import { buildCommentThreads } from "../../utils/commentThreads";
 
 type Props = {
   onClose: () => void;
@@ -12,7 +13,7 @@ type Props = {
 };
 
 export function CommentSidebar({ onClose, activeCommentId, isMobile }: Props) {
-  const { comments, resolvedIds, resolveComment, unresolveComment, isOutdated, canResolve } = useComments();
+  const { comments, replyToComment, resolvedIds, resolveComment, unresolveComment, isOutdated, canResolve } = useComments();
   const [showResolved, setShowResolved] = useState(false);
   const [showOutdated, setShowOutdated] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -32,9 +33,11 @@ export function CommentSidebar({ onClose, activeCommentId, isMobile }: Props) {
     el?.scrollIntoView({ behavior: "smooth", block: "nearest" });
   }, [activeCommentId]);
 
-  const active = comments.filter((c) => !resolvedIds.has(c.id) && !isOutdated(c));
-  const outdated = comments.filter((c) => !resolvedIds.has(c.id) && isOutdated(c));
-  const resolved = comments.filter((c) => resolvedIds.has(c.id));
+  const threads = useMemo(() => buildCommentThreads(comments), [comments]);
+
+  const active = threads.roots.filter((c) => !resolvedIds.has(c.id) && !isOutdated(c));
+  const outdated = threads.roots.filter((c) => !resolvedIds.has(c.id) && isOutdated(c));
+  const resolved = threads.roots.filter((c) => resolvedIds.has(c.id));
 
   // A section is only open while it has content, so an emptied section
   // collapses on its own — no state syncing needed.
@@ -149,12 +152,14 @@ export function CommentSidebar({ onClose, activeCommentId, isMobile }: Props) {
                 }}
                 sx={{ borderRadius: 2 }}
               >
-                <CommentCard
+                <CommentThread
                   comment={comment}
                   isResolved={false}
                   isOutdated={false}
                   onResolve={canResolve(comment) ? () => handleResolve(comment.id) : undefined}
                   onCardClick={comment.quote ? () => scrollToComment(comment.id) : undefined}
+                  threads={threads}
+                  onReply={replyToComment}
                 />
               </Box>
             ))}
@@ -170,11 +175,13 @@ export function CommentSidebar({ onClose, activeCommentId, isMobile }: Props) {
                     }}
                     sx={{ borderRadius: 2 }}
                   >
-                    <CommentCard
+                    <CommentThread
                       comment={comment}
                       isResolved={false}
                       isOutdated={true}
                       onResolve={canResolve(comment) ? () => handleResolve(comment.id) : undefined}
+                      threads={threads}
+                      onReply={replyToComment}
                     />
                   </Box>
                 ))}
@@ -192,12 +199,13 @@ export function CommentSidebar({ onClose, activeCommentId, isMobile }: Props) {
                     }}
                     sx={{ borderRadius: 2 }}
                   >
-                    <CommentCard
+                    <CommentThread
                       comment={comment}
                       isResolved={true}
                       isOutdated={isOutdated(comment)}
                       onUnresolve={canResolve(comment) ? () => handleUnresolve(comment.id) : undefined}
                       onCardClick={comment.quote ? () => scrollToComment(comment.id) : undefined}
+                      threads={threads}
                     />
                   </Box>
                 ))}

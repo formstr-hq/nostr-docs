@@ -52,6 +52,11 @@ function ArticleViewWrapper() {
   return <ArticleView key={location.pathname} />;
 }
 
+function DiscussionPageWrapper() {
+  const { pathname } = useLocation();
+  return <DocPage key={pathname} discussion />;
+}
+
 export function HomePage() {
   return <AllPagesView />;
 }
@@ -80,6 +85,7 @@ const router = createRouter([
       { path: "new", element: <DocPageWrapper /> },
       { path: "doc/new", element: <DocPageWrapper /> },
       { path: "doc/:naddr", element: <DocPageWrapper /> },
+      { path: "doc/:naddr/discussion/:commentId", element: <DiscussionPageWrapper /> },
       { path: "article/:naddr", element: <ArticleViewWrapper /> },
       { path: "about", element: <AboutPage /> },
       { path: "*", element: <NotFoundPage /> },
