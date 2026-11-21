@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Box, Typography, ListItemButton, Chip, alpha } from "@mui/material";
+import { Alert, Box, Typography, ListItemButton, Chip, alpha } from "@mui/material";
 import { useDocumentContext } from "../contexts/DocumentContext.tsx";
 import { useSharedPages } from "../contexts/SharedDocsContext.tsx";
 import { usePublished } from "../contexts/PublishedContext.tsx";
@@ -23,6 +23,7 @@ export default function DocumentList({
     setSelectedDocumentId,
     localOnlyAddresses,
     getDocumentKeys,
+    syncError,
   } = useDocumentContext();
   const { sharedDocuments, getKeys } = useSharedPages();
   const { publishedDocuments } = usePublished();
@@ -131,6 +132,16 @@ export default function DocumentList({
   useEffect(() => {
     refreshTrashCount();
   }, []);
+
+  if (syncError) {
+    return (
+      <Box sx={{ p: 2 }}>
+        <Alert severity="error" role="alert">
+          Could not sync documents from relays: {syncError}
+        </Alert>
+      </Box>
+    );
+  }
 
   return (
     <Box

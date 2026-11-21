@@ -90,6 +90,8 @@ interface DocumentContextValue {
 
   /** Addresses of documents the user has explicitly set to device-only. */
   localOnlyAddresses: Set<string>;
+  /** Error from the last relay sync attempt, shown in the document list. */
+  syncError: string | null;
   /** Update the in-memory device-only flag for a document address. */
   markLocalOnly: (address: string, localOnly: boolean) => void;
   /** Retrieve stored decryption/signing keys (viewKey, editKey) for a document. */
@@ -149,6 +151,7 @@ export const DocumentProvider: React.FC<{ children: React.ReactNode }> = ({
   const [deletedEventIds, setDeletedEventIds] = useState<Set<string>>(
     new Set(),
   );
+  const [syncError, setSyncError] = useState<string | null>(null);
   const [localOnlyAddresses, setLocalOnlyAddresses] = useState<Set<string>>(
     new Set(),
   );
@@ -602,6 +605,7 @@ export const DocumentProvider: React.FC<{ children: React.ReactNode }> = ({
 
     let isCancelled = false;
     let liveSub: Subscription | null = null;
+    setSyncError(null);
 
     (async () => {
       let signer;
@@ -735,6 +739,11 @@ export const DocumentProvider: React.FC<{ children: React.ReactNode }> = ({
         }
       } catch (err) {
         console.error("Failed to fetch documents from relays:", err);
+        if (!isCancelled) {
+          setSyncError(
+            err instanceof Error ? err.message : "Failed to sync documents from relays.",
+          );
+        }
       }
 
       // ── Phase 4: Live relay subscription ─────────────────
@@ -881,6 +890,7 @@ export const DocumentProvider: React.FC<{ children: React.ReactNode }> = ({
         localOnlyAddresses,
         markLocalOnly,
         getDocumentKeys,
+        syncError,
       }}
     >
       {children}
